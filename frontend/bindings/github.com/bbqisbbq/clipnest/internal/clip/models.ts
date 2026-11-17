@@ -212,6 +212,11 @@ export interface Settings {
     "closeToTray": boolean;
 
     /**
+     * UpdateCheck polls GitHub for a newer release shortly after startup.
+     */
+    "updateCheck": boolean;
+
+    /**
      * AutoStart registers the app in HKCU\...\Run.
      */
     "autoStart": boolean;
@@ -231,6 +236,18 @@ export interface Settings {
     "syncPass": string;
     "syncFile": string;
     "syncIntervalMin": number;
+
+    /**
+     * SyncSettings shares the non-machine-specific settings (capture toggles,
+     * retention, ignore rules, hotkey, paste behaviour) with other machines.
+     */
+    "syncSettings": boolean;
+
+    /**
+     * SyncUpdatedAt stamps the last change of the shareable settings, so peers
+     * can tell whose copy is newer.
+     */
+    "syncUpdatedAt": string;
 }
 
 /**
@@ -254,5 +271,21 @@ export interface SyncStatus {
     "lastResult": string;
     "lastError": string;
     "remoteItems": number;
-    "truncated": boolean;
+    "settingsSync": boolean;
+}
+
+/**
+ * UpdateInfo is what the UI shows about the update check.
+ */
+export interface UpdateInfo {
+    "checked": boolean;
+    "available": boolean;
+    "current": string;
+    "version": string;
+    "notes": string;
+    "assetName": string;
+    "assetSize": number;
+    "assetUrl": string;
+    "published": string;
+    "error"?: string;
 }

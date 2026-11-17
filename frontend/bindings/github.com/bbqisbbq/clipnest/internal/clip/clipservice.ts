@@ -23,6 +23,13 @@ export function AutoStartTarget(): $CancellablePromise<string> {
 }
 
 /**
+ * CheckUpdate asks GitHub for the newest release and compares it with Version.
+ */
+export function CheckUpdate(): $CancellablePromise<$models.UpdateInfo> {
+    return $Call.ByID(2960176974);
+}
+
+/**
  * CopyItem writes an entry back to the Windows clipboard.
  */
 export function CopyItem(id: string): $CancellablePromise<void> {
@@ -42,6 +49,13 @@ export function DeleteItem(id: string): $CancellablePromise<void> {
  */
 export function DeleteWhere(filter: $models.Filter): $CancellablePromise<number> {
     return $Call.ByID(2544233545, filter);
+}
+
+/**
+ * DownloadUpdate fetches the installer into a temp directory and returns its path.
+ */
+export function DownloadUpdate(): $CancellablePromise<string> {
+    return $Call.ByID(912302016);
 }
 
 /**
@@ -115,6 +129,14 @@ export function HideWindow(): $CancellablePromise<void> {
 }
 
 /**
+ * InstallUpdate runs a downloaded installer silently and quits so it can
+ * replace the binaries. The NSIS script keeps the clipboard history on /S.
+ */
+export function InstallUpdate(): $CancellablePromise<void> {
+    return $Call.ByID(1696886553);
+}
+
+/**
  * IsAutoStartEnabled reports the actual registry state, not just the setting.
  */
 export function IsAutoStartEnabled(): $CancellablePromise<boolean> {
@@ -142,6 +164,13 @@ export function OpenDataDir(): $CancellablePromise<void> {
  */
 export function OpenItem(id: string): $CancellablePromise<void> {
     return $Call.ByID(661447306, id);
+}
+
+/**
+ * OpenReleasePage opens the releases page in the default browser.
+ */
+export function OpenReleasePage(): $CancellablePromise<void> {
+    return $Call.ByID(708832825);
 }
 
 /**

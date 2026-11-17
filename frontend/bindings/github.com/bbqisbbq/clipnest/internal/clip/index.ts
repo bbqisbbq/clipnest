@@ -17,5 +17,6 @@ export type {
     Item,
     Settings,
     Stats,
-    SyncStatus
+    SyncStatus,
+    UpdateInfo
 } from "./models.js";

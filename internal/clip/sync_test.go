@@ -70,21 +70,31 @@ func TestSyncUploadsAndPulls(t *testing.T) {
 	if err != nil {
 		t.Fatalf("remote file missing: %v", err)
 	}
-	var snap syncSnapshot
-	if err := json.Unmarshal(data, &snap); err != nil {
-		t.Fatalf("remote file unreadable: %v", err)
+	var man syncManifest
+	if err := json.Unmarshal(data, &man); err != nil {
+		t.Fatalf("remote manifest unreadable: %v", err)
 	}
-	if len(snap.Items) != 2 {
-		t.Fatalf("remote items = %d, want 2", len(snap.Items))
+	if len(man.Items) != 2 {
+		t.Fatalf("remote items = %d, want 2", len(man.Items))
 	}
 	var withBlob int
-	for _, it := range snap.Items {
-		if it.BlobB64 != "" {
+	for _, it := range man.Items {
+		if it.Blob != "" {
 			withBlob++
+			// Records and blobs live as separate files, one per content hash.
+			if _, err := os.Stat(filepath.Join(string(*dir), "items", it.Hash+".json")); err != nil {
+				t.Errorf("record file missing for %s: %v", it.Hash, err)
+			}
+			if _, err := os.Stat(filepath.Join(string(*dir), "blobs", it.Hash+it.Blob)); err != nil {
+				t.Errorf("blob file missing for %s: %v", it.Hash, err)
+			}
 		}
 	}
 	if withBlob != 1 {
 		t.Errorf("remote blobs = %d, want 1 (the image)", withBlob)
+	}
+	if man.Settings == nil {
+		t.Error("settings should be published in the manifest")
 	}
 
 	// Machine B: empty store, pulls everything including the image bytes.
@@ -111,7 +121,7 @@ func TestSyncUploadsAndPulls(t *testing.T) {
 	if image == nil {
 		t.Fatal("image entry did not arrive")
 	}
-	if _, err := os.Stat(b.store.BlobPath(image.ImageFile)); err != nil {
+	if payload, err := b.store.LoadBlobByName(image.ImageFile); err != nil || len(payload) == 0 {
 		t.Errorf("image blob not restored: %v", err)
 	}
 }

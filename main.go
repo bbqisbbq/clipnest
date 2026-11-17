@@ -161,6 +161,7 @@ func main() {
 		PlatformWorks: true,
 		ShowPickerAt:  showPickerAt,
 		HidePicker:    hidePicker,
+		OpenURL:       clip.OpenExternal,
 		OnSettings: func(st clip.Settings) error {
 			if pauseItem != nil {
 				setPauseLabel(pauseItem, st.Capture)
@@ -281,6 +282,16 @@ func main() {
 		autoStartItem.SetChecked(svc.IsAutoStartEnabled())
 	})
 	menu.AddSeparator()
+	checkUpdateItem := menu.Add("检查更新…")
+	checkUpdateItem.OnClick(func(_ *application.Context) {
+		go func() {
+			info := svc.CheckUpdate()
+			showWindow()
+			if info.Error != "" {
+				log.Printf("检查更新失败: %s", info.Error)
+			}
+		}()
+	})
 	menu.Add("清空未收藏的历史").OnClick(func(_ *application.Context) {
 		_, _ = svc.DeleteWhere(clip.Filter{})
 	})

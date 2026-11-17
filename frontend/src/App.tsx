@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Events } from "@wailsio/runtime";
-import { ClipService, EventNames, newFilter, type AppInfo, type Item, type Settings, type Stats, type SyncStatus } from "./lib/api";
+import { ClipService, EventNames, newFilter, type AppInfo, type Item, type Settings, type Stats, type SyncStatus, type UpdateInfo } from "./lib/api";
 import TitleBar from "./components/TitleBar";
 import Sidebar from "./components/Sidebar";
 import ItemRow from "./components/ItemRow";
@@ -22,6 +22,8 @@ export default function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [updateBanner, setUpdateBanner] = useState(true);
   const [images, setImages] = useState<Record<string, string>>({});
   const [toast, setToast] = useState("");
   const [confirm, setConfirm] = useState<Confirm>(null);
@@ -100,6 +102,12 @@ export default function App() {
     offs.push(
       Events.On("sync:status", (ev: any) => {
         setSyncStatus(ev.data as SyncStatus);
+      }),
+    );
+    offs.push(
+      Events.On("update:available", (ev: any) => {
+        setUpdateInfo(ev.data as UpdateInfo);
+        setUpdateBanner(true);
       }),
     );
     offs.push(
@@ -226,6 +234,36 @@ export default function App() {
     return await ClipService.TestSync();
   }, []);
 
+  const checkUpdate = useCallback(async () => {
+    try {
+      const info = await ClipService.CheckUpdate();
+      setUpdateInfo(info);
+      if (info.available) {
+        setUpdateBanner(true);
+        notify(`发现新版本 v${info.version}`);
+      } else if (!info.error) {
+        notify("已是最新版本");
+      } else {
+        notify(`检查更新失败：${info.error}`);
+      }
+      return info;
+    } catch (err) {
+      notify(`检查更新失败：${String(err)}`);
+      throw err;
+    }
+  }, [notify]);
+
+  const installUpdate = useCallback(() => {
+    void (async () => {
+      notify("正在下载更新，完成后会自动安装…");
+      try {
+        await ClipService.InstallUpdate();
+      } catch (err) {
+        notify(`更新失败：${String(err)}`);
+      }
+    })();
+  }, [notify]);
+
   const moveSelection = useCallback(
     (delta: number) => {
       if (items.length === 0) return;
@@ -280,6 +318,26 @@ export default function App() {
   return (
     <div className={`app ${view === "settings" ? "is-settings" : ""}`}>
       <TitleBar capturing={capturing} enabled={settings !== null} onToggleCapture={toggleCapture} />
+
+      {updateInfo?.available && updateBanner ? (
+        <div className="update-banner">
+          <span>
+            有新版本 <strong>v{updateInfo.version}</strong>（当前 v{updateInfo.current}）
+            {updateInfo.assetSize ? ` · ${Math.round(updateInfo.assetSize / 1024 / 1024)} MB` : ""}
+          </span>
+          <span className="update-banner-actions">
+            <button className="btn btn-primary btn-sm" onClick={installUpdate}>
+              下载并安装
+            </button>
+            <button className="btn btn-ghost btn-sm" onClick={() => void ClipService.OpenReleasePage()}>
+              更新说明
+            </button>
+            <button className="btn btn-ghost btn-sm" onClick={() => setUpdateBanner(false)}>
+              稍后
+            </button>
+          </span>
+        </div>
+      ) : null}
 
       <div className="workspace">
         <Sidebar
@@ -391,7 +449,11 @@ export default function App() {
             onClearHistory={clearHistory}
             onOpenDataDir={() => void ClipService.OpenDataDir()}
             onQuit={() => void ClipService.Quit()}
-            onTestSync={testSync}
+            updateInfo={updateInfo}
+          onCheckUpdate={checkUpdate}
+          onInstallUpdate={installUpdate}
+          onOpenRelease={() => void ClipService.OpenReleasePage()}
+          onTestSync={testSync}
             onSyncNow={() => void runSync()}
           />
         )}

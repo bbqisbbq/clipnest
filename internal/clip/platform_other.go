@@ -31,6 +31,7 @@ func setAutoStart(bool, string) error                            { return ErrNot
 func autoStartEnabled() bool                                     { return false }
 func autoStartCommandValue() string                              { return "" }
 func shellOpen(string) error                                     { return ErrNotSupported }
+func OpenExternal(string) error                                  { return ErrNotSupported }
 func revealInExplorer(string) error                              { return ErrNotSupported }
 func clipboardOwnerApp() string                                  { return "" }
 

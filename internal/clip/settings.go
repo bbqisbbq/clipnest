@@ -47,6 +47,8 @@ type Settings struct {
 	// CloseToTray hides the window on close instead of quitting. Kept for
 	// documentation: it is always true in this build.
 	CloseToTray bool `json:"closeToTray"`
+	// UpdateCheck polls GitHub for a newer release shortly after startup.
+	UpdateCheck bool `json:"updateCheck"`
 	// AutoStart registers the app in HKCU\...\Run.
 	AutoStart bool `json:"autoStart"`
 	Theme     string `json:"theme"` // "system" | "dark" | "light"
@@ -59,6 +61,12 @@ type Settings struct {
 	SyncPass        string `json:"syncPass"`
 	SyncFile        string `json:"syncFile"`
 	SyncIntervalMin int    `json:"syncIntervalMin"`
+	// SyncSettings shares the non-machine-specific settings (capture toggles,
+	// retention, ignore rules, hotkey, paste behaviour) with other machines.
+	SyncSettings bool `json:"syncSettings"`
+	// SyncUpdatedAt stamps the last change of the shareable settings, so peers
+	// can tell whose copy is newer.
+	SyncUpdatedAt time.Time `json:"syncUpdatedAt"`
 }
 
 // DefaultSettings is used on first launch or when settings.json is missing.
@@ -89,6 +97,8 @@ func DefaultSettings() Settings {
 		SyncPass:        "",
 		SyncFile:        DefaultSyncFile,
 		SyncIntervalMin: 15,
+		SyncSettings:    true,
+		UpdateCheck:     true,
 	}
 }
 

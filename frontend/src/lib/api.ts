@@ -11,6 +11,7 @@ export type Stats = Models.Stats;
 export type AppInfo = Models.AppInfo;
 export type Filter = Models.Filter;
 export type SyncStatus = Models.SyncStatus;
+export type UpdateInfo = Models.UpdateInfo;
 
 export const KIND_LABEL: Record<string, string> = {
   text: "文本",
@@ -52,5 +53,8 @@ export function emptySettings(): Settings {
     syncPass: "",
     syncFile: "clipnest-sync.json",
     syncIntervalMin: 15,
+    syncSettings: true,
+    updateCheck: true,
+    syncUpdatedAt: '',
   };
 }

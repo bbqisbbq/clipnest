@@ -19,8 +19,14 @@ ClipNest 在你使用电脑时安静地记录进入过系统剪贴板的一切�
 - **多格式，且不漏**：文本、链接、图片（`PNG`/`CF_DIB`/`CF_DIBV5`）、富文本（`HTML Format` / RTF）、
   文件（`CF_HDROP`）、OLE 延迟渲染的剪贴板，最后还有「其它格式」兜底（原样保存私有格式字节，
   可原样粘回）。覆盖细节见 [docs/CAPTURE.md](docs/CAPTURE.md)。
-- **WebDAV 跨机器同步**：整份历史发布成一个 JSON 文档，按内容哈希合并；收藏标记、复制次数都取并集。
-  配置与合并规则见 [docs/SYNC.md](docs/SYNC.md)。
+- **WebDAV 跨机器同步（增量）**：远端是一个小目录树——`manifest.json` 索引 + 每条记录一个
+  `items/<hash>.json` + 原始字节的 `blobs/<hash>.png|bin`，只传有变化的条目；按内容哈希合并，
+  收藏与计数取并集，**设置项也能一起同步**。设计与限制见 [docs/SYNC.md](docs/SYNC.md)。
+- **本地数据库**：历史和图片存在一个 SQLite 文件里（`clipnest.db`），搜索走索引、写入事务化，
+  备份就是复制一个文件；旧的 JSONL 历史首次启动自动迁移。
+- **自动更新**：启动后检查 GitHub Releases，发现新版本在窗口顶部提示，一键下载并静默安装。
+- **自带字体**：打包 Inter（拉丁）+ Noto Sans SC（中文）+ JetBrains Mono（等宽），
+  不再依赖系统「微软雅黑」，125%/150% 缩放下也不发虚。
 - **去重**：按内容哈希去重，重复复制只更新时间戳与次数，不产生垃圾条目。
 - **收藏 / 搜索 / 分类**：全部、收藏、文本、链接、图片、文件、富文本、其它格式；搜索匹配正文、文件名与来源程序。
 - **一键回填**：选中「复制」或双击条目，把内容重新写回剪贴板，并抑制自己写入产生的回声记录。
@@ -49,8 +55,8 @@ ClipNest 在你使用电脑时安静地记录进入过系统剪贴板的一切�
 
 | 文件 | 安装到 | 权限 |
 | --- | --- | --- |
-| `bin\clipnest-0.1.0-amd64-setup.exe` | `C:\Program Files\bbqisbbq\ClipNest` | 需要管理员（UAC） |
-| `bin\clipnest-0.1.0-amd64-setup-per-user.exe` | `%LOCALAPPDATA%\Programs\ClipNest` | 免 UAC，当前用户 |
+| `bin\clipnest-0.2.0-amd64-setup.exe` | `C:\Program Files\bbqisbbq\ClipNest` | 需要管理员（UAC） |
+| `bin\clipnest-0.2.0-amd64-setup-per-user.exe` | `%LOCALAPPDATA%\Programs\ClipNest` | 免 UAC，当前用户 |
 
 安装向导（简体中文）会问三件事：
 
@@ -59,6 +65,9 @@ ClipNest 在你使用电脑时安静地记录进入过系统剪贴板的一切�
    `"<安装目录>\clipnest.exe" --background`，登录后静默驻留托盘、不弹窗。
    之后随时可以在托盘菜单或设置页的「开机自动启动」关掉，两边状态是同步的。
 3. 装完勾选「立即启动」。
+
+装好后可以完全不管更新：程序会自己检查 GitHub Releases 并在窗口顶部提示；
+也可以在「设置 → 更新」里手动检查，或点托盘菜单的「检查更新…」。
 
 其它行为：
 
@@ -151,15 +160,18 @@ wails3 package      # 生成 NSIS 安装包（需要 NSIS，模板已内置配�
 
 ```
 %APPDATA%\ClipNest\
-  items.jsonl     # 一行一条记录（JSON），改动后防抖 400ms 原子重写
-  settings.json   # 采集/保留/忽略/快捷键等设置
-  blobs\          # 图片（<id>.png）与其它格式（<id>.bin）的原始数据
-  clipnest.log    # 诊断日志（启动、弹窗定位、粘贴结果）
+  clipnest.db     # SQLite 数据库：条目 + 图片/私有格式的 BLOB（WAL 模式）
+  settings.json   # 采集/保留/忽略/快捷键/同步/更新等设置
+  clipnest.log    # 诊断日志（启动、同步、弹窗定位、前端异常、更新）
 ```
 
-- 单条记录见 `internal/clip/model.go` 的 `Item`；
-- 历史全量常驻内存（万级条目无压力），筛选与搜索在内存完成，写入不阻塞 UI 线程；
-- 退出时 `OnShutdown` 会 flush 一次，正常关闭不丢数据；异常退出最多丢失最后一次 400ms 内的改动。
+- **SQLite 单文件**（`modernc.org/sqlite`，纯 Go 驱动，无需 cgo）：条目表 + BLOB 表，搜索走索引，
+  写入是事务性的，进程被强杀也不会留下写坏一半的索引；备份 = 复制一个文件。
+- 表结构见 `internal/clip/store.go` 的 `schemaSQL`；单条记录见 `model.go` 的 `Item`。
+- 图片与「其它格式」的原始字节存在 BLOB 表里，数据库因此自包含（`%APPDATA%\ClipNest\clipnest.db`）。
+- 旧版本（≤0.1.1）的 `items.jsonl` + `blobs\` 会在首次启动时自动导入，原文件改名为
+  `items.jsonl.migrated` 保留（不删除）。
+- 保留策略（条数 / 天数）在每次写入后执行，收藏条目豁免。
 
 ## 目录结构
 
@@ -168,9 +180,10 @@ main.go                       应用装配：托盘、两个无边框窗口（�
 internal/clip/
   model.go                    Item / Filter / Stats / Captured 等数据结构
   settings.go                 设置结构与默认值（含 WebDAV 字段）
-  store.go                    文件存储：JSONL 索引 + blob、去重、保留策略、诊断日志
-  service.go                  绑定给前端的 ClipService（28 个方法）
-  sync.go                     WebDAV 同步：GET/PUT/MKCOL、快照、按哈希合并、定时循环
+  store.go                    SQLite 存储：条目 + BLOB、去重、保留策略、旧 JSONL 迁移、诊断日志
+  service.go                  绑定给前端的 ClipService（30+ 个方法）
+  sync.go                     WebDAV 同步 v2：manifest + 每条一个文件的增量同步、设置同步
+  update.go                   自更新：GitHub Releases 检查、下载安装包、静默安装
   win32_windows.go            Win32 基元：剪贴板 API、前景程序、开机自启
   clipboard_windows.go        读取/写回各类剪贴板格式（含自定义格式与 RTF）
   dib_windows.go              CF_DIB(V5) ↔ image.NRGBA 互转
@@ -207,7 +220,8 @@ docs/FILE-STRATEGY.md         文件复制的方案对比与数据模型
 - **GDI 图片格式**：只认 `CF_DIB`/`CF_DIBV5`/`PNG`，用 `CF_BITMAP` 句柄传图的程序需要 `GetDIBits`（未实现）。
 - **自定义格式上限 1 MiB**：超出的私有格式会被跳过，避免撑爆历史。
 - **不做跨屏 DPI 特调**：窗口按系统 DPI 缩放，多屏不同缩放下位置由 Wails/WebView2 决定。
-- **历史全量在内存**：十万级条目需要改成 SQLite 或分页索引（当前默认上限 1000 条，足够日常）。
+- **同步不做删除传播**：一台机器删掉的条目，下次同步会被另一台带回来（见 [docs/SYNC.md](docs/SYNC.md)）。
+- **更新需要联网**：GitHub Releases 检查在无网络或 API 限流时会失败，日志里有原始原因，不影响其它功能。
 
 ## 隐私
 
@@ -219,11 +233,12 @@ docs/FILE-STRATEGY.md         文件复制的方案对比与数据模型
 
 - [ ] 方案 E：条目「归档到库」按钮 + 归档目录配额
 - [ ] 同步增强：删除墓碑（tombstone）、字段级冲突合并、可选 DPAPI 加密密码
+- [ ] 更新：增量补丁（差分更新）与签名校验
 - [ ] 弹窗：图片/文件条目缩略图预览 + 数字键 1–9 快速选择
 - [ ] 分类规则（按来源程序自动打标签）
 - [ ] 条目内图片压缩 / 缩略图缓存，降低 blob 体积
-- [ ] SQLite 存储后端（历史规模大了再切换）
+
 
 ## 许可
 
-MIT，见 [LICENSE](LICENSE)。
+MIT，见 [LICENSE](LICENSE)。没有附加条款：拿去用、改、商用、闭源分发都行，保留版权声明即可。

@@ -1,0 +1,120 @@
+{
+ "version": 2,
+ "device": "DESKTOP-EQPTGVL",
+ "updatedAt": "2026-11-17T07:40:26.1845329Z",
+ "items": [
+  {
+   "hash": "be83b99956ab952bbe18f24debf2c514",
+   "id": "5aa52ad4908d9ea6",
+   "kind": "rich",
+   "preview": "Hello ClipNest second line",
+   "updatedAt": "2026-11-17T07:40:21.5485538Z",
+   "seenCount": 13
+  },
+  {
+   "hash": "866c428d5ef2323db85875440fa1e5de",
+   "id": "92b4dab12d0041bb",
+   "kind": "rich",
+   "preview": "https://github.com/bbqisbbq/legado",
+   "updatedAt": "2026-11-17T07:16:45.3166398Z",
+   "seenCount": 1
+  },
+  {
+   "hash": "ec6712b423146a4e953ee3d78056f347",
+   "id": "9898b3b790fd2220",
+   "kind": "text",
+   "preview": "INSTALLED-BUILD-SMOKE-TEST",
+   "updatedAt": "2026-11-17T07:06:39.7702428Z",
+   "seenCount": 9
+  },
+  {
+   "hash": "289f222a4e1fd56c20e94fa2ddced67d",
+   "id": "53c3ed5122ee6c89",
+   "kind": "text",
+   "preview": "echo \"clipnest: 一键把复制历史贴回光标位置\"",
+   "updatedAt": "2026-11-17T06:46:55.52451Z",
+   "seenCount": 6
+  },
+  {
+   "hash": "d22e57f923725bc087447854e488edd4",
+   "id": "026f2623ccc0223c",
+   "kind": "custom",
+   "preview": "ExcelClipRange · 12 B",
+   "updatedAt": "2026-11-17T06:43:31.5031842Z",
+   "seenCount": 1
+  },
+  {
+   "hash": "207d29bd33cb9556fa1926a1bddecaf3",
+   "id": "8612c23d0289c698",
+   "kind": "rich",
+   "preview": "Project ClipNest 这是从 Word 里复制的一段富文本。",
+   "updatedAt": "2026-11-17T06:43:30.4928587Z",
+   "seenCount": 1
+  },
+  {
+   "hash": "349c859084c848bd6180455ddf0693c4",
+   "id": "bae5e8d78d568299",
+   "kind": "files",
+   "preview": "README.md, CAPTURE.md",
+   "updatedAt": "2026-11-17T06:43:28.0727709Z",
+   "seenCount": 1
+  },
+  {
+   "hash": "c383e5be491906a344ec3f8d3576f07e",
+   "id": "a5337859bdc14b8c",
+   "kind": "image",
+   "preview": "360 × 240 图像",
+   "updatedAt": "2026-11-17T06:43:25.9951847Z",
+   "seenCount": 1
+  },
+  {
+   "hash": "faa4fdadd9435bcb3a7d05d7b9344ecf",
+   "id": "2dce48d71860b8bb",
+   "kind": "link",
+   "preview": "https://v3.wails.io/learn/",
+   "updatedAt": "2026-11-17T06:43:24.6576556Z",
+   "seenCount": 1
+  },
+  {
+   "hash": "b838e7d31c7a08896e06f6fd408836f6",
+   "id": "61d7bc9b3f37d201",
+   "kind": "text",
+   "preview": "把这段会议纪要发给产品同学：剪贴板管理器的快捷键改成 Ctrl+Shift+V。",
+   "updatedAt": "2026-11-17T06:43:23.946205Z",
+   "seenCount": 1
+  }
+ ],
+ "settings": {
+  "updatedAt": "0001-01-01T00:00:00Z",
+  "device": "DESKTOP-EQPTGVL",
+  "values": {
+   "capture": true,
+   "captureText": true,
+   "captureLink": true,
+   "captureImage": true,
+   "captureFiles": true,
+   "captureRich": true,
+   "captureCustom": true,
+   "maxTextLength": 100000,
+   "maxItems": 1000,
+   "maxAgeDays": 30,
+   "ignorePatterns": null,
+   "ignoreApps": null,
+   "hotkey": "Ctrl+Shift+V",
+   "pasteOnPick": true,
+   "showOnLaunch": false,
+   "closeToTray": true,
+   "updateCheck": true,
+   "autoStart": false,
+   "theme": "system",
+   "syncEnabled": false,
+   "syncUrl": "",
+   "syncUser": "",
+   "syncPass": "",
+   "syncFile": "",
+   "syncIntervalMin": 0,
+   "syncSettings": false,
+   "syncUpdatedAt": "0001-01-01T00:00:00Z"
+  }
+ }
+}

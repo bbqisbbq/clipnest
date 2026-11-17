@@ -3,6 +3,12 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import Picker from "./Picker";
 import { ClipService } from "./lib/api";
+
+// Bundled fonts (SIL OFL / Apache-2.0). Shipping them avoids relying on
+// "Microsoft YaHei", which renders blurry at fractional Windows scaling.
+import "@fontsource-variable/inter";
+import "@fontsource-variable/noto-sans-sc";
+import "@fontsource-variable/jetbrains-mono";
 import "./styles.css";
 
 // The same bundle serves two Wails windows: the manager (default) and the

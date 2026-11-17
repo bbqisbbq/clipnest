@@ -38,6 +38,12 @@
 
   --shadow-pop: 0 20px 48px rgba(0, 0, 0, 0.5);
   --ease: cubic-bezier(0.2, 0.6, 0.3, 1);
+
+  /* Bundled fonts: Inter (Latin), Noto Sans SC (CJK), JetBrains Mono (code).
+     Both are hinted for screens, which is why they look sharper than the
+     system CJK face at 125%/150% scaling. */
+  --font-ui: "Inter Variable", "Noto Sans SC Variable", "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", "Cascadia Mono", Consolas, monospace;
 }
 
 * {
@@ -54,12 +60,17 @@ body,
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
+  font-family: var(--font-ui);
   font-size: 13px;
   line-height: 1.5;
+  font-optical-sizing: auto;
+  /* Never let the browser fake bold/italic: synthetic weights are the main
+     reason text looks "fuzzy" at non-integer DPI scaling. */
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
-  font-feature-settings: "tnum" 1;
+  font-feature-settings: "tnum" 1, "cv05" 1;
 }
 
 button {
@@ -119,12 +130,13 @@ textarea {
 }
 
 .mono {
-  font-family: "Cascadia Mono", Consolas, monospace;
+  font-family: var(--font-mono);
 }
 
 /* ---------------- shell ---------------- */
 
 .app {
+  position: relative;
   display: grid;
   grid-template-rows: 40px minmax(0, 1fr);
   height: 100vh;
@@ -681,7 +693,7 @@ textarea {
   border-radius: var(--r-md);
   border: 1px solid var(--border-soft);
   background: #0b0e13;
-  font-family: "Cascadia Mono", Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.65;
   white-space: pre-wrap;
@@ -800,7 +812,7 @@ textarea {
   display: flex;
   justify-content: space-between;
   gap: 10px;
-  font-family: "Cascadia Mono", Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   color: var(--k-custom);
 }
@@ -1038,7 +1050,10 @@ textarea {
 
 .field {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  /* The label column never shrinks below 180px: a squeezed label used to wrap
+     into a vertical single-character column, which is exactly the bug this
+     layout replaces. */
+  grid-template-columns: minmax(180px, 1fr) auto;
   align-items: center;
   gap: 16px;
   padding: 8px 0;
@@ -1073,6 +1088,30 @@ textarea {
   display: inline-flex;
   align-items: center;
   gap: 2px;
+  min-width: 0;
+}
+
+/* Very narrow panes: put the control under its label instead of squeezing. */
+@media (max-width: 1040px) {
+  .field {
+    grid-template-columns: minmax(150px, 1fr) auto;
+    gap: 10px;
+  }
+}
+
+@media (max-width: 940px) {
+  .field:not(.is-stacked) {
+    grid-template-columns: 1fr;
+    gap: 5px;
+  }
+
+  .field:not(.is-stacked) .field-control {
+    justify-content: flex-start;
+  }
+
+  .field-pair {
+    grid-template-columns: 1fr;
+  }
 }
 
 .field-control {
@@ -1130,7 +1169,7 @@ textarea {
 .input.is-area {
   width: 100%;
   resize: vertical;
-  font-family: "Cascadia Mono", Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 11.5px;
   line-height: 1.6;
   min-height: 74px;
@@ -1444,4 +1483,41 @@ body.is-picker {
 
 .picker-status {
   color: var(--warn);
+}
+
+/* ---------------- update banner ---------------- */
+
+.update-banner {
+  position: absolute;
+  top: 46px;
+  right: 14px;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 520px;
+  padding: 9px 12px;
+  border-radius: var(--r-md);
+  border: 1px solid rgba(125, 140, 255, 0.38);
+  background: linear-gradient(180deg, #1a1f2e, #141824);
+  box-shadow: var(--shadow-pop);
+  font-size: 12.5px;
+  animation: toast-in 0.18s var(--ease);
+}
+
+.update-banner strong {
+  color: var(--accent-soft, #a9b4ff);
+  font-weight: 600;
+}
+
+.update-banner-actions {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+
+.btn-sm {
+  height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
 }

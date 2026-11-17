@@ -13,6 +13,9 @@ var procShellExecuteW = shell32.NewProc("ShellExecuteW")
 
 const swShowNormal = 1
 
+// OpenExternal opens a URL in the default browser (exported for main.go's hooks).
+func OpenExternal(target string) error { return shellOpen(target) }
+
 // shellOpen opens a path or URL with its default handler.
 func shellOpen(target string) error {
 	op, _ := windows.UTF16PtrFromString("open")

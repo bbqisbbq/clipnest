@@ -14,7 +14,7 @@ import (
 )
 
 // Version is shown in the UI and written to the log on start.
-const Version = "0.1.0"
+const Version = "0.2.0"
 
 // AppInfo is static information the frontend needs for the about/settings view.
 type AppInfo struct {
@@ -47,6 +47,8 @@ type Hooks struct {
 	ShowPickerAt func(x, y int) bool
 	// HidePicker hides the popup window.
 	HidePicker func()
+	// OpenURL opens a link in the default browser.
+	OpenURL func(url string) error
 }
 
 // ClipService is the object bound to the webview.
@@ -97,6 +99,7 @@ func (s *ClipService) Start() error {
 	go s.captureLoop()
 	go s.refreshFilesLoop()
 	go s.syncLoop()
+	go s.updateCheckLoop()
 	// Whatever is already on the clipboard when the app starts is also part of
 	// "what went through the clipboard", so record it once.
 	go func() {
@@ -343,7 +346,7 @@ func (s *ClipService) writeToClipboard(it Item) error {
 
 	switch it.Kind {
 	case KindImage:
-		data, err := os.ReadFile(s.store.BlobPath(it.ImageFile))
+		data, err := s.store.LoadBlobByName(it.ImageFile)
 		if err != nil {
 			return err
 		}
@@ -360,7 +363,7 @@ func (s *ClipService) writeToClipboard(it Item) error {
 		}
 		return WriteHTMLToClipboard(it.HTML, it.Text)
 	case KindCustom:
-		data, err := os.ReadFile(s.store.BlobPath(it.BinaryFile))
+		data, err := s.store.LoadBlobByName(it.BinaryFile)
 		if err != nil {
 			return err
 		}
@@ -422,7 +425,7 @@ func (s *ClipService) OpenItem(id string) error {
 		}
 		return revealInExplorer(it.Files[0].Path)
 	case KindImage:
-		data, err := os.ReadFile(s.store.BlobPath(it.ImageFile))
+		data, err := s.store.LoadBlobByName(it.ImageFile)
 		if err != nil {
 			return err
 		}
@@ -467,6 +470,7 @@ func (s *ClipService) SaveSettings(st Settings) (Settings, error) {
 	}
 	s.store.Prune(st.MaxItems, st.MaxAgeDays)
 	go s.syncLoop()
+	go s.updateCheckLoop()
 	s.emit("settings:changed", st)
 	s.emit("clip:stats", s.store.Stats())
 	return s.store.Settings(), nil

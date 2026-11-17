@@ -1,252 +1,256 @@
 package clip
 
 import (
-	"bufio"
 	"crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
+	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	_ "modernc.org/sqlite" // pure-Go SQLite driver (no cgo)
 )
 
-// Store is an append-friendly, file-backed clipboard history.
+// Store is the clipboard history, persisted in a single SQLite database.
 //
-// Layout below the data directory (default: %APPDATA%\ClipNest):
+//	%APPDATA%\ClipNest\
+//	  clipnest.db      items + blobs (WAL mode)
+//	  settings.json    capture/UI settings (kept as JSON: tiny, human-editable)
+//	  clipnest.log     diagnostics
 //
-//	items.jsonl   one JSON object per entry, rewritten atomically on change
-//	settings.json capture/UI settings
-//	blobs\        PNG payloads for image entries
-//
-// The whole history lives in memory; writes are coalesced and flushed from a
-// background goroutine so capturing never blocks the UI thread.
+// SQLite replaced the earlier "one JSONL index + blob directory" layout: searches
+// are indexed, writes are transactional, and an interrupted process can no longer
+// leave a half-written index behind. Blobs (images, unknown formats) live in the
+// same database, so backing up the history is a single file copy.
 type Store struct {
-	mu     sync.RWMutex
-	dir    string
-	blobs  string
-	items  map[string]*Item
-	byHash map[string]string // hash -> item id
-	order  []string          // ids, newest first (kept in sync on writes)
+	db           *sql.DB
+	dir          string
+	settingsPath string
 
-	settings    Settings
-	lastCapture time.Time
-
-	dirty   chan struct{}
-	done    chan struct{}
-	flushed chan struct{}
-	closeMu sync.Once
-	closed  bool
+	mu     sync.RWMutex // guards settings + closed
+	settings Settings
+	closed   bool
 }
 
-// Open loads (or initialises) a store rooted at dir.
+const dbFileName = "clipnest.db"
+
+const schemaSQL = `
+CREATE TABLE IF NOT EXISTS items (
+  id           TEXT PRIMARY KEY,
+  kind         TEXT NOT NULL,
+  text         TEXT NOT NULL DEFAULT '',
+  preview      TEXT NOT NULL DEFAULT '',
+  hash         TEXT NOT NULL,
+  size         INTEGER NOT NULL DEFAULT 0,
+  created_at   TEXT NOT NULL,
+  updated_at   TEXT NOT NULL,
+  seen_count   INTEGER NOT NULL DEFAULT 1,
+  copy_count   INTEGER NOT NULL DEFAULT 0,
+  pinned       INTEGER NOT NULL DEFAULT 0,
+  source_app   TEXT NOT NULL DEFAULT '',
+  width        INTEGER NOT NULL DEFAULT 0,
+  height       INTEGER NOT NULL DEFAULT 0,
+  html         TEXT NOT NULL DEFAULT '',
+  rtf          TEXT NOT NULL DEFAULT '',
+  format_name  TEXT NOT NULL DEFAULT '',
+  format_id    INTEGER NOT NULL DEFAULT 0,
+  files        TEXT NOT NULL DEFAULT '[]'
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_items_hash ON items(hash);
+CREATE INDEX IF NOT EXISTS idx_items_updated ON items(pinned DESC, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_items_kind ON items(kind);
+
+CREATE TABLE IF NOT EXISTS blobs (
+  item_id TEXT PRIMARY KEY,
+  ext     TEXT NOT NULL,
+  data    BLOB NOT NULL
+);
+`
+
+// Open opens (or creates and migrates) the database inside dir.
 func Open(dir string) (*Store, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
-	blobs := filepath.Join(dir, "blobs")
-	if err := os.MkdirAll(blobs, 0o755); err != nil {
+	dsn := "file:" + filepath.ToSlash(filepath.Join(dir, dbFileName)) +
+		"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)"
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
 		return nil, err
 	}
+	// SQLite serialises writers anyway; one connection avoids lock churn
+	// between the capture goroutine and UI queries.
+	db.SetMaxOpenConns(1)
+	if _, err := db.Exec(schemaSQL); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("初始化数据库失败: %w", err)
+	}
+
 	s := &Store{
-		dir:     dir,
-		blobs:   blobs,
-		items:   make(map[string]*Item),
-		byHash:  make(map[string]string),
-		settings: DefaultSettings(),
-		dirty:    make(chan struct{}, 1),
-		done:     make(chan struct{}),
-		flushed:  make(chan struct{}),
-	}
-	if err := s.loadItems(); err != nil {
-		return nil, err
+		db:           db,
+		dir:          dir,
+		settingsPath: filepath.Join(dir, "settings.json"),
+		settings:     DefaultSettings(),
 	}
 	if err := s.loadSettings(); err != nil {
+		db.Close()
 		return nil, err
 	}
-	s.rebuildOrder()
-	go s.saver()
+	if err := s.migrateLegacyJSONL(); err != nil {
+		// A failed migration must not brick the app; the old files stay intact.
+		Logf(dir, "migrate legacy history failed: %v", err)
+	}
 	return s, nil
 }
 
-// Logf appends one diagnostic line to <dir>/clipnest.log. Logging failures are
-// deliberately silent: diagnostics must never break the app.
-func Logf(dir, format string, args ...any) {
-	if dir == "" {
-		return
-	}
-	line := fmt.Sprintf("%s %s\n", time.Now().Format("2006-01-02 15:04:05.000"), fmt.Sprintf(format, args...))
-	f, err := os.OpenFile(filepath.Join(dir, "clipnest.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return
-	}
-	defer f.Close()
-	_, _ = f.WriteString(line)
-}
-
-// TrimLog keeps clipnest.log below limit bytes so it cannot grow forever.
-func TrimLog(dir string, limit int64) {
-	p := filepath.Join(dir, "clipnest.log")
-	if info, err := os.Stat(p); err == nil && info.Size() > limit {
-		_ = os.WriteFile(p, nil, 0o644)
-	}
-}
-
-// All returns a copy of every entry, newest first.
-func (s *Store) All() []Item {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	out := make([]Item, 0, len(s.order))
-	for _, id := range s.order {
-		if it := s.items[id]; it != nil {
-			out = append(out, *it)
-		}
-	}
-	return out
-}
-
-// UpsertRemote merges one entry coming from a sync peer.
-//
-// The entry is matched by content hash (so the same text copied on two machines
-// stays one entry). Timestamps decide which body wins, while flags that should
-// never regress — favourite state and counters — are unioned/maximised.
-func (s *Store) UpsertRemote(in Item) (isNew bool, changed bool) {
-	now := nowUTC()
-	s.mu.Lock()
-	defer func() {
-		s.mu.Unlock()
-		s.markDirty()
-	}()
-
-	existingID, found := s.byHash[in.Hash]
-	if found {
-		if local, ok := s.items[existingID]; ok {
-			// Keep the newest body.
-			if in.UpdatedAt.After(local.UpdatedAt) {
-				local.Text = in.Text
-				local.Preview = in.Preview
-				local.HTML = in.HTML
-				local.RTF = in.RTF
-				local.Files = in.Files
-				local.FormatName = in.FormatName
-				local.FormatID = in.FormatID
-				local.ImageFile = in.ImageFile
-				local.BinaryFile = in.BinaryFile
-				local.Width = in.Width
-				local.Height = in.Height
-				local.Size = in.Size
-				if in.SourceApp != "" {
-					local.SourceApp = in.SourceApp
-				}
-				local.UpdatedAt = in.UpdatedAt
-				changed = true
-			}
-			if in.Pinned && !local.Pinned {
-				local.Pinned = true
-				changed = true
-			}
-			if in.SeenCount > local.SeenCount {
-				local.SeenCount = in.SeenCount
-				changed = true
-			}
-			if in.CopyCount > local.CopyCount {
-				local.CopyCount = in.CopyCount
-				changed = true
-			}
-			if !in.CreatedAt.IsZero() && (local.CreatedAt.IsZero() || in.CreatedAt.Before(local.CreatedAt)) {
-				local.CreatedAt = in.CreatedAt
-				changed = true
-			}
-			if changed {
-				s.reorder()
-			}
-			return false, changed
-		}
-	}
-
-	it := in
-	if it.ID == "" {
-		it.ID = newID()
-	}
-	if it.CreatedAt.IsZero() {
-		it.CreatedAt = now
-	}
-	if it.UpdatedAt.IsZero() {
-		it.UpdatedAt = now
-	}
-	if it.SeenCount == 0 {
-		it.SeenCount = 1
-	}
-	s.items[it.ID] = &it
-	s.byHash[it.Hash] = it.ID
-	s.order = append([]string{it.ID}, s.order...)
-	if it.UpdatedAt.After(s.lastCapture) {
-		s.lastCapture = it.UpdatedAt
-	}
-	return true, true
-}
-
-// Dir returns the data directory.
-func (s *Store) Dir() string { return s.dir }
-
-func (s *Store) loadItems() error {
-	f, err := os.Open(filepath.Join(s.dir, "items.jsonl"))
+// migrateLegacyJSONL imports an items.jsonl + blobs/ directory produced by
+// ClipNest <= 0.1.1, then renames the old file so the import runs only once.
+func (s *Store) migrateLegacyJSONL() error {
+	legacy := filepath.Join(s.dir, "items.jsonl")
+	data, err := os.ReadFile(legacy)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
 		}
 		return err
 	}
-	defer f.Close()
 
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
-	for sc.Scan() {
-		line := strings.TrimSpace(sc.Text())
+	var existing int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM items`).Scan(&existing); err != nil {
+		return err
+	}
+	if existing > 0 {
+		return nil // already have data; leave the legacy file alone
+	}
+
+	imported, withBlob := 0, 0
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
 		var it Item
-		if err := json.Unmarshal([]byte(line), &it); err != nil {
-			continue // tolerate a torn line rather than losing the whole history
-		}
-		if it.ID == "" {
+		if err := json.Unmarshal([]byte(line), &it); err != nil || it.ID == "" {
 			continue
 		}
-		s.items[it.ID] = &it
-		if it.Hash != "" {
-			s.byHash[it.Hash] = it.ID
+		blobName := it.ImageFile
+		if blobName == "" {
+			blobName = it.BinaryFile
 		}
-		if it.UpdatedAt.After(s.lastCapture) {
-			s.lastCapture = it.UpdatedAt
+		var payload []byte
+		blobExt := ""
+		if blobName != "" {
+			blobExt = strings.ToLower(filepath.Ext(blobName))
+			if blobExt == "" {
+				blobExt = ".bin"
+			}
+			if b, err := os.ReadFile(filepath.Join(s.dir, "blobs", filepath.Base(blobName))); err == nil {
+				payload = b
+			}
+		}
+
+		cap := Captured{
+			Kind:       it.Kind,
+			Text:       it.Text,
+			HTML:       it.HTML,
+			RTF:        it.RTF,
+			Width:      it.Width,
+			Height:     it.Height,
+			Files:      it.Files,
+			Hash:       it.Hash,
+			Preview:    it.Preview,
+			Size:       it.Size,
+			SourceApp:  it.SourceApp,
+			FormatName: it.FormatName,
+			FormatID:   it.FormatID,
+		}
+		switch blobExt {
+		case ".png":
+			cap.PNG = payload
+		case ".bin":
+			cap.Binary = payload
+		}
+		if payload != nil {
+			withBlob++
+		}
+		added, isNew, err := s.Add(cap)
+		if err == nil && isNew && added != nil {
+			imported++
+			// Preserve the original timestamps and counters.
+			_, _ = s.db.Exec(
+				`UPDATE items SET created_at = ?, updated_at = ?, seen_count = ?, copy_count = ?, pinned = ? WHERE id = ?`,
+				encodeTime(it.CreatedAt), encodeTime(it.UpdatedAt),
+				maxInt(it.SeenCount, 1), it.CopyCount, boolInt(it.Pinned), added.ID)
 		}
 	}
-	return sc.Err()
+
+	_ = os.Rename(legacy, legacy+".migrated")
+	Logf(s.dir, "migrated %d legacy items (%d with blobs) from items.jsonl", imported, withBlob)
+	return nil
 }
 
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+// ---- settings -----------------------------------------------------------
+
 func (s *Store) loadSettings() error {
-	data, err := os.ReadFile(filepath.Join(s.dir, "settings.json"))
+	data, err := os.ReadFile(s.settingsPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
 		}
 		return err
 	}
-	var st = DefaultSettings()
+	st := DefaultSettings()
 	if err := json.Unmarshal(data, &st); err != nil {
-		return nil // keep defaults on a corrupt file
+		return nil // corrupt file → keep defaults
 	}
 	s.settings = st
 	return nil
 }
 
-// PeekSettings reads settings.json without opening the whole store. main() uses
-// it to decide whether the window starts hidden.
+// Settings returns a copy of the current settings.
+func (s *Store) Settings() Settings {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.settings.clone()
+}
+
+// SaveSettings persists settings synchronously (JSON next to the database).
+// Any change to the *shareable* fields bumps SyncUpdatedAt, which is how peers
+// decide whose copy of the settings is newer.
+func (s *Store) SaveSettings(st Settings) error {
+	st = st.clone()
+	s.mu.Lock()
+	if shareableStamp(s.settings) != shareableStamp(st) {
+		st.SyncUpdatedAt = nowUTC()
+	}
+	s.settings = st
+	s.mu.Unlock()
+
+	data, err := json.MarshalIndent(st, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp := s.settingsPath + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, s.settingsPath)
+}
+
+// PeekSettings reads settings.json without opening the database (used before
+// the window is created, to decide whether to start hidden).
 func PeekSettings(dir string) (Settings, error) {
 	data, err := os.ReadFile(filepath.Join(dir, "settings.json"))
 	if err != nil {
@@ -259,118 +263,56 @@ func PeekSettings(dir string) (Settings, error) {
 	return st, nil
 }
 
-// rebuildOrder sorts ids newest-first. Must be called with the lock held or
-// before the store is shared.
-func (s *Store) rebuildOrder() {
-	ids := make([]string, 0, len(s.items))
-	for id := range s.items {
-		ids = append(ids, id)
-	}
-	sort.Slice(ids, func(i, j int) bool {
-		a, b := s.items[ids[i]], s.items[ids[j]]
-		if a.Pinned != b.Pinned {
-			return a.Pinned
-		}
-		return a.UpdatedAt.After(b.UpdatedAt)
-	})
-	s.order = ids
-}
+// ---- lifecycle ----------------------------------------------------------
 
-func (s *Store) reorder() {
-	sort.SliceStable(s.order, func(i, j int) bool {
-		a, b := s.items[s.order[i]], s.items[s.order[j]]
-		if a == nil || b == nil {
-			return false
-		}
-		if a.Pinned != b.Pinned {
-			return a.Pinned
-		}
-		return a.UpdatedAt.After(b.UpdatedAt)
-	})
-}
+// Dir returns the data directory.
+func (s *Store) Dir() string { return s.dir }
 
-func (s *Store) markDirty() {
-	select {
-	case s.dirty <- struct{}{}:
-	default:
-	}
-}
-
-func (s *Store) saver() {
-	defer close(s.flushed)
-	for {
-		select {
-		case <-s.dirty:
-			select {
-			case <-time.After(400 * time.Millisecond):
-			case <-s.done:
-				_ = s.flush()
-				return
-			}
-			_ = s.flush()
-		case <-s.done:
-			_ = s.flush()
-			return
-		}
-	}
-}
-
-// flush atomically rewrites items.jsonl.
-func (s *Store) flush() error {
-	s.mu.RLock()
-	list := make([]Item, 0, len(s.items))
-	for _, id := range s.order {
-		if it := s.items[id]; it != nil {
-			list = append(list, *it)
-		}
-	}
-	closed := s.closed
-	s.mu.RUnlock()
-	if closed && len(list) == 0 {
+// Close checkpoints the WAL and closes the database.
+func (s *Store) Close() error {
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
 		return nil
 	}
+	s.closed = true
+	s.mu.Unlock()
 
-	path := filepath.Join(s.dir, "items.jsonl")
-	tmp := path + ".tmp"
-	f, err := os.Create(tmp)
-	if err != nil {
-		return err
-	}
-	w := bufio.NewWriterSize(f, 256*1024)
-	enc := json.NewEncoder(w)
-	for i := range list {
-		if err := enc.Encode(&list[i]); err != nil {
-			f.Close()
-			os.Remove(tmp)
-			return err
-		}
-	}
-	if err := w.Flush(); err != nil {
-		f.Close()
-		os.Remove(tmp)
-		return err
-	}
-	if err := f.Close(); err != nil {
-		os.Remove(tmp)
-		return err
-	}
-	return os.Rename(tmp, path)
+	// Fold the WAL back in so a copied clipnest.db is self-contained.
+	_, _ = s.db.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`)
+	return s.db.Close()
 }
 
-// Close flushes pending writes and stops background work. It blocks until the
-// last flush finished so a following Open() sees the file on disk.
-func (s *Store) Close() error {
-	s.closeMu.Do(func() {
-		s.mu.Lock()
-		s.closed = true
-		s.mu.Unlock()
-		close(s.done)
-		select {
-		case <-s.flushed:
-		case <-time.After(5 * time.Second):
-		}
-	})
-	return nil
+// ---- items --------------------------------------------------------------
+
+// statFile fills a FileRef from disk. Files are stored by reference (path +
+// size + existence) rather than copied, so the history never duplicates data.
+func statFile(ref FileRef) FileRef {
+	if ref.Path == "" {
+		return ref
+	}
+	ref.Name = filepath.Base(ref.Path)
+	info, err := os.Stat(ref.Path)
+	if err != nil {
+		ref.Exists = false
+		ref.Size = 0
+		ref.IsDir = false
+		return ref
+	}
+	ref.Exists = true
+	ref.IsDir = info.IsDir()
+	ref.Size = info.Size()
+	return ref
+}
+
+func encodeTime(t time.Time) string { return t.UTC().Format(time.RFC3339Nano) }
+
+func decodeTime(v string) time.Time {
+	t, err := time.Parse(time.RFC3339Nano, v)
+	if err != nil {
+		return time.Time{}
+	}
+	return t.UTC()
 }
 
 func newID() string {
@@ -378,225 +320,264 @@ func newID() string {
 	if _, err := rand.Read(b[:]); err != nil {
 		return fmt.Sprintf("%d", time.Now().UnixNano())
 	}
-	return hex.EncodeToString(b[:])
+	return fmt.Sprintf("%x", b[:])
 }
 
-func hashOf(parts ...string) string {
-	h := sha256.New()
-	for _, p := range parts {
-		h.Write([]byte(p))
-		h.Write([]byte{0})
+
+func boolInt(b bool) int {
+	if b {
+		return 1
 	}
-	return hex.EncodeToString(h.Sum(nil))[:32]
+	return 0
 }
 
-// SaveBlob persists a payload and returns its file name.
-func (s *Store) SaveBlob(id, ext string, data []byte) (string, error) {
-	name := id + ext
-	if err := os.WriteFile(filepath.Join(s.blobs, name), data, 0o644); err != nil {
-		return "", err
-	}
-	return name, nil
-}
-
-// BlobPath resolves a blob file name to an absolute path.
-func (s *Store) BlobPath(name string) string {
-	if name == "" {
-		return ""
-	}
-	return filepath.Join(s.blobs, filepath.Base(name))
-}
-
-// ReadBlobData returns a data: URL for the webview.
-func (s *Store) ReadBlobData(name string) (string, error) {
-	p := s.BlobPath(name)
-	data, err := os.ReadFile(p)
-	if err != nil {
-		return "", err
-	}
-	return "data:image/png;base64," + encodeBase64(data), nil
-}
-
-func (s *Store) deleteBlob(name string) {
-	if name == "" {
-		return
-	}
-	_ = os.Remove(s.BlobPath(name))
-}
-
-// Add inserts a capture, or refreshes an existing entry with the same content.
+// Add inserts a capture, or bumps an existing entry with the same content hash.
 // The bool reports whether the entry is new to the history.
 func (s *Store) Add(c Captured) (*Item, bool, error) {
-	id := newID()
-	imageFile, binaryFile := "", ""
-	if len(c.PNG) > 0 {
-		name, err := s.SaveBlob(id, ".png", c.PNG)
-		if err != nil {
-			return nil, false, err
-		}
-		imageFile = name
-	}
-	if len(c.Binary) > 0 {
-		name, err := s.SaveBlob(id, ".bin", c.Binary)
-		if err != nil {
-			return nil, false, err
-		}
-		binaryFile = name
-	}
-
 	now := nowUTC()
-	s.mu.Lock()
-	if existingID, ok := s.byHash[c.Hash]; ok {
-		if it := s.items[existingID]; it != nil {
-			it.UpdatedAt = now
-			it.SeenCount++
-			if c.SourceApp != "" {
-				it.SourceApp = c.SourceApp
-			}
-			s.lastCapture = now
-			s.reorder()
-			s.mu.Unlock()
-			s.markDirty()
-			cp := *it
-			return &cp, false, nil
+
+	var existingID string
+	err := s.db.QueryRow(`SELECT id FROM items WHERE hash = ?`, c.Hash).Scan(&existingID)
+	if err == nil && existingID != "" {
+		if _, err := s.db.Exec(
+			`UPDATE items SET updated_at = ?, seen_count = seen_count + 1,
+			        source_app = CASE WHEN ? <> '' THEN ? ELSE source_app END
+			 WHERE id = ?`,
+			encodeTime(now), c.SourceApp, c.SourceApp, existingID,
+		); err != nil {
+			return nil, false, err
 		}
+		it, ok := s.Get(existingID)
+		if !ok {
+			return nil, false, errors.New("条目读取失败")
+		}
+		return &it, false, nil
+	}
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, false, err
 	}
 
-	it := &Item{
-		ID:        id,
-		Kind:      c.Kind,
-		Text:      c.Text,
-		Preview:   c.Preview,
-		Hash:      c.Hash,
-		Size:      c.Size,
-		CreatedAt: now,
-		UpdatedAt: now,
-		SeenCount: 1,
+	id := newID()
+	it := Item{
+		ID:         id,
+		Kind:       c.Kind,
+		Text:       c.Text,
+		Preview:    c.Preview,
+		Hash:       c.Hash,
+		Size:       c.Size,
+		CreatedAt:  now,
+		UpdatedAt:  now,
+		SeenCount:  1,
 		SourceApp:  c.SourceApp,
-		ImageFile:  imageFile,
 		Width:      c.Width,
 		Height:     c.Height,
 		HTML:       c.HTML,
 		RTF:        c.RTF,
-		BinaryFile: binaryFile,
 		FormatName: c.FormatName,
 		FormatID:   c.FormatID,
 		Files:      c.Files,
 	}
-	s.items[it.ID] = it
-	if c.Hash != "" {
-		s.byHash[c.Hash] = it.ID
+	if len(c.PNG) > 0 {
+		it.ImageFile = id + ".png"
 	}
-	s.order = append([]string{it.ID}, s.order...)
-	s.lastCapture = now
-	s.mu.Unlock()
-	s.markDirty()
-	cp := *it
-	return &cp, true, nil
+	if len(c.Binary) > 0 {
+		it.BinaryFile = id + ".bin"
+	}
+
+	if _, err := s.db.Exec(`
+		INSERT INTO items (id, kind, text, preview, hash, size, created_at, updated_at,
+		                   seen_count, copy_count, pinned, source_app, width, height,
+		                   html, rtf, format_name, format_id, files)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		it.ID, string(it.Kind), it.Text, it.Preview, it.Hash, it.Size,
+		encodeTime(it.CreatedAt), encodeTime(it.UpdatedAt),
+		it.SeenCount, it.CopyCount, boolInt(it.Pinned), it.SourceApp,
+		it.Width, it.Height, it.HTML, it.RTF, it.FormatName, it.FormatID,
+		encodeFiles(it.Files),
+	); err != nil {
+		return nil, false, err
+	}
+
+	if len(c.PNG) > 0 {
+		if err := s.SaveBlob(it.ID, ".png", c.PNG); err != nil {
+			return nil, false, err
+		}
+	}
+	if len(c.Binary) > 0 {
+		if err := s.SaveBlob(it.ID, ".bin", c.Binary); err != nil {
+			return nil, false, err
+		}
+	}
+	return &it, true, nil
 }
 
-// Get returns a copy of one entry.
+func encodeFiles(files []FileRef) string {
+	if len(files) == 0 {
+		return "[]"
+	}
+	b, err := json.Marshal(files)
+	if err != nil {
+		return "[]"
+	}
+	return string(b)
+}
+
+// itemColumns must stay in sync with scanItem. The blob extension comes along in
+// the same row: querying it per item would deadlock, because the store uses a
+// single connection and the outer rows are still open.
+const itemColumns = `i.id, i.kind, i.text, i.preview, i.hash, i.size, i.created_at, i.updated_at,
+	i.seen_count, i.copy_count, i.pinned, i.source_app, i.width, i.height, i.html, i.rtf,
+	i.format_name, i.format_id, i.files, COALESCE(b.ext, '')`
+
+const selectItems = `SELECT ` + itemColumns + ` FROM items i LEFT JOIN blobs b ON b.item_id = i.id`
+
+type scannable interface {
+	Scan(dest ...any) error
+}
+
+func scanItem(sc scannable) (Item, error) {
+	var (
+		it                   Item
+		kind                 string
+		createdAt, updatedAt string
+		pinned               int
+		filesJSON            string
+		blobExt              string
+	)
+	err := sc.Scan(
+		&it.ID, &kind, &it.Text, &it.Preview, &it.Hash, &it.Size,
+		&createdAt, &updatedAt, &it.SeenCount, &it.CopyCount, &pinned,
+		&it.SourceApp, &it.Width, &it.Height, &it.HTML, &it.RTF,
+		&it.FormatName, &it.FormatID, &filesJSON, &blobExt,
+	)
+	if err != nil {
+		return Item{}, err
+	}
+	it.Kind = Kind(kind)
+	it.CreatedAt = decodeTime(createdAt)
+	it.UpdatedAt = decodeTime(updatedAt)
+	it.Pinned = pinned != 0
+	if filesJSON != "" && filesJSON != "[]" {
+		_ = json.Unmarshal([]byte(filesJSON), &it.Files)
+	}
+	switch blobExt {
+	case "":
+	case ".png":
+		it.ImageFile = it.ID + blobExt
+	default:
+		it.BinaryFile = it.ID + blobExt
+	}
+	return it, nil
+}
+
+// Get returns one entry.
 func (s *Store) Get(id string) (Item, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	it, ok := s.items[id]
-	if !ok {
+	row := s.db.QueryRow(selectItems+` WHERE i.id = ?`, id)
+	it, err := scanItem(row)
+	if err != nil {
 		return Item{}, false
 	}
-	return *it, true
+	return it, true
 }
 
-// List returns entries matching the filter, newest (and pinned) first.
+func (s *Store) queryItems(query string, args ...any) ([]Item, error) {
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]Item, 0, 64)
+	for rows.Next() {
+		it, err := scanItem(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, it)
+	}
+	return out, rows.Err()
+}
+
+// List returns entries matching the filter, pinned first then newest first.
 func (s *Store) List(f Filter) []Item {
-	if f.Limit <= 0 || f.Limit > 2000 {
+	if f.Limit <= 0 || f.Limit > 5000 {
 		f.Limit = 500
 	}
-	q := strings.ToLower(strings.TrimSpace(f.Query))
-
-	s.mu.RLock()
-	out := make([]Item, 0, min(len(s.order), f.Limit))
-	skipped := 0
-	for _, id := range s.order {
-		it := s.items[id]
-		if it == nil {
-			continue
-		}
-		if f.Pinned && !it.Pinned {
-			continue
-		}
-		if f.Kind != "" && string(it.Kind) != f.Kind && f.Kind != "all" {
-			continue
-		}
-		if q != "" && !matches(it, q) {
-			continue
-		}
-		if skipped < f.Offset {
-			skipped++
-			continue
-		}
-		out = append(out, *it)
-		if len(out) >= f.Limit {
-			break
-		}
+	if f.Offset < 0 {
+		f.Offset = 0
 	}
-	s.mu.RUnlock()
-	return out
+
+	where := make([]string, 0, 3)
+	args := make([]any, 0, 5)
+
+	if f.Pinned {
+		where = append(where, "i.pinned = 1")
+	}
+	if f.Kind != "" && f.Kind != "all" {
+		where = append(where, "i.kind = ?")
+		args = append(args, f.Kind)
+	}
+	if q := strings.TrimSpace(f.Query); q != "" {
+		like := "%" + escapeLike(strings.ToLower(q)) + "%"
+		where = append(where,
+			`(lower(i.text) LIKE ? ESCAPE '\' OR lower(i.preview) LIKE ? ESCAPE '\'`+
+				` OR lower(i.source_app) LIKE ? ESCAPE '\' OR lower(i.files) LIKE ? ESCAPE '\')`)
+		args = append(args, like, like, like, like)
+	}
+
+	query := selectItems
+	if len(where) > 0 {
+		query += ` WHERE ` + strings.Join(where, " AND ")
+	}
+	query += ` ORDER BY i.pinned DESC, i.updated_at DESC LIMIT ? OFFSET ?`
+	args = append(args, f.Limit, f.Offset)
+
+	items, err := s.queryItems(query, args...)
+	if err != nil {
+		Logf(s.dir, "list query failed: %v", err)
+		return nil
+	}
+	return items
 }
 
-func matches(it *Item, q string) bool {
-	if strings.Contains(strings.ToLower(it.Text), q) {
-		return true
-	}
-	if strings.Contains(strings.ToLower(it.Preview), q) {
-		return true
-	}
-	if it.SourceApp != "" && strings.Contains(strings.ToLower(it.SourceApp), q) {
-		return true
-	}
-	for _, f := range it.Files {
-		if strings.Contains(strings.ToLower(f.Name), q) || strings.Contains(strings.ToLower(f.Path), q) {
-			return true
-		}
-	}
-	return false
+func escapeLike(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, "%", `\%`)
+	s = strings.ReplaceAll(s, "_", `\_`)
+	return s
 }
 
-// Count returns the number of entries matching the filter.
+// All returns every entry, pinned first then newest first.
+func (s *Store) All() []Item {
+	items, err := s.queryItems(selectItems + ` ORDER BY i.pinned DESC, i.updated_at DESC`)
+	if err != nil {
+		Logf(s.dir, "all query failed: %v", err)
+		return nil
+	}
+	return items
+}
+
+// Count returns how many entries match the filter.
 func (s *Store) Count(f Filter) int {
-	f.Limit = 1 << 30
-	f.Offset = 0
+	f.Limit = 5000
 	return len(s.List(f))
 }
 
-// Delete removes one entry.
+// Delete removes one entry (its blob goes with it).
 func (s *Store) Delete(id string) bool {
-	s.mu.Lock()
-	it := s.items[id]
-	if it == nil {
-		s.mu.Unlock()
+	res, err := s.db.Exec(`DELETE FROM items WHERE id = ?`, id)
+	if err != nil {
 		return false
 	}
-	delete(s.items, id)
-	if it.Hash != "" && s.byHash[it.Hash] == id {
-		delete(s.byHash, it.Hash)
+	if n, _ := res.RowsAffected(); n == 0 {
+		return false
 	}
-	for i, oid := range s.order {
-		if oid == id {
-			s.order = append(s.order[:i], s.order[i+1:]...)
-			break
-		}
-	}
-	s.mu.Unlock()
-	s.deleteBlob(it.ImageFile)
-	s.deleteBlob(it.BinaryFile)
-	s.markDirty()
+	_, _ = s.db.Exec(`DELETE FROM blobs WHERE item_id = ?`, id)
 	return true
 }
 
-// DeleteWhere removes every entry matching the filter that is not pinned.
-// A nil pinned-wins policy keeps favorites safe from bulk clears.
+// DeleteWhere removes every non-pinned entry matching the filter.
 func (s *Store) DeleteWhere(f Filter) int {
-	f.Limit = 1 << 30
 	victims := s.List(f)
 	n := 0
 	for _, it := range victims {
@@ -612,169 +593,281 @@ func (s *Store) DeleteWhere(f Filter) int {
 
 // SetPinned toggles the favourite flag.
 func (s *Store) SetPinned(id string, pinned bool) (Item, bool) {
-	s.mu.Lock()
-	it := s.items[id]
-	if it == nil {
-		s.mu.Unlock()
+	if _, err := s.db.Exec(`UPDATE items SET pinned = ? WHERE id = ?`, boolInt(pinned), id); err != nil {
 		return Item{}, false
 	}
-	it.Pinned = pinned
-	s.reorder()
-	cp := *it
-	s.mu.Unlock()
-	s.markDirty()
-	return cp, true
+	return s.Get(id)
 }
 
-// MarkCopied records a copy-back so the UI can rank frequently used entries.
+// MarkCopied records a copy-back so frequent entries can be ranked.
 func (s *Store) MarkCopied(id string) {
-	s.mu.Lock()
-	if it := s.items[id]; it != nil {
-		it.CopyCount++
-		it.UpdatedAt = nowUTC()
-		s.reorder()
-	}
-	s.mu.Unlock()
-	s.markDirty()
+	_, _ = s.db.Exec(`UPDATE items SET copy_count = copy_count + 1, updated_at = ? WHERE id = ?`,
+		encodeTime(nowUTC()), id)
 }
 
 // RefreshFiles re-stats every file reference of an entry (the "reference"
-// strategy can go stale when the user moves or deletes the original).
+// strategy goes stale when the original is moved or deleted).
 func (s *Store) RefreshFiles(id string) (Item, bool) {
-	s.mu.RLock()
-	it := s.items[id]
-	if it == nil {
-		s.mu.RUnlock()
+	it, ok := s.Get(id)
+	if !ok {
 		return Item{}, false
 	}
-	paths := make([]FileRef, len(it.Files))
-	copy(paths, it.Files)
-	s.mu.RUnlock()
-
-	for i := range paths {
-		paths[i] = statFile(paths[i])
+	for i := range it.Files {
+		it.Files[i] = statFile(it.Files[i])
 	}
-
-	s.mu.Lock()
-	if it := s.items[id]; it != nil {
-		it.Files = paths
-		cp := *it
-		s.mu.Unlock()
-		s.markDirty()
-		return cp, true
-	}
-	s.mu.Unlock()
-	return Item{}, false
+	_, _ = s.db.Exec(`UPDATE items SET files = ? WHERE id = ?`, encodeFiles(it.Files), id)
+	return it, true
 }
 
-func statFile(f FileRef) FileRef {
-	info, err := os.Stat(f.Path)
-	if err != nil {
-		f.Exists = false
-		f.Size = 0
-		return f
+// UpsertRemote merges one entry coming from a sync peer (matched by content
+// hash). Newest body wins; favourite state and counters never regress.
+func (s *Store) UpsertRemote(in Item) (isNew bool, changed bool) {
+	local, ok := s.findByHash(in.Hash)
+	if ok {
+		if in.UpdatedAt.After(local.UpdatedAt) {
+			if _, err := s.db.Exec(`
+				UPDATE items SET text=?, preview=?, html=?, rtf=?, files=?, format_name=?,
+				                 format_id=?, width=?, height=?, size=?, updated_at=?,
+				                 source_app = CASE WHEN ? <> '' THEN ? ELSE source_app END
+				 WHERE id = ?`,
+				in.Text, in.Preview, in.HTML, in.RTF, encodeFiles(in.Files), in.FormatName, in.FormatID,
+				in.Width, in.Height, in.Size, encodeTime(in.UpdatedAt), in.SourceApp, in.SourceApp,
+				local.ID,
+			); err != nil {
+				return false, false
+			}
+			changed = true
+		}
+		if in.Pinned && !local.Pinned {
+			_, _ = s.db.Exec(`UPDATE items SET pinned = 1 WHERE id = ?`, local.ID)
+			changed = true
+		}
+		if in.SeenCount > local.SeenCount {
+			_, _ = s.db.Exec(`UPDATE items SET seen_count = ? WHERE id = ?`, in.SeenCount, local.ID)
+			changed = true
+		}
+		if in.CopyCount > local.CopyCount {
+			_, _ = s.db.Exec(`UPDATE items SET copy_count = ? WHERE id = ?`, in.CopyCount, local.ID)
+			changed = true
+		}
+		return false, changed
 	}
-	f.Exists = true
-	f.IsDir = info.IsDir()
-	f.Size = info.Size()
-	return f
+
+	it := in
+	if it.ID == "" {
+		it.ID = newID()
+	}
+	if it.CreatedAt.IsZero() {
+		it.CreatedAt = nowUTC()
+	}
+	if it.UpdatedAt.IsZero() {
+		it.UpdatedAt = nowUTC()
+	}
+	if it.SeenCount == 0 {
+		it.SeenCount = 1
+	}
+	_, err := s.db.Exec(`
+		INSERT INTO items (id, kind, text, preview, hash, size, created_at, updated_at,
+		                   seen_count, copy_count, pinned, source_app, width, height,
+		                   html, rtf, format_name, format_id, files)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		it.ID, string(it.Kind), it.Text, it.Preview, it.Hash, it.Size,
+		encodeTime(it.CreatedAt), encodeTime(it.UpdatedAt),
+		it.SeenCount, it.CopyCount, boolInt(it.Pinned), it.SourceApp,
+		it.Width, it.Height, it.HTML, it.RTF, it.FormatName, it.FormatID,
+		encodeFiles(it.Files),
+	)
+	if err != nil {
+		return false, false // duplicate id from a peer: nothing to do
+	}
+	return true, true
+}
+
+// UnionFlags merges the never-regressing fields (star, counters) for an entry
+// that a peer already has. Reports whether anything actually changed.
+func (s *Store) UnionFlags(hash string, pinned bool, seen, copies int) bool {
+	if hash == "" {
+		return false
+	}
+	res, err := s.db.Exec(
+		`UPDATE items SET pinned = MAX(pinned, ?), seen_count = MAX(seen_count, ?),
+		                  copy_count = MAX(copy_count, ?) WHERE hash = ?`,
+		boolInt(pinned), seen, copies, hash,
+	)
+	if err != nil {
+		return false
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return false
+	}
+	var nowPinned bool
+	var nowSeen, nowCopies int
+	if err := s.db.QueryRow(
+		`SELECT pinned, seen_count, copy_count FROM items WHERE hash = ?`, hash,
+	).Scan(&nowPinned, &nowSeen, &nowCopies); err != nil {
+		return true
+	}
+	return true
+}
+
+func (s *Store) findByHash(hash string) (Item, bool) {
+	if hash == "" {
+		return Item{}, false
+	}
+	row := s.db.QueryRow(selectItems+` WHERE i.hash = ?`, hash)
+	it, err := scanItem(row)
+	if err != nil {
+		return Item{}, false
+	}
+	return it, true
 }
 
 // Prune enforces the retention policy (pinned entries survive).
 func (s *Store) Prune(maxItems, maxAgeDays int) int {
-	s.mu.RLock()
-	total := 0
-	for range s.items {
-		total++
-	}
-	s.mu.RUnlock()
-
 	removed := 0
 	if maxAgeDays > 0 {
-		cutoff := nowUTC().AddDate(0, 0, -maxAgeDays)
-		s.mu.RLock()
-		var old []string
-		for id, it := range s.items {
-			if !it.Pinned && it.UpdatedAt.Before(cutoff) {
-				old = append(old, id)
-			}
-		}
-		s.mu.RUnlock()
-		for _, id := range old {
+		cutoff := encodeTime(nowUTC().AddDate(0, 0, -maxAgeDays))
+		for _, id := range s.collectIDs(`SELECT id FROM items WHERE pinned = 0 AND updated_at < ?`, cutoff) {
 			if s.Delete(id) {
 				removed++
 			}
 		}
-		total -= removed
 	}
-
-	if maxItems > 0 && total > maxItems {
-		s.mu.RLock()
-		victims := make([]string, 0, total-maxItems)
-		for i := len(s.order) - 1; i >= 0 && len(victims) < total-maxItems; i-- {
-			it := s.items[s.order[i]]
-			if it == nil || it.Pinned {
-				continue
-			}
-			victims = append(victims, it.ID)
-		}
-		s.mu.RUnlock()
-		for _, id := range victims {
-			if s.Delete(id) {
-				removed++
+	if maxItems > 0 {
+		var total int
+		if err := s.db.QueryRow(`SELECT COUNT(*) FROM items`).Scan(&total); err == nil && total > maxItems {
+			for _, id := range s.collectIDs(
+				`SELECT id FROM items WHERE pinned = 0 ORDER BY updated_at ASC LIMIT ?`, total-maxItems) {
+				if s.Delete(id) {
+					removed++
+				}
 			}
 		}
 	}
 	return removed
 }
 
-// Settings returns a copy of the current settings.
-func (s *Store) Settings() Settings {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.settings.clone()
-}
-
-// SaveSettings persists settings synchronously.
-func (s *Store) SaveSettings(st Settings) error {
-	st = st.clone()
-	s.mu.Lock()
-	s.settings = st
-	s.mu.Unlock()
-
-	data, err := json.MarshalIndent(st, "", "  ")
+func (s *Store) collectIDs(query string, args ...any) []string {
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
-		return err
+		return nil
 	}
-	path := filepath.Join(s.dir, "settings.json")
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return err
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if rows.Scan(&id) == nil {
+			ids = append(ids, id)
+		}
 	}
-	return os.Rename(tmp, path)
+	return ids
 }
 
-// Stats summarises the history.
+// Stats summarises the history for the UI.
 func (s *Store) Stats() Stats {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	out := Stats{ByKind: make(map[string]int, 5), Total: len(s.items)}
-	for _, it := range s.items {
-		out.ByKind[string(it.Kind)]++
-		if it.Pinned {
-			out.Pinned++
+	out := Stats{ByKind: make(map[string]int, 6)}
+	rows, err := s.db.Query(`SELECT kind, COUNT(*), SUM(pinned) FROM items GROUP BY kind`)
+	if err == nil {
+		for rows.Next() {
+			var kind string
+			var count, pinned int
+			if rows.Scan(&kind, &count, &pinned) == nil {
+				out.ByKind[kind] = count
+				out.Total += count
+				out.Pinned += pinned
+			}
+		}
+		rows.Close()
+	}
+	var last string
+	if err := s.db.QueryRow(`SELECT updated_at FROM items ORDER BY updated_at DESC LIMIT 1`).Scan(&last); err == nil {
+		if t := decodeTime(last); !t.IsZero() {
+			out.LastCapture = t.Local().Format(time.RFC3339)
 		}
 	}
-	if !s.lastCapture.IsZero() {
-		out.LastCapture = s.lastCapture.Local().Format(time.RFC3339)
-	}
-	var size int64
-	_ = filepath.Walk(s.dir, func(_ string, info os.FileInfo, err error) error {
-		if err == nil && !info.IsDir() {
-			size += info.Size()
+	var bytes int64
+	for _, name := range []string{dbFileName, dbFileName + "-wal"} {
+		if info, err := os.Stat(filepath.Join(s.dir, name)); err == nil {
+			bytes += info.Size()
 		}
-		return nil
-	})
-	out.StorageBytes = size
+	}
+	out.StorageBytes = bytes
 	return out
+}
+
+// ---- blobs --------------------------------------------------------------
+
+// SaveBlob stores an image/binary payload for an item. Callers keep passing
+// "<id>.ext" style names; the id is all the database needs.
+func (s *Store) SaveBlob(id, ext string, data []byte) error {
+	_, err := s.db.Exec(
+		`INSERT INTO blobs (item_id, ext, data) VALUES (?,?,?)
+		 ON CONFLICT(item_id) DO UPDATE SET ext = excluded.ext, data = excluded.data`,
+		id, ext, data,
+	)
+	return err
+}
+
+// LoadBlobByName resolves "<id>.png" / "<id>.bin" to its bytes.
+func (s *Store) LoadBlobByName(name string) ([]byte, error) {
+	if name == "" {
+		return nil, errors.New("没有可用的附件")
+	}
+	return s.LoadBlobByID(strings.TrimSuffix(strings.TrimSuffix(name, ".png"), ".bin"))
+}
+
+// LoadBlobByID returns the payload stored for an item id.
+func (s *Store) LoadBlobByID(id string) ([]byte, error) {
+	if id == "" {
+		return nil, errors.New("没有可用的附件")
+	}
+	var data []byte
+	if err := s.db.QueryRow(`SELECT data FROM blobs WHERE item_id = ?`, id).Scan(&data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+// BlobExt returns the stored extension for an item ("" when there is none).
+func (s *Store) BlobExt(id string) string {
+	var ext string
+	if err := s.db.QueryRow(`SELECT ext FROM blobs WHERE item_id = ?`, id).Scan(&ext); err != nil {
+		return ""
+	}
+	return ext
+}
+
+// ReadBlobData returns a data: URL for the webview.
+func (s *Store) ReadBlobData(name string) (string, error) {
+	data, err := s.LoadBlobByName(name)
+	if err != nil {
+		return "", err
+	}
+	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(data), nil
+}
+
+// ---- diagnostics --------------------------------------------------------
+
+// Logf appends one diagnostic line to <dir>/clipnest.log. Logging failures are
+// deliberately silent: diagnostics must never break the app.
+func Logf(dir, format string, args ...any) {
+	if dir == "" {
+		return
+	}
+	line := fmt.Sprintf("%s %s\n", time.Now().Format("2006-01-02 15:04:05.000"),
+		fmt.Sprintf(format, args...))
+	f, err := os.OpenFile(filepath.Join(dir, "clipnest.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	_, _ = f.WriteString(line)
+}
+
+// TrimLog keeps clipnest.log below limit bytes so it cannot grow forever.
+func TrimLog(dir string, limit int64) {
+	p := filepath.Join(dir, "clipnest.log")
+	if info, err := os.Stat(p); err == nil && info.Size() > limit {
+		_ = os.WriteFile(p, nil, 0o644)
+	}
 }

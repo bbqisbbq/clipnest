@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import type { AppInfo, Settings, SyncStatus } from "../lib/api";
+import type { AppInfo, Settings, SyncStatus, UpdateInfo } from "../lib/api";
 import { formatBytes, formatDateTime } from "../lib/format";
 import { IconFolder, IconSync, IconTrash } from "./Icons";
 import { Tip } from "./Tip";
@@ -15,6 +15,10 @@ type Props = {
   onQuit: () => void;
   onTestSync: () => Promise<string>;
   onSyncNow: () => void;
+  updateInfo: UpdateInfo | null;
+  onCheckUpdate: () => Promise<UpdateInfo>;
+  onInstallUpdate: () => void;
+  onOpenRelease: () => void;
 };
 
 function Switch({
@@ -90,6 +94,7 @@ export default function SettingsView(props: Props) {
   const [patternText, setPatternText] = useState("");
   const [appText, setAppText] = useState("");
   const [testing, setTesting] = useState(false);
+  const [checking, setChecking] = useState(false);
   const [testResult, setTestResult] = useState("");
 
   useEffect(() => {
@@ -134,6 +139,15 @@ export default function SettingsView(props: Props) {
       setAppText((settings.ignoreApps ?? []).join(", "));
     }
     setTestResult("");
+  };
+
+  const runCheckUpdate = async () => {
+    setChecking(true);
+    try {
+      await props.onCheckUpdate();
+    } finally {
+      setChecking(false);
+    }
   };
 
   const runTest = async () => {
@@ -305,6 +319,16 @@ export default function SettingsView(props: Props) {
               />
               <span className="unit">分钟</span>
             </Row>
+            <Row
+              label="同步设置项"
+              tip="把采集开关、保留策略、忽略规则、快捷键与粘贴行为一起同步（不含本机专属项：WebDAV 地址/密码、开机自启、启动即显示）。改设置时以最近修改的那台机器为准。"
+            >
+              <Switch
+                checked={draft.syncSettings}
+                onChange={(v) => patch({ syncSettings: v })}
+                disabled={!draft.syncEnabled}
+              />
+            </Row>
 
             <div className="sync-actions">
               <button className="btn btn-ghost" onClick={runTest} disabled={testing}>
@@ -332,7 +356,39 @@ export default function SettingsView(props: Props) {
             {testResult ? <p className="test-result">{testResult}</p> : null}
           </Section>
 
-          <Section title="数据与关于" desc="所有数据都在本机，不同步时不会产生任何网络请求。">
+          <Section title="更新" desc="从 GitHub Releases 检查新版本，下载后静默安装并重启。">
+            <Row label="自动检查更新" tip="启动 8 秒后检查一次 GitHub 上的最新发布。发现新版本会在窗口顶部提示。">
+              <Switch checked={draft.updateCheck} onChange={(v) => patch({ updateCheck: v })} />
+            </Row>
+            <div className="sync-actions">
+              <button className="btn btn-ghost" onClick={runCheckUpdate} disabled={checking}>
+                {checking ? "检查中…" : "检查更新"}
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={props.onInstallUpdate}
+                disabled={!props.updateInfo?.available}
+              >
+                下载并安装
+              </button>
+              <button className="btn btn-ghost" onClick={props.onOpenRelease}>
+                打开发布页
+              </button>
+              <span className="sync-state">
+                {props.updateInfo?.error ? (
+                  <span className="is-error">{props.updateInfo.error}</span>
+                ) : props.updateInfo?.available ? (
+                  <span>发现 v{props.updateInfo.version}（当前 v{props.updateInfo.current}）</span>
+                ) : props.updateInfo?.checked ? (
+                  <span>已是最新（v{props.updateInfo.current}）</span>
+                ) : (
+                  <span>尚未检查</span>
+                )}
+              </span>
+            </div>
+          </Section>
+
+          <Section title="数据与关于" desc="所有数据都在本机（SQLite 数据库），不同步时不会产生任何网络请求。">
             <dl className="kv is-wide">
               <div>
                 <dt>版本</dt>

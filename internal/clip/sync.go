@@ -3,7 +3,6 @@ package clip
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,41 +15,79 @@ import (
 	"time"
 )
 
-// WebDAV sync: the whole history is published as one JSON document on a WebDAV
-// server and merged by content hash. Blobs (images, unknown formats) travel
-// inline as base64 up to a budget, so a fresh machine can restore previews too.
+// WebDAV sync, second format.
+//
+// The history is published as a small tree instead of one giant document, so a
+// sync only moves what actually changed:
+//
+//	<WebDAV dir>/
+//	  manifest.json          index: every item's hash/kind/updatedAt + settings stamp
+//	  items/<hash>.json      one record per entry, matched by content hash
+//	  blobs/<hash>.png|bin   image / unknown-format payloads, raw (no base64)
+//
+// Format v2 replaced the single "clipnest-sync.json" document: a 1000-entry
+// history used to mean re-uploading megabytes on every sync, and any blob over
+// the base64 budget was silently dropped.
 
 const (
-	// DefaultSyncFile is the document name inside the configured directory.
-	DefaultSyncFile = "clipnest-sync.json"
-	// syncBlobBudget caps inline blob bytes per sync to keep requests sane.
-	syncBlobBudget = 6 << 20
+	// DefaultSyncFile is the manifest name inside the configured directory.
+	DefaultSyncFile = "manifest.json"
+	// legacySyncFile is the v1 document name; existing settings are migrated.
+	legacySyncFile = "clipnest-sync.json"
 	// syncHTTPTimeout bounds a single WebDAV request.
 	syncHTTPTimeout = 45 * time.Second
+	// syncMaxPerRun caps how many records one run moves, so a first sync of a
+	// huge history does not look like a hang.
+	syncMaxPerRun = 800
 )
 
 // SyncStatus is what the settings page shows.
 type SyncStatus struct {
-	Enabled     bool   `json:"enabled"`
-	InProgress  bool   `json:"inProgress"`
-	LastSync    string `json:"lastSync"`
-	LastResult  string `json:"lastResult"`
-	LastError   string `json:"lastError"`
-	RemoteItems int    `json:"remoteItems"`
-	Truncated   bool   `json:"truncated"`
+	Enabled      bool   `json:"enabled"`
+	InProgress   bool   `json:"inProgress"`
+	LastSync     string `json:"lastSync"`
+	LastResult   string `json:"lastResult"`
+	LastError    string `json:"lastError"`
+	RemoteItems  int    `json:"remoteItems"`
+	SettingsSync bool   `json:"settingsSync"`
 }
 
-type syncItem struct {
-	Item
-	BlobB64 string `json:"blobB64,omitempty"`
+// manifestItem is the per-entry index record. The body lives in items/<hash>.json.
+// Mergeable flags travel in the index so a peer whose copy is newer still
+// inherits a favourite star or a bigger counter without re-downloading the body.
+type manifestItem struct {
+	Hash      string    `json:"hash"`
+	ID        string    `json:"id"`
+	Kind      Kind      `json:"kind"`
+	Preview   string    `json:"preview,omitempty"`
+	UpdatedAt time.Time `json:"updatedAt"`
+	Blob      string    `json:"blob,omitempty"` // ".png" / ".bin"
+	Pinned    bool      `json:"pinned,omitempty"`
+	SeenCount int       `json:"seenCount,omitempty"`
+	CopyCount int       `json:"copyCount,omitempty"`
 }
 
-type syncSnapshot struct {
-	Version   int        `json:"version"`
-	UpdatedAt time.Time  `json:"updatedAt"`
-	Device    string     `json:"device"`
-	Items     []syncItem `json:"items"`
-	Truncated bool       `json:"truncated,omitempty"`
+// settingsPayload carries settings across machines with its own timestamp.
+type settingsPayload struct {
+	UpdatedAt time.Time `json:"updatedAt"`
+	Device    string    `json:"device,omitempty"`
+	Values    Settings  `json:"values"`
+}
+
+type syncManifest struct {
+	Version   int              `json:"version"`
+	Device    string           `json:"device"`
+	UpdatedAt time.Time        `json:"updatedAt"`
+	Items     []manifestItem   `json:"items"`
+	Settings  *settingsPayload `json:"settings,omitempty"`
+}
+
+// itemRecord is the per-item file body.
+type itemRecord struct {
+	Version int       `json:"version"`
+	Item    Item      `json:"item"`
+	BlobExt string    `json:"blobExt,omitempty"`
+	Written time.Time `json:"written"`
 }
 
 // ---- transport ----------------------------------------------------------
@@ -59,265 +96,290 @@ type syncConfig struct {
 	base     string
 	user     string
 	pass     string
-	fileName string
+	manifest string
 }
 
+// syncConfig builds the transport config from the stored settings.
 func (s *ClipService) syncConfig() (syncConfig, error) {
 	st := s.store.Settings()
 	if strings.TrimSpace(st.SyncURL) == "" {
 		return syncConfig{}, errors.New("还没有填写 WebDAV 地址")
 	}
 	name := strings.TrimSpace(st.SyncFile)
-	if name == "" {
+	// v1 wrote one document named clipnest-sync.json; treat it as "upgrade me".
+	if name == "" || name == legacySyncFile {
 		name = DefaultSyncFile
 	}
 	return syncConfig{
-		base:     st.SyncURL,
+		base:     strings.TrimRight(strings.TrimSpace(st.SyncURL), "/") + "/",
 		user:     st.SyncUser,
 		pass:     st.SyncPass,
-		fileName: name,
+		manifest: name,
 	}, nil
 }
 
-func (c syncConfig) endpoint() (string, error) {
-	u, err := url.Parse(strings.TrimSpace(c.base))
+// urlFor resolves a relative path inside the sync directory.
+func (c syncConfig) urlFor(rel string) (string, error) {
+	u, err := url.Parse(c.base)
 	if err != nil {
 		return "", fmt.Errorf("WebDAV 地址无效: %w", err)
 	}
 	if u.Scheme != "http" && u.Scheme != "https" {
 		return "", errors.New("WebDAV 地址必须以 http:// 或 https:// 开头")
 	}
-	u.Path = path.Join(u.Path, c.fileName)
+	u.Path = path.Join(u.Path, rel)
 	return u.String(), nil
 }
 
-func (c syncConfig) newRequest(ctx context.Context, method string) (*http.Request, error) {
-	target, err := c.endpoint()
+func newSyncHTTPClient() *http.Client { return &http.Client{Timeout: syncHTTPTimeout} }
+
+// davGet returns (body, true) or (nil, false) when the file does not exist.
+func (c syncConfig) davGet(rel string) ([]byte, bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), syncHTTPTimeout)
+	defer cancel()
+
+	target, err := c.urlFor(rel)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	req, err := http.NewRequestWithContext(ctx, method, target, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if c.user != "" || c.pass != "" {
 		req.SetBasicAuth(c.user, c.pass)
 	}
 	req.Header.Set("User-Agent", "ClipNest/"+Version)
-	return req, nil
-}
 
-func newSyncHTTPClient() *http.Client {
-	return &http.Client{Timeout: syncHTTPTimeout}
-}
-
-// fetchRemote returns the remote snapshot, or (nil, nil) when it does not exist.
-func fetchRemote(cfg syncConfig) (*syncSnapshot, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), syncHTTPTimeout)
-	defer cancel()
-
-	req, err := cfg.newRequest(ctx, http.MethodGet)
-	if err != nil {
-		return nil, err
-	}
 	resp, err := newSyncHTTPClient().Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("连接失败: %w", err)
+		return nil, false, fmt.Errorf("连接失败: %w", err)
 	}
 	defer resp.Body.Close()
 
 	switch {
 	case resp.StatusCode == http.StatusNotFound:
-		return nil, nil
+		return nil, false, nil
 	case resp.StatusCode == http.StatusUnauthorized, resp.StatusCode == http.StatusForbidden:
-		return nil, fmt.Errorf("认证失败（HTTP %d），请检查用户名/密码", resp.StatusCode)
+		return nil, false, fmt.Errorf("认证失败（HTTP %d），请检查用户名/密码", resp.StatusCode)
 	case resp.StatusCode != http.StatusOK:
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return nil, fmt.Errorf("读取失败（HTTP %d）: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 256))
+		return nil, false, fmt.Errorf("读取 %s 失败（HTTP %d）: %s",
+			rel, resp.StatusCode, strings.TrimSpace(string(body)))
 	}
-
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	var snap syncSnapshot
-	if err := json.Unmarshal(data, &snap); err != nil {
-		return nil, fmt.Errorf("远端文件解析失败: %w", err)
-	}
-	return &snap, nil
+	return data, true, nil
 }
 
-// putRemote uploads the snapshot, creating the parent collection when needed.
-func putRemote(cfg syncConfig, snap *syncSnapshot) error {
-	payload, err := json.Marshal(snap)
-	if err != nil {
-		return err
-	}
-
-	upload := func() (*http.Response, error) {
+// davPut uploads a file, creating the parent collection when the server asks.
+func (c syncConfig) davPut(rel, contentType string, payload []byte) error {
+	put := func() (*http.Response, error) {
 		ctx, cancel := context.WithTimeout(context.Background(), syncHTTPTimeout)
 		defer cancel()
-		req, err := cfg.newRequest(ctx, http.MethodPut)
+		target, err := c.urlFor(rel)
 		if err != nil {
 			return nil, err
 		}
-		req.Header.Set("Content-Type", "application/json; charset=utf-8")
-		req.Body = io.NopCloser(bytes.NewReader(payload))
+		req, err := http.NewRequestWithContext(ctx, http.MethodPut, target, bytes.NewReader(payload))
+		if err != nil {
+			return nil, err
+		}
+		if c.user != "" || c.pass != "" {
+			req.SetBasicAuth(c.user, c.pass)
+		}
+		req.Header.Set("User-Agent", "ClipNest/"+Version)
+		req.Header.Set("Content-Type", contentType)
 		req.ContentLength = int64(len(payload))
 		return newSyncHTTPClient().Do(req)
 	}
 
-	resp, err := upload()
+	resp, err := put()
 	if err != nil {
 		return fmt.Errorf("上传失败: %w", err)
 	}
-	// Some servers refuse a PUT whose parent collection is missing.
 	if resp.StatusCode == http.StatusConflict || resp.StatusCode == http.StatusNotFound {
 		resp.Body.Close()
-		if err := mkcolParent(cfg); err != nil {
+		if err := c.mkcol(path.Dir(rel)); err != nil {
 			return err
 		}
-		if resp, err = upload(); err != nil {
+		if resp, err = put(); err != nil {
 			return fmt.Errorf("上传失败: %w", err)
 		}
 	}
 	defer resp.Body.Close()
-
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		return nil
 	}
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-	return fmt.Errorf("上传失败（HTTP %d）: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 256))
+	return fmt.Errorf("上传 %s 失败（HTTP %d）: %s", rel, resp.StatusCode, strings.TrimSpace(string(body)))
 }
 
-func mkcolParent(cfg syncConfig) error {
-	target, err := cfg.endpoint()
-	if err != nil {
-		return err
+// mkcol creates one directory level (and its parent when needed).
+func (c syncConfig) mkcol(dir string) error {
+	if dir == "." || dir == "/" || dir == "" {
+		return nil
 	}
-	u, err := url.Parse(target)
-	if err != nil {
-		return err
-	}
-	parent := path.Dir(u.Path)
-	u.Path = parent
-	if parent == "/" || parent == "." {
-		return errors.New("WebDAV 目录不存在，且无法创建根目录")
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), syncHTTPTimeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, "MKCOL", u.String(), nil)
+	target, err := c.urlFor(dir + "/")
 	if err != nil {
 		return err
 	}
-	if cfg.user != "" || cfg.pass != "" {
-		req.SetBasicAuth(cfg.user, cfg.pass)
+	req, err := http.NewRequestWithContext(ctx, "MKCOL", target, nil)
+	if err != nil {
+		return err
+	}
+	if c.user != "" || c.pass != "" {
+		req.SetBasicAuth(c.user, c.pass)
 	}
 	req.Header.Set("User-Agent", "ClipNest/"+Version)
+
 	resp, err := newSyncHTTPClient().Do(req)
 	if err != nil {
 		return fmt.Errorf("创建目录失败: %w", err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 || resp.StatusCode == http.StatusMethodNotAllowed {
-		// 405 means it already exists on most servers.
-		return nil
+	switch resp.StatusCode {
+	case http.StatusMethodNotAllowed, http.StatusCreated, http.StatusOK, http.StatusNoContent:
+		return nil // 405 = already there on most servers
+	case http.StatusConflict:
+		// Parent missing; create it first, then retry once.
+		if err := c.mkcol(path.Dir(dir)); err != nil {
+			return err
+		}
+		return c.mkcol(dir)
 	}
-	return fmt.Errorf("创建目录失败（HTTP %d）", resp.StatusCode)
+	return fmt.Errorf("创建目录 %s 失败（HTTP %d）", dir, resp.StatusCode)
 }
 
-// ---- snapshot building --------------------------------------------------
+// ---- manifest -----------------------------------------------------------
 
-func (s *ClipService) buildSnapshot(includeBlobs bool) (*syncSnapshot, error) {
-	items := s.store.All()
-	snap := &syncSnapshot{
-		Version:   1,
-		UpdatedAt: time.Now().UTC(),
-		Device:    s.deviceName(),
-		Items:     make([]syncItem, 0, len(items)),
+func fetchManifest(cfg syncConfig) (*syncManifest, error) {
+	data, ok, err := cfg.davGet(cfg.manifest)
+	if err != nil || !ok {
+		return nil, err
 	}
-	budget := syncBlobBudget
-	for _, it := range items {
-		si := syncItem{Item: it}
-		if includeBlobs {
-			name := it.ImageFile
-			if name == "" {
-				name = it.BinaryFile
-			}
-			if name != "" {
-				if info, err := os.Stat(s.store.BlobPath(name)); err == nil && info.Size() <= int64(budget) {
-					if data, err := os.ReadFile(s.store.BlobPath(name)); err == nil {
-						si.BlobB64 = base64.StdEncoding.EncodeToString(data)
-						budget -= len(si.BlobB64)
-					}
-				} else {
-					snap.Truncated = true
-				}
-			}
-		}
-		snap.Items = append(snap.Items, si)
+	var m syncManifest
+	if err := json.Unmarshal(data, &m); err != nil {
+		return nil, fmt.Errorf("远端索引解析失败: %w", err)
 	}
-	return snap, nil
+	return &m, nil
 }
 
-func (s *ClipService) deviceName() string {
-	if host, err := os.Hostname(); err == nil && host != "" {
-		return host
+func putManifest(cfg syncConfig, m *syncManifest) error {
+	payload, err := json.MarshalIndent(m, "", " ")
+	if err != nil {
+		return err
 	}
-	return "windows"
+	return cfg.davPut(cfg.manifest, "application/json; charset=utf-8", payload)
 }
 
-// ---- merge -------------------------------------------------------------
-
-// applyRemote merges a remote snapshot into the local store. It keeps the
-// newest version of each entry, unions the flags that must never regress
-// (favourite state, counters) and restores blobs that only the remote has.
-func (s *ClipService) applyRemote(remote *syncSnapshot) (added, updated int) {
-	if remote == nil {
-		return 0, 0
-	}
-	for _, ri := range remote.Items {
-		if ri.ID == "" || ri.Hash == "" {
-			continue
-		}
-		isNew, changed := s.store.UpsertRemote(ri.Item)
-		if isNew {
-			added++
-		} else if changed {
-			updated++
-		}
-		if ri.BlobB64 == "" {
-			continue
-		}
-		name := ri.ImageFile
-		ext := ".png"
-		if name == "" {
-			name = ri.BinaryFile
-			ext = ".bin"
-		}
-		if name != "" && !fileExists(s.store.BlobPath(name)) {
-			if data, err := base64.StdEncoding.DecodeString(ri.BlobB64); err == nil {
-				_, _ = s.store.SaveBlob(strings.TrimSuffix(name, ext), ext, data)
-			}
+func (m *syncManifest) index() map[string]manifestItem {
+	out := make(map[string]manifestItem, len(m.Items))
+	for _, it := range m.Items {
+		if it.Hash != "" {
+			out[it.Hash] = it
 		}
 	}
-	return added, updated
+	return out
 }
 
-func fileExists(p string) bool {
-	info, err := os.Stat(p)
-	return err == nil && !info.IsDir()
+// ---- settings exchange --------------------------------------------------
+
+// machineOnlyFields are settings that describe *this* machine or this
+// machine's connection to the sync server; they are never overwritten by a peer.
+func machineOnlyFields(st Settings) Settings {
+	st.SyncEnabled = false
+	st.SyncURL = ""
+	st.SyncUser = ""
+	st.SyncPass = ""
+	st.SyncFile = ""
+	st.SyncIntervalMin = 0
+	st.AutoStart = false
+	st.ShowOnLaunch = false
+	st.SyncSettings = false
+	st.SyncUpdatedAt = time.Time{}
+	return st
 }
 
-// ---- public API ---------------------------------------------------------
+// shareableStamp serialises the fields that sync, so SaveSettings can tell a
+// real change (bump the stamp) from a no-op save.
+func shareableStamp(st Settings) string {
+	b, err := json.Marshal(machineOnlyFields(st))
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+// localSettingsStamp is when this machine's shareable settings last changed.
+func (s *ClipService) localSettingsStamp() time.Time {
+	return s.store.Settings().SyncUpdatedAt
+}
+
+// syncSettingsOnce reconciles the shareable settings with the manifest.
+func (s *ClipService) syncSettingsOnce(cfg syncConfig, remote *syncManifest, up bool) (pulled, pushed bool, err error) {
+	if !s.store.Settings().SyncSettings {
+		return false, false, nil
+	}
+	local := s.store.Settings()
+	localStamp := local.SyncUpdatedAt
+
+	remoteStamp := time.Time{}
+	if remote != nil && remote.Settings != nil {
+		remoteStamp = remote.Settings.UpdatedAt
+	}
+
+	// Remote is newer → adopt it (keeping this machine's connection settings).
+	if remoteStamp.After(localStamp) && remote != nil && remote.Settings != nil {
+		merged := remote.Settings.Values
+		cur := s.store.Settings()
+		merged.SyncEnabled = cur.SyncEnabled
+		merged.SyncURL = cur.SyncURL
+		merged.SyncUser = cur.SyncUser
+		merged.SyncPass = cur.SyncPass
+		merged.SyncFile = cur.SyncFile
+		merged.SyncIntervalMin = cur.SyncIntervalMin
+		merged.AutoStart = cur.AutoStart
+		merged.ShowOnLaunch = cur.ShowOnLaunch
+		merged.SyncSettings = cur.SyncSettings
+		merged.SyncUpdatedAt = remoteStamp
+		if err := s.store.SaveSettings(merged); err != nil {
+			return false, false, err
+		}
+		Logf(s.store.Dir(), "sync: adopted settings from %s", remote.Settings.Device)
+		s.emit("settings:changed", merged)
+		return true, false, nil
+	}
+
+	// Ours is newer (or remote has none) → publish it in the manifest.
+	if up && (localStamp.After(remoteStamp) || remote == nil || remote.Settings == nil) {
+		if remote == nil {
+			remote = &syncManifest{Version: 2}
+		}
+		remote.Settings = &settingsPayload{
+			UpdatedAt: localStamp,
+			Device:    s.deviceName(),
+			Values:    machineOnlyFields(local),
+		}
+		return false, true, nil
+	}
+	return false, false, nil
+}
+
+// ---- main sync ----------------------------------------------------------
 
 // GetSyncStatus returns the current sync state.
 func (s *ClipService) GetSyncStatus() SyncStatus {
 	s.syncMu.Lock()
 	defer s.syncMu.Unlock()
 	st := s.syncStatus
-	st.Enabled = s.store.Settings().SyncEnabled
+	cur := s.store.Settings()
+	st.Enabled = cur.SyncEnabled
+	st.SettingsSync = cur.SyncSettings
 	return st
 }
 
@@ -327,21 +389,26 @@ func (s *ClipService) TestSync() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	snap, err := fetchRemote(cfg)
+	if err := cfg.mkcol("items"); err != nil {
+		return "", err
+	}
+	m, err := fetchManifest(cfg)
 	if err != nil {
 		return "", err
 	}
-	if snap == nil {
-		return "连接成功，远端还没有同步文件（首次同步会创建）", nil
+	if m == nil {
+		return "连接成功，远端还没有索引（首次同步会创建 manifest.json）", nil
 	}
-	return fmt.Sprintf("连接成功，远端有 %d 条记录（更新于 %s）",
-		len(snap.Items), snap.UpdatedAt.Local().Format("2006-01-02 15:04")), nil
+	msg := fmt.Sprintf("连接成功，远端索引有 %d 条记录（更新于 %s）",
+		len(m.Items), m.UpdatedAt.Local().Format("2006-01-02 15:04"))
+	if m.Settings != nil {
+		msg += fmt.Sprintf("，设置同步于 %s", m.Settings.UpdatedAt.Local().Format("2006-01-02 15:04"))
+	}
+	return msg, nil
 }
 
 // SyncNow performs a full two-way merge and upload.
-func (s *ClipService) SyncNow() (SyncStatus, error) {
-	return s.syncOnce(true)
-}
+func (s *ClipService) SyncNow() (SyncStatus, error) { return s.syncOnce(true) }
 
 func (s *ClipService) syncOnce(upload bool) (SyncStatus, error) {
 	cfg, err := s.syncConfig()
@@ -366,44 +433,201 @@ func (s *ClipService) syncOnce(upload bool) (SyncStatus, error) {
 		s.emit("sync:status", s.GetSyncStatus())
 	}()
 
-	remote, err := fetchRemote(cfg)
+	remote, err := fetchManifest(cfg)
 	if err != nil {
 		s.setSyncError(err)
 		return s.GetSyncStatus(), err
 	}
-	added, updated := s.applyRemote(remote)
+	if remote == nil {
+		remote = &syncManifest{Version: 2, Device: s.deviceName()}
+	}
+	remoteIdx := remote.index()
 
-	if upload {
-		snap, err := s.buildSnapshot(true)
+	// ---- pull ----
+	pulledNew, pulledUpd := 0, 0
+	seen := 0
+	for _, ri := range remote.Items {
+		if seen >= syncMaxPerRun {
+			break
+		}
+		local, ok := s.store.findByHash(ri.Hash)
+		if ok && !ri.UpdatedAt.After(local.UpdatedAt) {
+			// Body is up to date, but favourite state and counters still merge.
+			if s.store.UnionFlags(ri.Hash, ri.Pinned, ri.SeenCount, ri.CopyCount) {
+				pulledUpd++
+			}
+			// Maybe the blob is missing locally.
+			if ri.Blob != "" && s.store.BlobExt(local.ID) == "" {
+				if data, exists, err := cfg.davGet(blobPath(ri.Hash, ri.Blob)); err == nil && exists {
+					_ = s.store.SaveBlob(local.ID, ri.Blob, data)
+				}
+			}
+			continue
+		}
+		raw, exists, err := cfg.davGet(itemPath(ri.Hash))
 		if err != nil {
 			s.setSyncError(err)
 			return s.GetSyncStatus(), err
 		}
-		if err := putRemote(cfg, snap); err != nil {
-			s.setSyncError(err)
-			return s.GetSyncStatus(), err
+		if !exists {
+			continue
+		}
+		var rec itemRecord
+		if err := json.Unmarshal(raw, &rec); err != nil {
+			Logf(s.store.Dir(), "sync: skip unreadable record %s: %v", ri.Hash, err)
+			continue
+		}
+		seen++
+		isNew, changed := s.store.UpsertRemote(rec.Item)
+		if isNew {
+			pulledNew++
+		} else if changed {
+			pulledUpd++
+		}
+		if ri.Blob != "" {
+			local, ok := s.store.findByHash(ri.Hash)
+			if ok && s.store.BlobExt(local.ID) == "" {
+				if data, exists, err := cfg.davGet(blobPath(ri.Hash, ri.Blob)); err == nil && exists {
+					_ = s.store.SaveBlob(local.ID, ri.Blob, data)
+				}
+			}
 		}
 	}
 
-	remoteCount := 0
-	if remote != nil {
-		remoteCount = len(remote.Items)
+	// ---- settings ----
+	settingsPulled, settingsPushed, err := s.syncSettingsOnce(cfg, remote, upload)
+	if err != nil {
+		s.setSyncError(err)
+		return s.GetSyncStatus(), err
 	}
-	result := fmt.Sprintf("拉取 %d 条新增 / %d 条更新", added, updated)
+
+	// ---- push ----
+	pushed := 0
 	if upload {
-		result += fmt.Sprintf("，已上传 %d 条", len(s.store.All()))
+		localItems := s.store.All()
+		for i, it := range localItems {
+			if i >= syncMaxPerRun {
+				break
+			}
+			if it.Hash == "" {
+				continue
+			}
+			ri, known := remoteIdx[it.Hash]
+			if known && !it.UpdatedAt.After(ri.UpdatedAt) {
+				continue
+			}
+			blobExt := s.store.BlobExt(it.ID)
+			if err := s.pushItem(cfg, it, blobExt); err != nil {
+				s.setSyncError(err)
+				return s.GetSyncStatus(), err
+			}
+			pushed++
+		}
+
+		// ---- manifest ----
+		final := s.buildManifest(remote)
+		final.Settings = remote.Settings
+		if err := putManifest(cfg, final); err != nil {
+			s.setSyncError(err)
+			return s.GetSyncStatus(), err
+		}
+		remote = final
+	}
+
+	result := fmt.Sprintf("拉取 %d 条新增 / %d 条更新", pulledNew, pulledUpd)
+	if upload {
+		result += fmt.Sprintf("，推送 %d 条", pushed)
+	}
+	if settingsPulled {
+		result += "，已同步远端设置"
+	}
+	if settingsPushed {
+		result += "，已上传本机设置"
 	}
 
 	s.syncMu.Lock()
 	s.syncStatus.LastSync = time.Now().Format(time.RFC3339)
 	s.syncStatus.LastResult = result
 	s.syncStatus.LastError = ""
-	s.syncStatus.RemoteItems = remoteCount
+	s.syncStatus.RemoteItems = len(remote.Items)
 	s.syncMu.Unlock()
 
 	Logf(s.store.Dir(), "sync ok: %s", result)
 	s.emit("clip:stats", s.store.Stats())
 	return s.GetSyncStatus(), nil
+}
+
+// pushItem uploads one record (and its blob when the peer does not have it).
+func (s *ClipService) pushItem(cfg syncConfig, it Item, blobExt string) error {
+	rec := itemRecord{Version: 2, Item: it, BlobExt: blobExt, Written: time.Now().UTC()}
+	// The id is machine-local; peers key on the hash.
+	body, err := json.Marshal(rec)
+	if err != nil {
+		return err
+	}
+	if err := cfg.davPut(itemPath(it.Hash), "application/json; charset=utf-8", body); err != nil {
+		return err
+	}
+	if blobExt == "" {
+		return nil
+	}
+	data, err := s.store.LoadBlobByID(it.ID)
+	if err != nil || len(data) == 0 {
+		return nil // nothing to upload; index still references the record
+	}
+	return cfg.davPut(blobPath(it.Hash, blobExt), "application/octet-stream", data)
+}
+
+// buildManifest produces the index for everything this machine knows about,
+// keeping peer entries that we did not touch.
+func (s *ClipService) buildManifest(remote *syncManifest) *syncManifest {
+	m := &syncManifest{Version: 2, Device: s.deviceName(), UpdatedAt: time.Now().UTC()}
+	seen := make(map[string]bool, 256)
+
+	for _, it := range s.store.All() {
+		if it.Hash == "" {
+			continue
+		}
+		mi := manifestItem{
+			Hash:      it.Hash,
+			ID:        it.ID,
+			Kind:      it.Kind,
+			Preview:   truncateRunes(it.Preview, 120),
+			UpdatedAt: it.UpdatedAt,
+			Blob:      s.store.BlobExt(it.ID),
+			Pinned:    it.Pinned,
+			SeenCount: it.SeenCount,
+			CopyCount: it.CopyCount,
+		}
+		m.Items = append(m.Items, mi)
+		seen[it.Hash] = true
+	}
+	// Keep remote-only entries (another machine's history we have not pulled yet).
+	if remote != nil {
+		for _, ri := range remote.Items {
+			if ri.Hash == "" || seen[ri.Hash] {
+				continue
+			}
+			m.Items = append(m.Items, ri)
+		}
+	}
+	return m
+}
+
+func truncateRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n])
+}
+
+func itemPath(hash string) string { return "items/" + hash + ".json" }
+func blobPath(hash, ext string) string {
+	if ext == "" {
+		return ""
+	}
+	return "blobs/" + hash + ext
 }
 
 func (s *ClipService) setSyncError(err error) {
@@ -414,8 +638,15 @@ func (s *ClipService) setSyncError(err error) {
 	s.emit("sync:status", s.GetSyncStatus())
 }
 
-// syncLoop runs the periodic sync; restartSyncLoop restarts it after a settings
-// change so a new interval takes effect immediately.
+func (s *ClipService) deviceName() string {
+	if host, err := os.Hostname(); err == nil && host != "" {
+		return host
+	}
+	return "windows"
+}
+
+// syncLoop runs the periodic sync; it is restarted after a settings change so a
+// new interval takes effect immediately.
 func (s *ClipService) syncLoop() {
 	s.syncRestart.Lock()
 	if s.syncCancel != nil {

@@ -9,7 +9,9 @@ param(
   [int]$Wheel = 0,
   [string]$Out = "shot.png",
   [int]$WaitMs = 700,
-  [switch]$NoFocus
+  [switch]$NoFocus,
+  [int]$Width = 0,
+  [int]$Height = 0
 )
 
 Add-Type -AssemblyName System.Drawing
@@ -27,6 +29,7 @@ public class CapX {
   [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowTextW(IntPtr h, StringBuilder s, int n);
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+  [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr h, int x, int y, int w, int ht, bool repaint);
   [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int c);
   [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
   [DllImport("user32.dll")] public static extern void mouse_event(uint f, int dx, int dy, int d, IntPtr e);
@@ -67,6 +70,13 @@ if ($NoFocus) {
 
 $r = New-Object CapX+RECT
 [CapX]::GetWindowRect($h, [ref]$r) | Out-Null
+
+if ($Width -gt 0 -and $Height -gt 0) {
+  [CapX]::MoveWindow($h, $r.Left, $r.Top, $Width, $Height, $true) | Out-Null
+  Start-Sleep -Milliseconds 700
+  [CapX]::GetWindowRect($h, [ref]$r) | Out-Null
+}
+
 $w = $r.Right - $r.Left
 $ht = $r.Bottom - $r.Top
 Write-Host "window rect: $($r.Left),$($r.Top) ${w}x${ht}"
