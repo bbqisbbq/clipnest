@@ -24,7 +24,7 @@ import (
 const (
 	// updateRepo is "owner/repo" on GitHub.
 	updateRepo = "bbqisbbq/clipnest"
-	// updateAPIBase is overridable in tests.
+	// updateAPIBase is overridable with CLIPNEST_UPDATE_API (mirrors, tests).
 	updateAPIBase = "https://api.github.com"
 	// updateHTTPTimeout bounds one request.
 	updateHTTPTimeout = 30 * time.Second
@@ -103,7 +103,7 @@ func fetchLatestRelease() (*ghRelease, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), updateHTTPTimeout)
 	defer cancel()
 
-	url := strings.TrimRight(updateAPIBase, "/") + "/repos/" + updateRepo + "/releases/latest"
+	url := strings.TrimRight(updateAPI(), "/") + "/repos/" + updateRepo + "/releases/latest"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
@@ -121,6 +121,12 @@ func fetchLatestRelease() (*ghRelease, error) {
 	case http.StatusOK:
 	case http.StatusNotFound:
 		return nil, errors.New("仓库还没有发布任何版本")
+	case http.StatusForbidden, http.StatusTooManyRequests:
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 300))
+		if strings.Contains(strings.ToLower(string(body)), "rate limit") {
+			return nil, errors.New("GitHub API 限流（未认证请求每 IP 每小时 60 次），稍后再试即可")
+		}
+		return nil, fmt.Errorf("检查更新失败（HTTP %d）: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	default:
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 200))
 		return nil, fmt.Errorf("检查更新失败（HTTP %d）: %s", resp.StatusCode, strings.TrimSpace(string(body)))
@@ -257,6 +263,15 @@ func sanitizeFileName(name string) string {
 		return "clipnest-update.exe"
 	}
 	return name
+}
+
+// updateAPI honours CLIPNEST_UPDATE_API so the checker can point at a mirror or
+// a test server instead of api.github.com.
+func updateAPI() string {
+	if v := strings.TrimSpace(os.Getenv("CLIPNEST_UPDATE_API")); v != "" {
+		return v
+	}
+	return updateAPIBase
 }
 
 // versionLess reports whether a < b for dotted numeric versions ("0.2.0" <
