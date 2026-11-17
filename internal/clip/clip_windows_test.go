@@ -4,16 +4,38 @@ package clip
 
 import (
 	"bytes"
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
 )
 
 // These tests drive the real Windows clipboard. They run sequentially because
 // the clipboard is global state.
+//
+// If a ClipNest instance is running it is also wiring itself to that same
+// clipboard (and briefly holding it open), which makes round-trip assertions
+// flaky — so the whole file skips instead of failing for the wrong reason.
+func TestMain(m *testing.M) {
+	if clipnestRunning() {
+		fmt.Fprintln(os.Stderr, "skip: a ClipNest instance is running and shares the clipboard; quit it first")
+		os.Exit(0)
+	}
+	os.Exit(m.Run())
+}
+
+func clipnestRunning() bool {
+	tasklist := os.Getenv("WINDIR") + `\System32\tasklist.exe`
+	out, err := exec.Command(tasklist, "/FI", "IMAGENAME eq clipnest.exe", "/NH").Output()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(string(out)), "clipnest.exe")
+}
 
 func TestDIBRoundTrip(t *testing.T) {
 	img := image.NewNRGBA(image.Rect(0, 0, 4, 3))
