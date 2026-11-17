@@ -18,3 +18,8 @@ scratch/*.exe
 scratch/davroot/
 bin/*.exe
 
+
+# throwaway APPDATA sandboxes used to test sync against a local WebDAV
+scratch/appdata-*/
+scratch/dev-*/
+
