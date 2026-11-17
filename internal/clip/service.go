@@ -1,6 +1,7 @@
 package clip
 
 import (
+	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -61,6 +62,12 @@ type ClipService struct {
 	// targetHwnd is the window that had focus when the picker was opened; it is
 	// where the pasted content must land.
 	targetHwnd uintptr
+
+	// syncMu guards the sync status; syncRestart serialises loop restarts.
+	syncMu      sync.Mutex
+	syncStatus  SyncStatus
+	syncRestart sync.Mutex
+	syncCancel  context.CancelFunc
 }
 
 // NewService opens the store inside dataDir.
@@ -87,6 +94,7 @@ func (s *ClipService) Start() error {
 	s.watcher = w
 	go s.captureLoop()
 	go s.refreshFilesLoop()
+	go s.syncLoop()
 	// Whatever is already on the clipboard when the app starts is also part of
 	// "what went through the clipboard", so record it once.
 	go func() {
@@ -110,6 +118,12 @@ func (s *ClipService) Shutdown() {
 	if s.watcher != nil {
 		s.watcher.Stop()
 	}
+	s.syncRestart.Lock()
+	if s.syncCancel != nil {
+		s.syncCancel()
+		s.syncCancel = nil
+	}
+	s.syncRestart.Unlock()
 	_ = s.store.Close()
 }
 
@@ -450,6 +464,7 @@ func (s *ClipService) SaveSettings(st Settings) (Settings, error) {
 		}
 	}
 	s.store.Prune(st.MaxItems, st.MaxAgeDays)
+	go s.syncLoop()
 	s.emit("settings:changed", st)
 	s.emit("clip:stats", s.store.Stats())
 	return s.store.Settings(), nil

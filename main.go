@@ -33,6 +33,7 @@ func init() {
 	application.RegisterEvent[int]("clip:cleared")
 	application.RegisterEvent[clip.Stats]("clip:stats")
 	application.RegisterEvent[clip.Settings]("settings:changed")
+	application.RegisterEvent[clip.SyncStatus]("sync:status")
 	application.RegisterEvent[string]("picker:opened")
 	application.RegisterEvent[string]("picker:paste-failed")
 }
@@ -196,10 +197,13 @@ func main() {
 		MinWidth:  900,
 		MinHeight: 560,
 		Hidden:    !preSettings.ShowOnLaunch && !forceShow,
+		// Frameless: the UI draws its own caption bar so the chrome matches the
+		// content. Resizing still works (the Wails runtime handles edge drags).
+		Frameless: true,
 		Windows: application.WindowsWindow{
 			Theme: application.SystemDefault,
 		},
-		BackgroundColour: application.NewRGB(15, 17, 22),
+		BackgroundColour: application.NewRGB(10, 11, 15),
 		URL:              "/",
 	})
 

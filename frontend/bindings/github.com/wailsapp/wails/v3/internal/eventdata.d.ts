@@ -21,6 +21,7 @@ declare module "@wailsio/runtime" {
             "picker:opened": string;
             "picker:paste-failed": string;
             "settings:changed": clip$0.Settings;
+            "sync:status": clip$0.SyncStatus;
         }
     }
 }

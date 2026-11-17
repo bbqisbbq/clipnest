@@ -97,6 +97,100 @@ func TrimLog(dir string, limit int64) {
 	}
 }
 
+// All returns a copy of every entry, newest first.
+func (s *Store) All() []Item {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]Item, 0, len(s.order))
+	for _, id := range s.order {
+		if it := s.items[id]; it != nil {
+			out = append(out, *it)
+		}
+	}
+	return out
+}
+
+// UpsertRemote merges one entry coming from a sync peer.
+//
+// The entry is matched by content hash (so the same text copied on two machines
+// stays one entry). Timestamps decide which body wins, while flags that should
+// never regress — favourite state and counters — are unioned/maximised.
+func (s *Store) UpsertRemote(in Item) (isNew bool, changed bool) {
+	now := nowUTC()
+	s.mu.Lock()
+	defer func() {
+		s.mu.Unlock()
+		s.markDirty()
+	}()
+
+	existingID, found := s.byHash[in.Hash]
+	if found {
+		if local, ok := s.items[existingID]; ok {
+			// Keep the newest body.
+			if in.UpdatedAt.After(local.UpdatedAt) {
+				local.Text = in.Text
+				local.Preview = in.Preview
+				local.HTML = in.HTML
+				local.RTF = in.RTF
+				local.Files = in.Files
+				local.FormatName = in.FormatName
+				local.FormatID = in.FormatID
+				local.ImageFile = in.ImageFile
+				local.BinaryFile = in.BinaryFile
+				local.Width = in.Width
+				local.Height = in.Height
+				local.Size = in.Size
+				if in.SourceApp != "" {
+					local.SourceApp = in.SourceApp
+				}
+				local.UpdatedAt = in.UpdatedAt
+				changed = true
+			}
+			if in.Pinned && !local.Pinned {
+				local.Pinned = true
+				changed = true
+			}
+			if in.SeenCount > local.SeenCount {
+				local.SeenCount = in.SeenCount
+				changed = true
+			}
+			if in.CopyCount > local.CopyCount {
+				local.CopyCount = in.CopyCount
+				changed = true
+			}
+			if !in.CreatedAt.IsZero() && (local.CreatedAt.IsZero() || in.CreatedAt.Before(local.CreatedAt)) {
+				local.CreatedAt = in.CreatedAt
+				changed = true
+			}
+			if changed {
+				s.reorder()
+			}
+			return false, changed
+		}
+	}
+
+	it := in
+	if it.ID == "" {
+		it.ID = newID()
+	}
+	if it.CreatedAt.IsZero() {
+		it.CreatedAt = now
+	}
+	if it.UpdatedAt.IsZero() {
+		it.UpdatedAt = now
+	}
+	if it.SeenCount == 0 {
+		it.SeenCount = 1
+	}
+	s.items[it.ID] = &it
+	s.byHash[it.Hash] = it.ID
+	s.order = append([]string{it.ID}, s.order...)
+	if it.UpdatedAt.After(s.lastCapture) {
+		s.lastCapture = it.UpdatedAt
+	}
+	return true, true
+}
+
 // Dir returns the data directory.
 func (s *Store) Dir() string { return s.dir }
 

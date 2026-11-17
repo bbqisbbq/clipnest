@@ -10,6 +10,7 @@ export type Settings = Models.Settings;
 export type Stats = Models.Stats;
 export type AppInfo = Models.AppInfo;
 export type Filter = Models.Filter;
+export type SyncStatus = Models.SyncStatus;
 
 export const KIND_LABEL: Record<string, string> = {
   text: "文本",
@@ -45,5 +46,11 @@ export function emptySettings(): Settings {
     closeToTray: true,
     autoStart: false,
     theme: "system",
+    syncEnabled: false,
+    syncUrl: "",
+    syncUser: "",
+    syncPass: "",
+    syncFile: "clipnest-sync.json",
+    syncIntervalMin: 15,
   };
 }

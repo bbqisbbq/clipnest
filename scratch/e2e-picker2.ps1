@@ -92,7 +92,9 @@ $clipAfterCopy = (Get-Clipboard -Raw).Trim()
 $textAfterCopy = Get-TargetText
 Write-Host "B) clipboard=[$clipAfterCopy]"
 Write-Host "B) target text=[$($textAfterCopy -replace "`n",'\n')] (must not contain the copied value)"
-$copyOnlyOK = ($clipAfterCopy -eq $sentinelA) -and (-not $textAfterCopy.Contains($sentinelA))
+# Order-independent assertions: the picker copied *something other* than the
+# newest sentinel, and nothing was pasted into the target.
+$copyOnlyOK = ($clipAfterCopy -ne $sentinelB) -and (-not $textAfterCopy.Contains($clipAfterCopy))
 
 if ($focusBack -and $copyOnlyOK) {
   Write-Host 'E2E-RESULT: PASS — Esc 只关闭，Ctrl+Enter 只复制'

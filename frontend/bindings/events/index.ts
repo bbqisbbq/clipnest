@@ -53,3 +53,8 @@ export const PickerPasteFailed = "picker:paste-failed";
  */
 export const SettingsChanged = "settings:changed";
 
+/**
+ * Name of the custom event "sync:status".
+ */
+export const SyncStatus = "sync:status";
+

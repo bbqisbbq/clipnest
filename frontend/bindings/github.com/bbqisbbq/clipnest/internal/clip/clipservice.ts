@@ -79,6 +79,13 @@ export function GetStats(): $CancellablePromise<$models.Stats> {
 }
 
 /**
+ * GetSyncStatus returns the current sync state.
+ */
+export function GetSyncStatus(): $CancellablePromise<$models.SyncStatus> {
+    return $Call.ByID(553940266);
+}
+
+/**
  * Version returns the app version as a string method too (handy in JS).
  */
 export function GetVersion(): $CancellablePromise<string> {
@@ -192,4 +199,18 @@ export function Shutdown(): $CancellablePromise<void> {
  */
 export function Start(): $CancellablePromise<void> {
     return $Call.ByID(2502949559);
+}
+
+/**
+ * SyncNow performs a full two-way merge and upload.
+ */
+export function SyncNow(): $CancellablePromise<$models.SyncStatus> {
+    return $Call.ByID(2942154482);
+}
+
+/**
+ * TestSync verifies the WebDAV endpoint without changing anything.
+ */
+export function TestSync(): $CancellablePromise<string> {
+    return $Call.ByID(292331458);
 }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Events } from "@wailsio/runtime";
-import { ClipService, EventNames, newFilter, type AppInfo, type Item, type Settings, type Stats } from "./lib/api";
+import { ClipService, EventNames, newFilter, type AppInfo, type Item, type Settings, type Stats, type SyncStatus } from "./lib/api";
+import TitleBar from "./components/TitleBar";
 import Sidebar from "./components/Sidebar";
 import ItemRow from "./components/ItemRow";
 import DetailPanel from "./components/DetailPanel";
@@ -8,7 +9,6 @@ import SettingsView from "./components/SettingsView";
 import { IconSearch } from "./components/Icons";
 
 type View = "history" | "settings";
-
 type Confirm = { message: string; action: () => void } | null;
 
 export default function App() {
@@ -21,6 +21,7 @@ export default function App() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const [images, setImages] = useState<Record<string, string>>({});
   const [toast, setToast] = useState("");
   const [confirm, setConfirm] = useState<Confirm>(null);
@@ -53,9 +54,14 @@ export default function App() {
   useEffect(() => {
     (async () => {
       try {
-        const [st, info] = await Promise.all([ClipService.GetSettings(), ClipService.GetAppInfo()]);
+        const [st, info, sync] = await Promise.all([
+          ClipService.GetSettings(),
+          ClipService.GetAppInfo(),
+          ClipService.GetSyncStatus(),
+        ]);
         setSettings(st);
         setAppInfo(info);
+        setSyncStatus(sync);
         setStats(await ClipService.GetStats());
       } catch (err) {
         console.error(err);
@@ -72,11 +78,15 @@ export default function App() {
   // Live updates from Go.
   useEffect(() => {
     const offs: Array<() => void> = [];
-    offs.push(Events.On(EventNames.ClipNew, () => void loadItems()));
-    offs.push(Events.On(EventNames.ClipBumped, () => void loadItems()));
-    offs.push(Events.On(EventNames.ClipUpdated, () => void loadItems()));
-    offs.push(Events.On(EventNames.ClipDeleted, () => void loadItems()));
-    offs.push(Events.On(EventNames.ClipCleared, () => void loadItems()));
+    for (const name of [
+      EventNames.ClipNew,
+      EventNames.ClipBumped,
+      EventNames.ClipUpdated,
+      EventNames.ClipDeleted,
+      EventNames.ClipCleared,
+    ]) {
+      offs.push(Events.On(name, () => void loadItems()));
+    }
     offs.push(
       Events.On(EventNames.ClipStats, (ev: any) => {
         setStats(ev.data as Stats);
@@ -88,6 +98,11 @@ export default function App() {
       }),
     );
     offs.push(
+      Events.On("sync:status", (ev: any) => {
+        setSyncStatus(ev.data as SyncStatus);
+      }),
+    );
+    offs.push(
       Events.On("ui:navigate", (ev: any) => {
         if (ev.data === "settings") setView("settings");
       }),
@@ -95,7 +110,6 @@ export default function App() {
     return () => offs.forEach((off) => off());
   }, [loadItems]);
 
-  // Lazily fetch image payloads for the selected entry.
   const selected = useMemo(() => items.find((i) => i.id === selectedId) ?? null, [items, selectedId]);
 
   useEffect(() => {
@@ -139,7 +153,7 @@ export default function App() {
     (item: Item | null) => {
       if (!item) return;
       setConfirm({
-        message: `删除这条${item.preview ? `「${item.preview.slice(0, 24)}…」` : ""}记录？`,
+        message: `删除这条记录？${item.preview ? `「${item.preview.slice(0, 24)}」` : ""}`,
         action: async () => {
           try {
             await ClipService.DeleteItem(item.id);
@@ -178,6 +192,7 @@ export default function App() {
         setSettings(saved);
         notify("设置已保存");
         void loadItems();
+        setSyncStatus(await ClipService.GetSyncStatus());
       } catch (err) {
         notify(`保存失败：${String(err)}`);
       }
@@ -196,6 +211,21 @@ export default function App() {
     }
   }, [settings, notify]);
 
+  const runSync = useCallback(async () => {
+    try {
+      const status = await ClipService.SyncNow();
+      setSyncStatus(status);
+      notify(status.lastError ? `同步失败：${status.lastError}` : status.lastResult || "同步完成");
+      void loadItems();
+    } catch (err) {
+      notify(`同步失败：${String(err)}`);
+    }
+  }, [loadItems, notify]);
+
+  const testSync = useCallback(async () => {
+    return await ClipService.TestSync();
+  }, []);
+
   const moveSelection = useCallback(
     (delta: number) => {
       if (items.length === 0) return;
@@ -206,7 +236,6 @@ export default function App() {
     [items, selectedId],
   );
 
-  // Keyboard shortcuts that make the list usable without the mouse.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
@@ -214,8 +243,10 @@ export default function App() {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
         e.preventDefault();
         setView("history");
-        searchRef.current?.focus();
-        searchRef.current?.select();
+        requestAnimationFrame(() => {
+          searchRef.current?.focus();
+          searchRef.current?.select();
+        });
         return;
       }
       if (e.key === "Escape") {
@@ -244,124 +275,127 @@ export default function App() {
   }, [confirm, copyItem, deleteItem, moveSelection, selected]);
 
   const capturing = settings?.capture ?? true;
-  const storageBytes = stats?.storageBytes ?? 0;
+  const syncActive = Boolean(settings?.syncEnabled);
 
   return (
-    <div className="app">
-      <Sidebar
-        view={view}
-        kind={kind}
-        pinnedOnly={pinnedOnly}
-        stats={stats}
-        capturing={capturing}
-        onSelectAll={() => {
-          setView("history");
-          setKind("");
-          setPinnedOnly(false);
-        }}
-        onSelectKind={(k) => {
-          setView("history");
-          setKind(k);
-          setPinnedOnly(false);
-        }}
-        onSelectPinned={() => {
-          setView("history");
-          setKind("");
-          setPinnedOnly(true);
-        }}
-        onOpenSettings={() => setView("settings")}
-        onToggleCapture={toggleCapture}
-      />
+    <div className={`app ${view === "settings" ? "is-settings" : ""}`}>
+      <TitleBar capturing={capturing} enabled={settings !== null} onToggleCapture={toggleCapture} />
 
-      {view === "history" ? (
-        <>
-          <main className="main">
-            <header className="main-head">
-              <div className="search">
-                <IconSearch size={16} />
-                <input
-                  ref={searchRef}
-                  value={query}
-                  placeholder="搜索文本、链接、文件名…"
-                  onChange={(e) => setQuery(e.target.value)}
-                />
-                {query ? (
-                  <button className="search-clear" onClick={() => setQuery("")}>
-                    ×
-                  </button>
+      <div className="workspace">
+        <Sidebar
+          view={view}
+          kind={kind}
+          pinnedOnly={pinnedOnly}
+          stats={stats}
+          capturing={capturing}
+          syncActive={syncActive}
+          onSelectAll={() => {
+            setView("history");
+            setKind("");
+            setPinnedOnly(false);
+          }}
+          onSelectKind={(k) => {
+            setView("history");
+            setKind(k);
+            setPinnedOnly(false);
+          }}
+          onSelectPinned={() => {
+            setView("history");
+            setKind("");
+            setPinnedOnly(true);
+          }}
+          onOpenSearch={() => {
+            setView("history");
+            requestAnimationFrame(() => searchRef.current?.focus());
+          }}
+          onOpenSettings={() => setView("settings")}
+          onToggleCapture={toggleCapture}
+        />
+
+        {view === "history" ? (
+          <>
+            <main className="main">
+              <header className="list-head">
+                <div className="search">
+                  <IconSearch size={15} />
+                  <input
+                    ref={searchRef}
+                    value={query}
+                    placeholder="搜索文本、链接、文件名…"
+                    onChange={(e) => setQuery(e.target.value)}
+                  />
+                  {query ? (
+                    <button className="search-clear" onClick={() => setQuery("")} title="清空">
+                      ×
+                    </button>
+                  ) : (
+                    <kbd>Ctrl F</kbd>
+                  )}
+                </div>
+                <span className="list-count">{items.length} 条</span>
+              </header>
+
+              <div className="list">
+                {loading ? (
+                  <div className="empty-state">正在读取历史…</div>
+                ) : items.length === 0 ? (
+                  <div className="empty-state">
+                    <p>{query ? "没有匹配的记录" : "还没有记录"}</p>
+                    <span>{query ? "换个关键词试试" : "复制任意文本、图片或文件，ClipNest 会安静地记在这里"}</span>
+                  </div>
                 ) : (
-                  <kbd>Ctrl F</kbd>
+                  items.map((item) => (
+                    <ItemRow
+                      key={item.id}
+                      item={item}
+                      active={item.id === selectedId}
+                      onSelect={() => setSelectedId(item.id)}
+                      onCopy={() => void copyItem(item)}
+                      onTogglePin={() => void togglePin(item)}
+                      onDelete={() => deleteItem(item)}
+                    />
+                  ))
                 )}
               </div>
-              <div className="head-meta">
-                <span>{items.length} 条</span>
-                {!capturing ? <span className="warn">已暂停收集</span> : null}
-                <button className="ghost-btn small" onClick={() => ClipService.HideWindow()}>
-                  收起到托盘
-                </button>
-              </div>
-            </header>
+            </main>
 
-            <div className="list">
-              {loading ? (
-                <div className="empty-state">正在读取历史…</div>
-              ) : items.length === 0 ? (
-                <div className="empty-state">
-                  <p>{query ? "没有匹配的记录" : "还没有记录"}</p>
-                  <span>
-                    {query ? "换个关键词试试" : "复制任意文本、图片或文件，ClipNest 会安静地把它记在这里"}
-                  </span>
-                </div>
-              ) : (
-                items.map((item) => (
-                  <ItemRow
-                    key={item.id}
-                    item={item}
-                    active={item.id === selectedId}
-                    onSelect={() => setSelectedId(item.id)}
-                    onCopy={() => void copyItem(item)}
-                    onTogglePin={() => void togglePin(item)}
-                  />
-                ))
-              )}
-            </div>
-          </main>
-
-          <DetailPanel
-            item={selected}
-            imageData={selected ? (images[selected.id] ?? null) : null}
-            onCopy={() => void copyItem(selected)}
-            onTogglePin={() => void togglePin(selected)}
-            onDelete={() => deleteItem(selected)}
-            onOpen={() => {
-              if (!selected) return;
-              ClipService.OpenItem(selected.id).catch((err) => notify(`打开失败：${String(err)}`));
-            }}
-            onClose={() => setSelectedId(null)}
-            onRefresh={() => {
-              if (!selected) return;
-              ClipService.RefreshItem(selected.id)
-                .then((updated) => {
-                  setItems((prev) => prev.map((it) => (it.id === updated.id ? updated : it)));
-                  notify("已重新检查文件状态");
-                })
-                .catch((err) => notify(`检查失败：${String(err)}`));
-            }}
-          />
-        </>
-      ) : (
-        <main className="main is-settings">
+            <DetailPanel
+              item={selected}
+              imageData={selected ? (images[selected.id] ?? null) : null}
+              onCopy={() => void copyItem(selected)}
+              onTogglePin={() => void togglePin(selected)}
+              onDelete={() => deleteItem(selected)}
+              onOpen={() => {
+                if (!selected) return;
+                ClipService.OpenItem(selected.id).catch((err) => notify(`打开失败：${String(err)}`));
+              }}
+              onClose={() => setSelectedId(null)}
+              onRefresh={() => {
+                if (!selected) return;
+                ClipService.RefreshItem(selected.id)
+                  .then((updated) => {
+                    setItems((prev) => prev.map((it) => (it.id === updated.id ? updated : it)));
+                    notify("已重新检查文件状态");
+                  })
+                  .catch((err) => notify(`检查失败：${String(err)}`));
+              }}
+            />
+          </>
+        ) : (
           <SettingsView
             settings={settings}
             appInfo={appInfo}
-            storageBytes={storageBytes}
+            storageBytes={stats?.storageBytes ?? 0}
+            syncStatus={syncStatus}
             onSave={(next) => void saveSettings(next)}
             onClearHistory={clearHistory}
             onOpenDataDir={() => void ClipService.OpenDataDir()}
             onQuit={() => void ClipService.Quit()}
+            onTestSync={testSync}
+            onSyncNow={() => void runSync()}
           />
-        </main>
-      )}
+        )}
+      </div>
 
       {toast ? <div className="toast">{toast}</div> : null}
 
@@ -370,10 +404,10 @@ export default function App() {
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <p>{confirm.message}</p>
             <div className="modal-actions">
-              <button className="ghost-btn" onClick={() => setConfirm(null)}>
+              <button className="btn btn-ghost" onClick={() => setConfirm(null)}>
                 取消
               </button>
-              <button className="danger-btn" onClick={() => void confirm.action()}>
+              <button className="btn btn-danger" onClick={() => void confirm.action()}>
                 确认
               </button>
             </div>

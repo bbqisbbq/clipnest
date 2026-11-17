@@ -4,7 +4,9 @@
 
 ClipNest 在你使用电脑时安静地记录进入过系统剪贴板的一切——文本、链接、图片、富文本、文件（只记引用），
 连 Excel 区间、颜色、音频这类私有格式也原样留底。按一次快捷键，列表就在**光标旁边**弹出来，
-方向键或鼠标选中，回车直接粘到当前位置。
+方向键或鼠标选中，回车直接粘到当前位置；需要跨机器时，用你自己的 WebDAV 目录同步。
+
+界面是无边框的：标题栏、按钮、面板都由应用自己绘制，和内容同一套配色与圆角。
 
 ![快速粘贴](docs/images/picker.png)
 
@@ -17,13 +19,15 @@ ClipNest 在你使用电脑时安静地记录进入过系统剪贴板的一切�
 - **多格式，且不漏**：文本、链接、图片（`PNG`/`CF_DIB`/`CF_DIBV5`）、富文本（`HTML Format` / RTF）、
   文件（`CF_HDROP`）、OLE 延迟渲染的剪贴板，最后还有「其它格式」兜底（原样保存私有格式字节，
   可原样粘回）。覆盖细节见 [docs/CAPTURE.md](docs/CAPTURE.md)。
+- **WebDAV 跨机器同步**：整份历史发布成一个 JSON 文档，按内容哈希合并；收藏标记、复制次数都取并集。
+  配置与合并规则见 [docs/SYNC.md](docs/SYNC.md)。
 - **去重**：按内容哈希去重，重复复制只更新时间戳与次数，不产生垃圾条目。
-- **收藏 / 搜索 / 分类**：全部、文本、链接、图片、文件、富文本、其它格式、收藏；搜索匹配正文、文件名与来源程序。
+- **收藏 / 搜索 / 分类**：全部、收藏、文本、链接、图片、文件、富文本、其它格式；搜索匹配正文、文件名与来源程序。
 - **一键回填**：选中「复制」或双击条目，把内容重新写回剪贴板，并抑制自己写入产生的回声记录。
 - **保留策略**：最多条数、最长天数、单条文本长度上限；收藏条目永不被自动清理。
 - **隐私开关**：可按程序名或正则忽略（密码管理器、内部后台等），也可整体暂停收集。
 - **其它**：开机自启（写 HKCU Run）、单实例（第二次启动只是把窗口拉到前台）、诊断日志。
-- **纯本地**：不联网、不上传，数据全部存在 `%APPDATA%\ClipNest`。
+- **纯本地优先**：不联网（除非你配置了 WebDAV），数据全部存在 `%APPDATA%\ClipNest`。
 
 ## 文件复制怎么处理？—— 四种方案与当前选择
 
@@ -96,9 +100,17 @@ wails3 package      # 生成 NSIS 安装包（需要 NSIS，模板已内置配�
 | 操作 | 方式 |
 | --- | --- |
 | 打开管理窗口 | 托盘图标左键 / 托盘菜单「显示管理窗口」 |
-| 收起到托盘 | 关闭窗口按钮（×）或窗口右上「收起到托盘」 |
+| 收起到托盘 | 标题栏右上 ×（等于最小化到托盘，不是退出） |
+| 最小化 / 最大化 | 标题栏右上按钮，或双击标题栏空白处 |
 | 上下选择 / 复制 / 删除 / 搜索 | `↑` `↓` / `Enter`、双击 / `Delete` / `Ctrl+F` |
-| 彻底退出 | 托盘菜单 →「退出 ClipNest」 |
+| 彻底退出 | 托盘菜单 →「退出 ClipNest」，或设置页底部「退出 ClipNest」 |
+
+### 设置页
+
+![设置](docs/images/settings.png)
+
+每个开关/输入框右侧的 <kbd>ⓘ</kbd> 是说明：悬停即可看，点击可固定住（键盘 `Tab` + `Enter` 也行）。
+底部固定操作条显示「有未保存的修改 / 设置已保存」，可以撤销。
 
 ## 数据与存储
 
@@ -117,12 +129,13 @@ wails3 package      # 生成 NSIS 安装包（需要 NSIS，模板已内置配�
 ## 目录结构
 
 ```
-main.go                       应用装配：托盘、两个窗口（管理窗 + 弹窗）、关窗不退出、快捷键、单实例
+main.go                       应用装配：托盘、两个无边框窗口（管理窗 + 弹窗）、关窗不退出、快捷键、单实例
 internal/clip/
   model.go                    Item / Filter / Stats / Captured 等数据结构
-  settings.go                 设置结构与默认值
+  settings.go                 设置结构与默认值（含 WebDAV 字段）
   store.go                    文件存储：JSONL 索引 + blob、去重、保留策略、诊断日志
-  service.go                  绑定给前端的 ClipService（25 个方法）
+  service.go                  绑定给前端的 ClipService（28 个方法）
+  sync.go                     WebDAV 同步：GET/PUT/MKCOL、快照、按哈希合并、定时循环
   win32_windows.go            Win32 基元：剪贴板 API、前景程序、开机自启
   clipboard_windows.go        读取/写回各类剪贴板格式（含自定义格式与 RTF）
   dib_windows.go              CF_DIB(V5) ↔ image.NRGBA 互转
@@ -134,14 +147,18 @@ internal/clip/
 frontend/                     React + TS + Vite
   src/App.tsx                 管理窗口：布局、事件订阅、键盘快捷键
   src/Picker.tsx              快速粘贴弹窗（`?mode=picker`）
-  src/components/             Sidebar / ItemRow / DetailPanel / SettingsView / Icons
-  src/lib/                    api（绑定封装）、format（时间与体积）
+  src/styles.css              设计系统（深色、无边框、hairline 边框、单一强调色）
+  src/components/             TitleBar / Sidebar / ItemRow / DetailPanel / SettingsView / Tip / Icons
+  src/lib/                    api（绑定封装）、format（时间与体积）、window（无边框窗口控制）
   bindings/                   wails3 生成的 TS 绑定
 scripts/make_icon.py          生成 appicon.png 与 windows/icon.ico
 scratch/clipdump/             开发期剪贴板格式转储工具
 scratch/setclip/              开发期投放 RTF / 自定义格式到剪贴板的工具
+scratch/dav/                  一次性 WebDAV 服务器（同步联调）
 scratch/e2e-picker*.ps1       弹窗端到端自动化（回车粘贴 / Esc / Ctrl+Enter）
+scratch/cap.ps1               窗口截图助手（定位、悬停、滚轮、点击）
 docs/CAPTURE.md               收集机制、格式覆盖矩阵与已知缺口
+docs/SYNC.md                  WebDAV 同步配置、合并规则与限制
 docs/FILE-STRATEGY.md         文件复制的方案对比与数据模型
 ```
 
@@ -166,7 +183,8 @@ docs/FILE-STRATEGY.md         文件复制的方案对比与数据模型
 ## 路线图
 
 - [ ] 方案 E：条目「归档到库」按钮 + 归档目录配额
-- [ ] 全局搜索的模糊匹配（拼音首字母）
+- [ ] 同步增强：删除墓碑（tombstone）、字段级冲突合并、可选 DPAPI 加密密码
+- [ ] 弹窗：图片/文件条目缩略图预览 + 数字键 1–9 快速选择
 - [ ] 分类规则（按来源程序自动打标签）
 - [ ] 条目内图片压缩 / 缩略图缓存，降低 blob 体积
 - [ ] SQLite 存储后端（历史规模大了再切换）

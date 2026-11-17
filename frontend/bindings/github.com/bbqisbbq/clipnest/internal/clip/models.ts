@@ -207,8 +207,7 @@ export interface Settings {
     "closeToTray": boolean;
 
     /**
-     * PasteOnCopy writes the selected entry back to the clipboard when the user
-     * picks it (always effectively true; the flag lets the UI stay honest).
+     * AutoStart registers the app in HKCU\...\Run.
      */
     "autoStart": boolean;
 
@@ -216,6 +215,17 @@ export interface Settings {
      * "system" | "dark" | "light"
      */
     "theme": string;
+
+    /**
+     * WebDAV sync. SyncURL is a directory; SyncFile is the document name inside
+     * that directory.
+     */
+    "syncEnabled": boolean;
+    "syncUrl": string;
+    "syncUser": string;
+    "syncPass": string;
+    "syncFile": string;
+    "syncIntervalMin": number;
 }
 
 /**
@@ -227,4 +237,17 @@ export interface Stats {
     "byKind": { [_ in string]?: number } | null;
     "storageBytes": number;
     "lastCapture": string;
+}
+
+/**
+ * SyncStatus is what the settings page shows.
+ */
+export interface SyncStatus {
+    "enabled": boolean;
+    "inProgress": boolean;
+    "lastSync": string;
+    "lastResult": string;
+    "lastError": string;
+    "remoteItems": number;
+    "truncated": boolean;
 }

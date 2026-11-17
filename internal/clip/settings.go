@@ -47,10 +47,18 @@ type Settings struct {
 	// CloseToTray hides the window on close instead of quitting. Kept for
 	// documentation: it is always true in this build.
 	CloseToTray bool `json:"closeToTray"`
-	// PasteOnCopy writes the selected entry back to the clipboard when the user
-	// picks it (always effectively true; the flag lets the UI stay honest).
+	// AutoStart registers the app in HKCU\...\Run.
 	AutoStart bool `json:"autoStart"`
 	Theme     string `json:"theme"` // "system" | "dark" | "light"
+
+	// WebDAV sync. SyncURL is a directory; SyncFile is the document name inside
+	// that directory.
+	SyncEnabled     bool   `json:"syncEnabled"`
+	SyncURL         string `json:"syncUrl"`
+	SyncUser        string `json:"syncUser"`
+	SyncPass        string `json:"syncPass"`
+	SyncFile        string `json:"syncFile"`
+	SyncIntervalMin int    `json:"syncIntervalMin"`
 }
 
 // DefaultSettings is used on first launch or when settings.json is missing.
@@ -74,6 +82,13 @@ func DefaultSettings() Settings {
 		CloseToTray:    true,
 		AutoStart:      false,
 		Theme:          "system",
+
+		SyncEnabled:     false,
+		SyncURL:         "",
+		SyncUser:        "",
+		SyncPass:        "",
+		SyncFile:        DefaultSyncFile,
+		SyncIntervalMin: 15,
 	}
 }
 

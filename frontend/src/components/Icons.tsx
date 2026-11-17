@@ -199,6 +199,16 @@ export const IconOther = (p: IconProps) =>
     p,
   );
 
+export const IconSync = (p: IconProps) =>
+  svg(
+    <>
+      <path d="M20 12a8 8 0 0 1-13.7 5.6L4 15.4" />
+      <path d="M4 12A8 8 0 0 1 17.7 6.4L20 8.6" />
+      <path d="M20 4v4.6h-4.6M4 20v-4.6h4.6" />
+    </>,
+    p,
+  );
+
 export const kindIcon = (kind: string) => {
   switch (kind) {
     case "link":

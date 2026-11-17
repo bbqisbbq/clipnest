@@ -16,5 +16,6 @@ export type {
     Filter,
     Item,
     Settings,
-    Stats
+    Stats,
+    SyncStatus
 } from "./models.js";
