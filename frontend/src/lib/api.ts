@@ -54,6 +54,7 @@ export function emptySettings(): Settings {
     syncFile: "clipnest-sync.json",
     syncIntervalMin: 15,
     syncSettings: true,
+    syncDeviceId: '',
     updateCheck: true,
     syncUpdatedAt: '',
   };

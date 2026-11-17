@@ -80,6 +80,12 @@ CREATE TABLE IF NOT EXISTS tombstones (
   device     TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_tomb_deleted ON tombstones(deleted_at);
+
+-- Small key/value scratch space (sync fingerprints and other one-off flags).
+CREATE TABLE IF NOT EXISTS meta (
+  k TEXT PRIMARY KEY,
+  v TEXT NOT NULL
+);
 `
 
 // Open opens (or creates and migrates) the database inside dir.
@@ -612,6 +618,24 @@ func (s *Store) DeleteWhere(f Filter) int {
 		}
 	}
 	return n
+}
+
+// ---- meta ---------------------------------------------------------------
+
+// Meta reads a small persisted value ("" when absent).
+func (s *Store) Meta(k string) string {
+	var v string
+	if err := s.db.QueryRow(`SELECT v FROM meta WHERE k = ?`, k).Scan(&v); err != nil {
+		return ""
+	}
+	return v
+}
+
+// SetMeta writes a small persisted value.
+func (s *Store) SetMeta(k, v string) error {
+	_, err := s.db.Exec(
+		`INSERT INTO meta (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v`, k, v)
+	return err
 }
 
 // ---- tombstones ---------------------------------------------------------

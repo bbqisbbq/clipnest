@@ -61,6 +61,9 @@ type Settings struct {
 	SyncPass        string `json:"syncPass"`
 	SyncFile        string `json:"syncFile"`
 	SyncIntervalMin int    `json:"syncIntervalMin"`
+	// SyncDeviceID is a random per-installation id. Each device writes its own
+	// package file, so two machines can never overwrite each other's data.
+	SyncDeviceID string `json:"syncDeviceId,omitempty"`
 	// SyncSettings shares the non-machine-specific settings (capture toggles,
 	// retention, ignore rules, hotkey, paste behaviour) with other machines.
 	SyncSettings bool `json:"syncSettings"`
@@ -96,7 +99,7 @@ func DefaultSettings() Settings {
 		SyncUser:        "",
 		SyncPass:        "",
 		SyncFile:        DefaultSyncFile,
-		SyncIntervalMin: 15,
+		SyncIntervalMin: 30,
 		SyncSettings:    true,
 		UpdateCheck:     true,
 	}

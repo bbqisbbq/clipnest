@@ -238,6 +238,12 @@ export interface Settings {
     "syncIntervalMin": number;
 
     /**
+     * SyncDeviceID is a random per-installation id. Each device writes its own
+     * package file, so two machines can never overwrite each other's data.
+     */
+    "syncDeviceId"?: string;
+
+    /**
      * SyncSettings shares the non-machine-specific settings (capture toggles,
      * retention, ignore rules, hotkey, paste behaviour) with other machines.
      */
@@ -272,6 +278,9 @@ export interface SyncStatus {
     "lastError": string;
     "remoteItems": number;
     "settingsSync": boolean;
+    "devices": number;
+    "lastBytes": number;
+    "deviceId": string;
 }
 
 /**

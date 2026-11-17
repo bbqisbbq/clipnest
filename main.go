@@ -309,6 +309,9 @@ func main() {
 
 	// Start listening once the app is wired up.
 	if err := svc.Start(); err != nil {
+		// Capture failures must be visible in the log file: a GUI build has no
+		// console, and "nothing happens" is the worst possible bug report.
+		clip.Logf(dataDir, "listener start failed: %v", err)
 		log.Printf("剪贴板监听启动失败: %v", err)
 	}
 

@@ -2,32 +2,62 @@ package clip
 
 import (
 	"bytes"
-	"encoding/json"
 	"image"
 	"image/color"
 	"image/png"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"time"
+	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"golang.org/x/net/webdav"
 )
 
-// newTestDAV starts an in-process WebDAV server rooted at a temp dir and returns
-// its URL plus a cleanup function.
-func newTestDAV(t *testing.T) (string, *webdav.Dir) {
+// davStats counts the requests a sync actually makes, so tests can assert that
+// a packaged sync does not fan out into hundreds of calls.
+type davStats struct {
+	gets     atomic.Int32
+	puts     atomic.Int32
+	propfind atomic.Int32
+	mkcol    atomic.Int32
+}
+
+type countingHandler struct {
+	next  http.Handler
+	stats *davStats
+}
+
+func (c countingHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		c.stats.gets.Add(1)
+	case http.MethodPut:
+		c.stats.puts.Add(1)
+	case "PROPFIND":
+		c.stats.propfind.Add(1)
+	case "MKCOL":
+		c.stats.mkcol.Add(1)
+	}
+	c.next.ServeHTTP(w, r)
+}
+
+// newTestDAV starts an in-process WebDAV server rooted at a temp dir.
+func newTestDAV(t *testing.T) (string, *webdav.Dir, *davStats) {
 	t.Helper()
 	dir := webdav.Dir(t.TempDir())
+	stats := &davStats{}
 	h := &webdav.Handler{
 		Prefix:     "/dav",
 		FileSystem: dir,
 		LockSystem: webdav.NewMemLS(),
 	}
-	srv := httptest.NewServer(h)
+	srv := httptest.NewServer(countingHandler{next: h, stats: stats})
 	t.Cleanup(srv.Close)
-	return srv.URL + "/dav", &dir
+	return srv.URL + "/dav", &dir, stats
 }
 
 func newTestService(t *testing.T, dataDir string) *ClipService {
@@ -40,148 +70,329 @@ func newTestService(t *testing.T, dataDir string) *ClipService {
 	return svc
 }
 
-func TestSyncUploadsAndPulls(t *testing.T) {
-	base, dir := newTestDAV(t)
+// syncedService returns a service wired to the given WebDAV base.
+func syncedService(t *testing.T, base string) *ClipService {
+	t.Helper()
+	svc := newTestService(t, t.TempDir())
+	st := svc.store.Settings()
+	st.SyncEnabled = true
+	st.SyncURL = base
+	if err := svc.store.SaveSettings(st); err != nil {
+		t.Fatal(err)
+	}
+	return svc
+}
 
-	// Machine A: one text entry, one image entry.
-	a := newTestService(t, t.TempDir())
+func TestSyncPackagesEverythingIntoOneFile(t *testing.T) {
+	base, dir, stats := newTestDAV(t)
+
+	a := syncedService(t, base)
 	if _, _, err := a.store.Add(Captured{Kind: KindText, Text: "hello from A", Preview: "hello from A", Hash: "hash-a", Size: 12, SourceApp: "a.exe"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := a.store.Add(Captured{Kind: KindImage, PNG: tinyPNG(t), Width: 2, Height: 2, Preview: "2 × 2 图像", Hash: "hash-img", Size: 100}); err != nil {
 		t.Fatal(err)
 	}
-	st := a.store.Settings()
-	st.SyncEnabled = true
-	st.SyncURL = base
-	if err := a.store.SaveSettings(st); err != nil {
-		t.Fatal(err)
-	}
-
-	status, err := a.SyncNow()
-	if err != nil {
-		t.Fatalf("SyncNow upload: %v", err)
-	}
-	if status.LastError != "" {
-		t.Fatalf("unexpected error status: %+v", status)
-	}
-
-	// The document must exist on the server.
-	data, err := os.ReadFile(filepath.Join(string(*dir), DefaultSyncFile))
-	if err != nil {
-		t.Fatalf("remote file missing: %v", err)
-	}
-	var man syncManifest
-	if err := json.Unmarshal(data, &man); err != nil {
-		t.Fatalf("remote manifest unreadable: %v", err)
-	}
-	if len(man.Items) != 2 {
-		t.Fatalf("remote items = %d, want 2", len(man.Items))
-	}
-	var withBlob int
-	for _, it := range man.Items {
-		if it.Blob != "" {
-			withBlob++
-			// Records and blobs live as separate files, one per content hash.
-			if _, err := os.Stat(filepath.Join(string(*dir), "items", it.Hash+".json")); err != nil {
-				t.Errorf("record file missing for %s: %v", it.Hash, err)
-			}
-			if _, err := os.Stat(filepath.Join(string(*dir), "blobs", it.Hash+it.Blob)); err != nil {
-				t.Errorf("blob file missing for %s: %v", it.Hash, err)
-			}
-		}
-	}
-	if withBlob != 1 {
-		t.Errorf("remote blobs = %d, want 1 (the image)", withBlob)
-	}
-	if man.Settings == nil {
-		t.Error("settings should be published in the manifest")
-	}
-
-	// Machine B: empty store, pulls everything including the image bytes.
-	b := newTestService(t, t.TempDir())
-	stB := b.store.Settings()
-	stB.SyncEnabled = true
-	stB.SyncURL = base
-	if err := b.store.SaveSettings(stB); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := b.SyncNow(); err != nil {
-		t.Fatalf("SyncNow pull: %v", err)
-	}
-	items := b.store.All()
-	if len(items) != 2 {
-		t.Fatalf("machine B items = %d, want 2", len(items))
-	}
-	var image *Item
-	for i := range items {
-		if items[i].Kind == KindImage {
-			image = &items[i]
-		}
-	}
-	if image == nil {
-		t.Fatal("image entry did not arrive")
-	}
-	if payload, err := b.store.LoadBlobByName(image.ImageFile); err != nil || len(payload) == 0 {
-		t.Errorf("image blob not restored: %v", err)
-	}
-}
-
-func TestSyncMergesByHashAndUnionsFlags(t *testing.T) {
-	base, _ := newTestDAV(t)
-
-	a := newTestService(t, t.TempDir())
-	aItem, _, _ := a.store.Add(Captured{Kind: KindText, Text: "shared", Preview: "shared", Hash: "same-hash", Size: 6})
-	a.store.SetPinned(aItem.ID, true)
-	if _, _, err := a.store.Add(Captured{Kind: KindText, Text: "only-a", Preview: "only-a", Hash: "only-a", Size: 6}); err != nil {
-		t.Fatal(err)
-	}
-	stA := a.store.Settings()
-	stA.SyncEnabled, stA.SyncURL = true, base
-	_ = a.store.SaveSettings(stA)
 	if _, err := a.SyncNow(); err != nil {
 		t.Fatalf("A sync: %v", err)
 	}
 
-	// Machine B independently captured the same content (same hash) but never
-	// starred it, and has an entry of its own.
-	b := newTestService(t, t.TempDir())
-	if _, _, err := b.store.Add(Captured{Kind: KindText, Text: "shared", Preview: "shared", Hash: "same-hash", Size: 6}); err != nil {
+	// Exactly one package file, written by A, and it is one PUT (+ MKCOL/PROPFIND).
+	files, err := os.ReadDir(filepath.Join(string(*dir), syncDevicesDir))
+	if err != nil {
+		t.Fatalf("devices dir: %v", err)
+	}
+	if len(files) != 1 || !strings.HasSuffix(files[0].Name(), ".zip") {
+		t.Fatalf("want a single .zip package, got %v", names(files))
+	}
+	if got := stats.puts.Load(); got != 1 {
+		t.Errorf("PUT count = %d, want 1 (the whole history uploads in one request)", got)
+	}
+
+	pkg, err := os.ReadFile(filepath.Join(string(*dir), syncDevicesDir, files[0].Name()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := parsePackage(pkg)
+	if err != nil {
+		t.Fatalf("parse package: %v", err)
+	}
+	if len(parsed.items) != 2 {
+		t.Errorf("package holds %d records, want 2", len(parsed.items))
+	}
+	if len(parsed.blobs) != 1 {
+		t.Errorf("package holds %d blobs, want 1 (the image)", len(parsed.blobs))
+	}
+	if parsed.index.Settings == nil {
+		t.Error("package should carry the settings payload")
+	}
+
+	// A second machine pulls the package: one GET for the peer package.
+	b := syncedService(t, base)
+	before := stats.gets.Load()
+	if _, err := b.SyncNow(); err != nil {
+		t.Fatalf("B sync: %v", err)
+	}
+	if got := stats.gets.Load() - before; got != 1 {
+		t.Errorf("B made %d GETs, want 1 (single peer package)", got)
+	}
+
+	items := b.store.All()
+	if len(items) != 2 {
+		t.Fatalf("B items = %d, want 2", len(items))
+	}
+	var imageItem *Item
+	for i := range items {
+		if items[i].Kind == KindImage {
+			imageItem = &items[i]
+		}
+	}
+	if imageItem == nil {
+		t.Fatal("image entry did not arrive")
+	}
+	if payload, err := b.store.LoadBlobByID(imageItem.ID); err != nil || len(payload) == 0 {
+		t.Errorf("image blob not restored: %v", err)
+	}
+}
+
+func TestSyncTwoDevicesConvergeWithoutOverwriting(t *testing.T) {
+	base, dir, _ := newTestDAV(t)
+
+	a := syncedService(t, base)
+	b := syncedService(t, base)
+
+	if _, _, err := a.store.Add(Captured{Kind: KindText, Text: "only-a", Preview: "only-a", Hash: "only-a", Size: 6}); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := b.store.Add(Captured{Kind: KindText, Text: "only-b", Preview: "only-b", Hash: "only-b", Size: 6}); err != nil {
 		t.Fatal(err)
 	}
-	stB := b.store.Settings()
-	stB.SyncEnabled, stB.SyncURL = true, base
-	_ = b.store.SaveSettings(stB)
+
+	// Simulate a true race: both devices publish before either sees the other.
+	// (Calling SyncNow twice in a row would let B notice A and hide the point.)
+	racePush(t, a)
+	racePush(t, b)
 	if _, err := b.SyncNow(); err != nil {
 		t.Fatalf("B sync: %v", err)
 	}
 
-	items := b.store.All()
-	if len(items) != 3 {
-		t.Fatalf("merged items = %d, want 3 (shared + only-a + only-b)", len(items))
+	files, err := os.ReadDir(filepath.Join(string(*dir), syncDevicesDir))
+	if err != nil {
+		t.Fatal(err)
 	}
-	var shared *Item
-	for i := range items {
-		if items[i].Hash == "same-hash" {
-			shared = &items[i]
-		}
-	}
-	if shared == nil {
-		t.Fatal("shared entry missing")
-	}
-	if !shared.Pinned {
-		t.Error("pinned flag was not unioned across machines")
+	if len(files) != 2 {
+		t.Fatalf("want one package per device, got %v", names(files))
 	}
 
-	// A pulls B's entry on the next round.
-	if _, err := a.SyncNow(); err != nil {
-		t.Fatalf("A second sync: %v", err)
+	// Each package must still contain its own item (nobody clobbered anyone).
+	for _, f := range files {
+		raw, err := os.ReadFile(filepath.Join(string(*dir), syncDevicesDir, f.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		pkg, err := parsePackage(raw)
+		if err != nil {
+			t.Fatalf("%s: %v", f.Name(), err)
+		}
+		// Whatever a peer already published, our own item must never be missing.
+		hashes := make(map[string]bool, len(pkg.items))
+		for _, it := range pkg.items {
+			hashes[it.Hash] = true
+		}
+		if !hashes["only-a"] && !hashes["only-b"] {
+			t.Errorf("%s holds none of the local items: %v", f.Name(), hashes)
+		}
 	}
-	if len(a.store.All()) != 3 {
-		t.Fatalf("A items = %d, want 3", len(a.store.All()))
+
+	// Next round: both see each other and converge to the union.
+	if _, err := a.SyncNow(); err != nil {
+		t.Fatalf("A resync: %v", err)
+	}
+	if _, err := b.SyncNow(); err != nil {
+		t.Fatalf("B resync: %v", err)
+	}
+	for name, svc := range map[string]*ClipService{"A": a, "B": b} {
+		if got := len(svc.store.All()); got != 2 {
+			t.Errorf("%s items = %d, want 2 (union)", name, got)
+		}
+		for _, hash := range []string{"only-a", "only-b"} {
+			if _, ok := svc.store.findByHash(hash); !ok {
+				t.Errorf("%s lost %s", name, hash)
+			}
+		}
+	}
+
+	// And both packages now describe the whole history.
+	for _, f := range files {
+		raw, _ := os.ReadFile(filepath.Join(string(*dir), syncDevicesDir, f.Name()))
+		pkg, _ := parsePackage(raw)
+		if len(pkg.items) != 2 {
+			t.Errorf("%s holds %d records after convergence, want 2", f.Name(), len(pkg.items))
+		}
+	}
+}
+
+func TestSyncMergesFlagsAndRepublishesOnce(t *testing.T) {
+	base, _, stats := newTestDAV(t)
+
+	a := syncedService(t, base)
+	shared, _, _ := a.store.Add(Captured{Kind: KindText, Text: "shared", Preview: "shared", Hash: "same-hash", Size: 6})
+	a.store.SetPinned(shared.ID, true)
+	if _, err := a.SyncNow(); err != nil {
+		t.Fatalf("A sync: %v", err)
+	}
+
+	b := syncedService(t, base)
+	if _, _, err := b.store.Add(Captured{Kind: KindText, Text: "shared", Preview: "shared", Hash: "same-hash", Size: 6}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.SyncNow(); err != nil {
+		t.Fatalf("B sync: %v", err)
+	}
+	got, ok := b.store.findByHash("same-hash")
+	if !ok {
+		t.Fatal("shared entry missing on B")
+	}
+	if !got.Pinned {
+		t.Error("pinned flag was not unioned across devices")
+	}
+
+	// A machine that has nothing new must not re-upload its package.
+	puts := stats.puts.Load()
+	if _, err := b.SyncNow(); err != nil {
+		t.Fatalf("B idle sync: %v", err)
+	}
+	if got := stats.puts.Load(); got != puts {
+		t.Errorf("idle sync uploaded again (%d -> %d); the fingerprint check should skip it", puts, got)
+	}
+}
+
+func TestSyncPropagatesDeletion(t *testing.T) {
+	base, _, _ := newTestDAV(t)
+
+	a := syncedService(t, base)
+	item, _, _ := a.store.Add(Captured{Kind: KindText, Text: "delete me", Preview: "delete me", Hash: "del-hash", Size: 9})
+	if _, _, err := a.store.Add(Captured{Kind: KindText, Text: "keep me", Preview: "keep me", Hash: "keep-hash", Size: 7}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.SyncNow(); err != nil {
+		t.Fatalf("A upload: %v", err)
+	}
+
+	b := syncedService(t, base)
+	if _, err := b.SyncNow(); err != nil {
+		t.Fatalf("B pull: %v", err)
+	}
+	if got := len(b.store.All()); got != 2 {
+		t.Fatalf("B should have both entries, got %d", got)
+	}
+
+	if !a.store.Delete(item.ID) {
+		t.Fatal("delete failed")
+	}
+	if _, err := a.SyncNow(); err != nil {
+		t.Fatalf("A resync: %v", err)
+	}
+
+	status, err := b.SyncNow()
+	if err != nil {
+		t.Fatalf("B resync: %v", err)
+	}
+	if got := len(b.store.All()); got != 1 {
+		t.Fatalf("B items = %d after deletion sync, want 1", got)
+	}
+	if !strings.Contains(status.LastResult, "删除 1 条") {
+		t.Errorf("status should mention the deletion: %q", status.LastResult)
+	}
+	if _, ok := b.store.findByHash("del-hash"); ok {
+		t.Error("deleted entry came back on B")
+	}
+
+	// A's next pull must not resurrect it from B's (older) package either.
+	if _, err := a.SyncNow(); err != nil {
+		t.Fatalf("A third sync: %v", err)
+	}
+	if got := len(a.store.All()); got != 1 {
+		t.Fatalf("A items = %d after round trip, want 1", got)
+	}
+}
+
+func TestSyncRecopyAfterDeleteResurrects(t *testing.T) {
+	base, _, _ := newTestDAV(t)
+
+	a := syncedService(t, base)
+	item, _, _ := a.store.Add(Captured{Kind: KindText, Text: "zombie", Preview: "zombie", Hash: "zombie-hash", Size: 6})
+	if _, err := a.SyncNow(); err != nil {
+		t.Fatalf("A upload: %v", err)
+	}
+	a.store.Delete(item.ID)
+	if _, err := a.SyncNow(); err != nil {
+		t.Fatalf("A delete sync: %v", err)
+	}
+
+	time.Sleep(5 * time.Millisecond)
+	if _, _, err := a.store.Add(Captured{Kind: KindText, Text: "zombie", Preview: "zombie", Hash: "zombie-hash", Size: 6}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.SyncNow(); err != nil {
+		t.Fatalf("A recopy sync: %v", err)
+	}
+	if _, ok := a.store.findByHash("zombie-hash"); !ok {
+		t.Fatal("re-copied entry was deleted by its own older tombstone")
+	}
+}
+
+func TestSyncSettingsTravelWithTheNewestStamp(t *testing.T) {
+	base, _, _ := newTestDAV(t)
+
+	a := syncedService(t, base)
+	stA := a.store.Settings()
+	stA.SyncSettings = true
+	stA.MaxItems = 321
+	stA.IgnoreApps = []string{"keepass.exe"}
+	_ = a.store.SaveSettings(stA)
+	if _, err := a.SyncNow(); err != nil {
+		t.Fatalf("A sync: %v", err)
+	}
+
+	b := syncedService(t, base)
+	stB := b.store.Settings()
+	stB.SyncSettings = true
+	stB.SyncURL = base
+	b.store.SaveSettings(stB)
+	if _, err := b.SyncNow(); err != nil {
+		t.Fatalf("B sync: %v", err)
+	}
+
+	gotB := b.store.Settings()
+	if gotB.MaxItems != 321 {
+		t.Errorf("B MaxItems = %d, want 321 from A", gotB.MaxItems)
+	}
+	if len(gotB.IgnoreApps) != 1 || gotB.IgnoreApps[0] != "keepass.exe" {
+		t.Errorf("B IgnoreApps = %v, want A's list", gotB.IgnoreApps)
+	}
+	if gotB.SyncURL != base {
+		t.Errorf("B SyncURL = %q, machine-only fields must not be overwritten", gotB.SyncURL)
+	}
+}
+
+func TestTestSyncReportsDevices(t *testing.T) {
+	base, _, _ := newTestDAV(t)
+	a := syncedService(t, base)
+	if _, _, err := a.store.Add(Captured{Kind: KindText, Text: "x", Preview: "x", Hash: "h", Size: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.SyncNow(); err != nil {
+		t.Fatalf("A sync: %v", err)
+	}
+
+	b := syncedService(t, base)
+	msg, err := b.TestSync()
+	if err != nil {
+		t.Fatalf("TestSync: %v", err)
+	}
+	if !strings.Contains(msg, "同步包") {
+		t.Errorf("message should mention the packages: %q", msg)
 	}
 }
 
@@ -199,20 +410,32 @@ func TestSyncErrorsAreReported(t *testing.T) {
 	}
 }
 
-func TestTestSyncReportsEmptyRemote(t *testing.T) {
-	base, _ := newTestDAV(t)
-	svc := newTestService(t, t.TempDir())
-	st := svc.store.Settings()
-	st.SyncURL = base
-	_ = svc.store.SaveSettings(st)
-
-	msg, err := svc.TestSync()
+// racePush publishes a device's package without running the pull phase, which is
+// exactly what two machines syncing at the same moment look like from the server.
+func racePush(t *testing.T, svc *ClipService) {
+	t.Helper()
+	cfg, err := svc.syncConfig()
 	if err != nil {
-		t.Fatalf("TestSync: %v", err)
+		t.Fatalf("syncConfig: %v", err)
 	}
-	if msg == "" {
-		t.Fatal("expected a human readable message")
+	if err := cfg.mkcol(syncDevicesDir); err != nil {
+		t.Fatalf("mkcol: %v", err)
 	}
+	payload, _, err := svc.buildOwnPackage(nil, nil, svc.store.Settings())
+	if err != nil {
+		t.Fatalf("buildOwnPackage: %v", err)
+	}
+	if err := cfg.davPut(syncDevicesDir+"/"+cfg.packageName(), "application/zip", payload); err != nil {
+		t.Fatalf("davPut: %v", err)
+	}
+}
+
+func names(entries []os.DirEntry) []string {
+	out := make([]string, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, e.Name())
+	}
+	return out
 }
 
 func tinyPNG(t *testing.T) []byte {
@@ -225,99 +448,4 @@ func tinyPNG(t *testing.T) []byte {
 		t.Fatalf("encode png: %v", err)
 	}
 	return buf.Bytes()
-}
-
-func TestSyncPropagatesDeletion(t *testing.T) {
-	base, _ := newTestDAV(t)
-
-	a := newTestService(t, t.TempDir())
-	item, _, _ := a.store.Add(Captured{Kind: KindText, Text: "delete me", Preview: "delete me", Hash: "del-hash", Size: 9})
-	if _, _, err := a.store.Add(Captured{Kind: KindText, Text: "keep me", Preview: "keep me", Hash: "keep-hash", Size: 7}); err != nil {
-		t.Fatal(err)
-	}
-	stA := a.store.Settings()
-	stA.SyncEnabled, stA.SyncURL = true, base
-	_ = a.store.SaveSettings(stA)
-	if _, err := a.SyncNow(); err != nil {
-		t.Fatalf("A upload: %v", err)
-	}
-
-	b := newTestService(t, t.TempDir())
-	stB := b.store.Settings()
-	stB.SyncEnabled, stB.SyncURL = true, base
-	_ = b.store.SaveSettings(stB)
-	if _, err := b.SyncNow(); err != nil {
-		t.Fatalf("B pull: %v", err)
-	}
-	if len(b.store.All()) != 2 {
-		t.Fatalf("B should have both entries, got %d", len(b.store.All()))
-	}
-
-	// A deletes one entry (user action → tombstone) and syncs.
-	if !a.store.Delete(item.ID) {
-		t.Fatal("delete failed")
-	}
-	if len(a.store.Tombstones(time.Now().Add(-time.Hour), 10)) != 1 {
-		t.Fatal("expected exactly one tombstone")
-	}
-	if _, err := a.SyncNow(); err != nil {
-		t.Fatalf("A resync: %v", err)
-	}
-
-	// B must drop its copy instead of re-uploading it.
-	status, err := b.SyncNow()
-	if err != nil {
-		t.Fatalf("B resync: %v", err)
-	}
-	if got := len(b.store.All()); got != 1 {
-		t.Fatalf("B items = %d after deletion sync, want 1", got)
-	}
-	if !contains(status.LastResult, "删除 1 条") {
-		t.Errorf("status should mention the deletion: %q", status.LastResult)
-	}
-	if _, ok := b.store.findByHash("del-hash"); ok {
-		t.Error("deleted entry came back on B")
-	}
-
-	// And A's next pull must not resurrect it either.
-	if _, err := a.SyncNow(); err != nil {
-		t.Fatalf("A third sync: %v", err)
-	}
-	if got := len(a.store.All()); got != 1 {
-		t.Fatalf("A items = %d after round trip, want 1", got)
-	}
-}
-
-func TestSyncRecopyAfterDeleteResurrects(t *testing.T) {
-	base, _ := newTestDAV(t)
-
-	a := newTestService(t, t.TempDir())
-	item, _, _ := a.store.Add(Captured{Kind: KindText, Text: "zombie", Preview: "zombie", Hash: "zombie-hash", Size: 6})
-	stA := a.store.Settings()
-	stA.SyncEnabled, stA.SyncURL = true, base
-	_ = a.store.SaveSettings(stA)
-	if _, err := a.SyncNow(); err != nil {
-		t.Fatalf("A upload: %v", err)
-	}
-
-	a.store.Delete(item.ID)
-	if _, err := a.SyncNow(); err != nil {
-		t.Fatalf("A delete sync: %v", err)
-	}
-
-	// Copying the same content again is a new intent: it must survive the older
-	// tombstone instead of being deleted on the next sync.
-	time.Sleep(5 * time.Millisecond)
-	if _, _, err := a.store.Add(Captured{Kind: KindText, Text: "zombie", Preview: "zombie", Hash: "zombie-hash", Size: 6}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := a.SyncNow(); err != nil {
-		t.Fatalf("A recopy sync: %v", err)
-	}
-	if _, err := a.SyncNow(); err != nil {
-		t.Fatalf("A idle sync: %v", err)
-	}
-	if _, ok := a.store.findByHash("zombie-hash"); !ok {
-		t.Fatal("re-copied entry was deleted by its own older tombstone")
-	}
 }

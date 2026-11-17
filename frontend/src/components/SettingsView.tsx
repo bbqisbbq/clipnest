@@ -275,7 +275,7 @@ export default function SettingsView(props: Props) {
             </Row>
           </Section>
 
-          <Section title="云同步（WebDAV）" desc="把整份历史发布成一个 JSON 文档，按内容哈希合并多台机器。">
+          <Section title="云同步（WebDAV · 每台机器一个包）" desc="把整份历史发布成一个 JSON 文档，按内容哈希合并多台机器。">
             <Row label="启用同步" tip="开启后会定时拉取并上传；同一内容在多台机器上会合并为一条。">
               <Switch checked={draft.syncEnabled} onChange={(v) => patch({ syncEnabled: v })} />
             </Row>
@@ -300,15 +300,8 @@ export default function SettingsView(props: Props) {
                 />
               </Row>
             </div>
-            <Row label="同步文件名" tip="存放在上面目录里的文档名，多台机器保持一致即可。" stacked>
-              <input
-                className="input"
-                value={draft.syncFile}
-                placeholder="clipnest-sync.json"
-                onChange={(e) => patch({ syncFile: e.target.value })}
-              />
-            </Row>
-            <Row label="自动同步间隔" tip="分钟；0 表示只在手动点击时同步。">
+
+            <Row label="自动同步间隔" tip="分钟，默认 30；0 表示只在手动点击时同步。每次同步会读取其他设备的同步包，本机包没有变化时不会重复上传。">
               <input
                 className="input is-num"
                 type="number"
@@ -349,6 +342,7 @@ export default function SettingsView(props: Props) {
                   <>
                     <span>{lastSync}</span>
                     {syncStatus?.lastResult ? <span>· {syncStatus.lastResult}</span> : null}
+                    {syncStatus?.devices ? <span>· {syncStatus.devices} 台设备</span> : null}
                   </>
                 )}
               </span>

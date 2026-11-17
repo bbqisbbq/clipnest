@@ -274,14 +274,14 @@ export function Start(): $CancellablePromise<void> {
 }
 
 /**
- * SyncNow performs a full two-way merge and upload.
+ * SyncNow performs a full two-way merge.
  */
 export function SyncNow(): $CancellablePromise<$models.SyncStatus> {
     return $Call.ByID(2942154482);
 }
 
 /**
- * TestSync verifies the WebDAV endpoint without changing anything.
+ * TestSync verifies the endpoint and reports what is already there.
  */
 export function TestSync(): $CancellablePromise<string> {
     return $Call.ByID(292331458);

@@ -1,0 +1,4 @@
+2026-11-17 16:28:27.129 === ClipNest 0.3.0 starting (exe=E:\default\clipnest\bin\clipnest-console.exe) ===
+2026-11-17 16:28:32.223 sync: PUT http://127.0.0.1:8903/clipnest_data/e5804c47c0183e0c-desktop_eqptgvl.zip
+2026-11-17 16:28:32.225 sync: pushed clipnest_data/e5804c47c0183e0c-desktop_eqptgvl.zip (2 KiB)
+2026-11-17 16:28:32.225 sync ok: 拉取 1 条新增 / 1 条更新，本机包 2 KiB（2 台设备）
