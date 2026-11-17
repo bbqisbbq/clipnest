@@ -1,0 +1,237 @@
+// ClipNest — a quiet clipboard manager for Windows, built with Wails v3.
+//
+// It lives in the system tray, records what you copy while it is running, and
+// gives you a searchable window to manage that history. Closing the window
+// keeps the app alive; only "退出" in the tray menu really quits.
+package main
+
+import (
+	"embed"
+	"log"
+	"log/slog"
+	"os"
+	"path/filepath"
+
+	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/events"
+
+	"github.com/bbqisbbq/clipnest/internal/clip"
+)
+
+//go:embed all:frontend/dist
+var assets embed.FS
+
+//go:embed build/appicon.png
+var appIcon []byte
+
+func init() {
+	// Typed events: the binding generator turns these into TS event payloads.
+	application.RegisterEvent[clip.Item]("clip:new")
+	application.RegisterEvent[clip.Item]("clip:bumped")
+	application.RegisterEvent[clip.Item]("clip:updated")
+	application.RegisterEvent[string]("clip:deleted")
+	application.RegisterEvent[int]("clip:cleared")
+	application.RegisterEvent[clip.Stats]("clip:stats")
+	application.RegisterEvent[clip.Settings]("settings:changed")
+}
+
+func main() {
+	dataDir := defaultDataDir()
+	exePath, _ := os.Executable()
+
+	var (
+		app           *application.App
+		win           *application.WebviewWindow
+		pauseItem     *application.MenuItem
+		currentHotkey string
+		svc           *clip.ClipService
+	)
+
+	showWindow := func() {
+		if win == nil {
+			return
+		}
+		win.Show()
+		win.Focus()
+	}
+	hideWindow := func() {
+		if win != nil {
+			win.Hide()
+		}
+	}
+
+	var applyHotkey func(string) error
+	applyHotkey = func(accel string) error {
+		if accel == currentHotkey {
+			return nil
+		}
+		if currentHotkey != "" && app.GlobalShortcut.IsRegistered(currentHotkey) {
+			_ = app.GlobalShortcut.Unregister(currentHotkey)
+		}
+		currentHotkey = ""
+		if accel == "" {
+			return nil
+		}
+		if err := app.GlobalShortcut.Register(accel, showWindow); err != nil {
+			return err
+		}
+		currentHotkey = accel
+		return nil
+	}
+
+	quit := func() {
+		if svc != nil {
+			svc.Shutdown()
+		}
+		if app != nil {
+			app.Quit()
+		}
+	}
+
+	// Service first: we need the persisted settings to decide whether the
+	// window starts visible.
+	preSettings := clip.DefaultSettings()
+	if st, err := clip.PeekSettings(dataDir); err == nil {
+		preSettings = st
+	}
+	// `clipnest.exe --show` forces the window open (handy when launching from a
+	// shortcut or while testing).
+	forceShow := false
+	for _, arg := range os.Args[1:] {
+		if arg == "--show" || arg == "-show" {
+			forceShow = true
+		}
+	}
+
+	svc, err := clip.NewClipService(dataDir, clip.Hooks{
+		Emit: func(name string, data any) {
+			if app != nil {
+				app.Event.Emit(name, data)
+			}
+		},
+		ShowWindow:    showWindow,
+		HideWindow:    hideWindow,
+		Quit:          quit,
+		ExePath:       exePath,
+		PlatformWorks: true,
+		OnSettings: func(st clip.Settings) error {
+			if pauseItem != nil {
+				setPauseLabel(pauseItem, st.Capture)
+			}
+			return applyHotkey(st.Hotkey)
+		},
+	})
+	if err != nil {
+		log.Fatalf("打开数据目录失败 (%s): %v", dataDir, err)
+	}
+
+	app = application.New(application.Options{
+		Name:        "ClipNest",
+		Description: "轻量剪贴板管理器：常驻托盘，静默记录文本、图片、链接与文件引用。",
+		Icon:        appIcon,
+		LogLevel:    slog.LevelWarn,
+		Services: []application.Service{
+			application.NewService(svc),
+		},
+		Assets: application.AssetOptions{
+			Handler: application.AssetFileServerFS(assets),
+		},
+		SingleInstance: &application.SingleInstanceOptions{
+			UniqueID: "com.bbqisbbq.clipnest",
+			OnSecondInstanceLaunch: func(_ application.SecondInstanceData) {
+				showWindow()
+			},
+		},
+		Mac: application.MacOptions{
+			// Tray apps must survive their last window closing on macOS too.
+			ApplicationShouldTerminateAfterLastWindowClosed: false,
+		},
+	})
+
+	win = app.Window.NewWithOptions(application.WebviewWindowOptions{
+		Name:      "main",
+		Title:     "ClipNest 剪贴板",
+		Width:     1120,
+		Height:    740,
+		MinWidth:  900,
+		MinHeight: 560,
+		Hidden:    !preSettings.ShowOnLaunch && !forceShow,
+		Windows: application.WindowsWindow{
+			Theme: application.SystemDefault,
+		},
+		BackgroundColour: application.NewRGB(15, 17, 22),
+		URL:              "/",
+	})
+
+	// The whole point of a tray app: closing the window must not quit.
+	win.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
+		e.Cancel()
+		win.Hide()
+	})
+
+	applyHotkey(preSettings.Hotkey)
+
+	// Tray icon + menu.
+	tray := app.SystemTray.New()
+	tray.SetIcon(appIcon)
+	tray.SetTooltip("ClipNest 剪贴板管理器")
+	tray.OnClick(showWindow)
+
+	menu := application.NewMenu()
+	menu.Add("显示管理窗口").OnClick(func(_ *application.Context) { showWindow() })
+	pauseItem = menu.Add(pauseLabel(preSettings.Capture))
+	pauseItem.OnClick(func(_ *application.Context) {
+		st := svc.GetSettings()
+		updated, err := svc.SetCapture(!st.Capture)
+		if err == nil {
+			setPauseLabel(pauseItem, updated.Capture)
+		}
+	})
+	menu.AddSeparator()
+	menu.Add("清空未收藏的历史").OnClick(func(_ *application.Context) {
+		_, _ = svc.DeleteWhere(clip.Filter{})
+	})
+	sub := menu.AddSubmenu("更多")
+	sub.Add("打开数据目录").OnClick(func(_ *application.Context) {
+		_ = svc.OpenDataDir()
+	})
+	sub.Add("打开设置").OnClick(func(_ *application.Context) {
+		showWindow()
+		app.Event.Emit("ui:navigate", "settings")
+	})
+	menu.AddSeparator()
+	menu.Add("退出 ClipNest").OnClick(func(_ *application.Context) { quit() })
+	tray.SetMenu(menu)
+
+	// Start listening once the app is wired up.
+	if err := svc.Start(); err != nil {
+		log.Printf("剪贴板监听启动失败: %v", err)
+	}
+
+	app.OnShutdown(svc.Shutdown)
+
+	if err := app.Run(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func pauseLabel(capturing bool) string {
+	if capturing {
+		return "暂停收集"
+	}
+	return "继续收集"
+}
+
+func setPauseLabel(item *application.MenuItem, capturing bool) {
+	if item == nil {
+		return
+	}
+	item.SetLabel(pauseLabel(capturing))
+}
+
+func defaultDataDir() string {
+	if dir, err := os.UserConfigDir(); err == nil {
+		return filepath.Join(dir, "ClipNest")
+	}
+	return filepath.Join(os.Getenv("APPDATA"), "ClipNest")
+}

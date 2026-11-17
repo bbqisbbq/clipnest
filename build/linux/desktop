@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Name=ClipNest
+Comment=ClipNest — 常驻托盘的 Windows 剪贴板管理器
+# The Exec line includes %u to pass the URL to the application
+Exec=/usr/local/bin/clipnest %u
+Terminal=false
+Type=Application
+Icon=clipnest
+Categories=Utility;
+StartupWMClass=clipnest
+
+ 
