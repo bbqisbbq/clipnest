@@ -39,6 +39,16 @@ export const ClipStats = "clip:stats";
 export const ClipUpdated = "clip:updated";
 
 /**
+ * Name of the custom event "picker:opened".
+ */
+export const PickerOpened = "picker:opened";
+
+/**
+ * Name of the custom event "picker:paste-failed".
+ */
+export const PickerPasteFailed = "picker:paste-failed";
+
+/**
  * Name of the custom event "settings:changed".
  */
 export const SettingsChanged = "settings:changed";

@@ -8,6 +8,7 @@ import (
 	"image/color"
 	"image/png"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -110,6 +111,47 @@ func TestFilesRoundTrip(t *testing.T) {
 	}
 	if !cap.Files[0].Exists {
 		t.Errorf("file %q reported as missing", exe)
+	}
+}
+
+func TestCustomFormatRoundTrip(t *testing.T) {
+	payload := []byte{0xDE, 0xAD, 0xBE, 0xEF, 0x01, 0x02, 0x03}
+	const formatName = "ClipNestSmokeFmt"
+	if err := WriteRawToClipboard(0, formatName, payload); err != nil {
+		t.Fatalf("WriteRawToClipboard: %v", err)
+	}
+	cap, err := captureClipboard()
+	if err != nil {
+		t.Fatalf("captureClipboard: %v", err)
+	}
+	if cap == nil {
+		t.Fatal("custom format was not captured at all")
+	}
+	if cap.Kind != KindCustom {
+		t.Fatalf("kind = %q, want custom", cap.Kind)
+	}
+	if cap.FormatName != formatName {
+		t.Fatalf("format name = %q, want %q", cap.FormatName, formatName)
+	}
+	if !bytes.Equal(cap.Binary, payload) {
+		t.Fatalf("payload = % X, want % X", cap.Binary, payload)
+	}
+}
+
+func TestRTFCapture(t *testing.T) {
+	const rtf = `{\rtf1\ansi\deff0{\fonttbl{\f0 Calibri;}}\f0\fs24 Hello \b ClipNest\b0\par second line}`
+	if err := WriteRTFToClipboard(rtf, ""); err != nil {
+		t.Fatalf("WriteRTFToClipboard: %v", err)
+	}
+	cap, err := captureClipboard()
+	if err != nil || cap == nil {
+		t.Fatalf("captureClipboard: %v %v", cap, err)
+	}
+	if cap.Kind != KindRichText || cap.RTF == "" {
+		t.Fatalf("kind=%q rtf=%q, want rich with RTF payload", cap.Kind, cap.RTF)
+	}
+	if !strings.Contains(cap.Text, "ClipNest") {
+		t.Errorf("plain text fallback = %q, want it to contain ClipNest", cap.Text)
 	}
 }
 

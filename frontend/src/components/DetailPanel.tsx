@@ -61,13 +61,32 @@ export default function DetailPanel({ item, imageData, onCopy, onTogglePin, onDe
             <pre className="text-body">{item.text || "（无纯文本）"}</pre>
             {item.html ? (
               <>
-                <button className="ghost-btn" onClick={() => setShowHTML((v) => !v)}>
+                <button className="ghost-btn" onClick={() => setShowHTML(true)}>
                   {showHTML ? "隐藏 HTML 源码" : "查看 HTML 源码"}
                 </button>
                 {showHTML ? <pre className="code-body">{item.html}</pre> : null}
               </>
+            ) : item.rtf ? (
+              <>
+                <button className="ghost-btn" onClick={() => setShowHTML(true)}>
+                  {showHTML ? "隐藏 RTF 源码" : "查看 RTF 源码"}
+                </button>
+                {showHTML ? <pre className="code-body">{item.rtf}</pre> : null}
+              </>
             ) : null}
           </>
+        )}
+
+        {item.kind === "custom" && (
+          <div className="custom-box">
+            <div className="custom-format">
+              剪贴板格式：<strong>{item.formatName || `CF_${item.formatId ?? "?"}`}</strong>
+            </div>
+            <p className="file-note">
+              这是 ClipNest 不认识的私有格式，已按原始字节保存（{formatBytes(item.size)}）。
+              「复制」会把它原样写回剪贴板，目标程序仍能识别。
+            </p>
+          </div>
         )}
 
         {item.kind === "image" && (

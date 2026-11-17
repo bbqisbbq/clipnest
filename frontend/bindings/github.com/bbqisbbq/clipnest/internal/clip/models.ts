@@ -70,9 +70,20 @@ export interface Item {
     "height"?: number;
 
     /**
-     * Rich text entries keep the HTML fragment; Text holds the plain version.
+     * Rich text entries keep the HTML fragment or the RTF payload; Text holds
+     * the plain version.
      */
     "html"?: string;
+    "rtf"?: string;
+
+    /**
+     * Custom (otherwise unknown) formats: the raw bytes live in a blob file and
+     * the original clipboard format is kept so the entry can be put back
+     * exactly as it was.
+     */
+    "binaryFile"?: string;
+    "formatName"?: string;
+    "formatId"?: number;
 
     /**
      * File entries.
@@ -106,9 +117,14 @@ export enum Kind {
     KindFiles = "files",
 
     /**
-     * HTML fragment + plain text fallback
+     * HTML fragment or RTF + plain text fallback
      */
     KindRichText = "rich",
+
+    /**
+     * any other clipboard format, kept as raw bytes
+     */
+    KindCustom = "custom",
 };
 
 /**
@@ -129,6 +145,13 @@ export interface Settings {
     "captureImage": boolean;
     "captureFiles": boolean;
     "captureRich": boolean;
+
+    /**
+     * CaptureCustom keeps clipboard entries whose format ClipNest does not
+     * classify (Excel ranges, colours, audio …). They are stored as raw bytes so
+     * they can be put back untouched.
+     */
+    "captureCustom": boolean;
 
     /**
      * MaxTextLength skips text entries longer than this many characters (0 =
@@ -160,8 +183,16 @@ export interface Settings {
 
     /**
      * Hotkey is a Wails accelerator, e.g. "Ctrl+Shift+V". Empty disables it.
+     * Pressing it pops the picker at the text caret and pastes the chosen entry
+     * straight into the focused application.
      */
     "hotkey": string;
+
+    /**
+     * PasteOnPick synthesises Ctrl+V after the picker writes the entry to the
+     * clipboard. Turning it off makes the picker copy-only.
+     */
+    "pasteOnPick": boolean;
 
     /**
      * ShowOnLaunch opens the manager window at startup instead of staying in

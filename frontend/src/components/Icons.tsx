@@ -190,6 +190,15 @@ export const IconPause = (p: IconProps) =>
 export const IconPlay = (p: IconProps) =>
   svg(<path d="M8 5.5v13l11-6.5z" />, p);
 
+export const IconOther = (p: IconProps) =>
+  svg(
+    <>
+      <path d="M12 3.5 20 8v8l-8 4.5L4 16V8z" />
+      <path d="M12 12v8.5M12 12 4 8M12 12l8-4" />
+    </>,
+    p,
+  );
+
 export const kindIcon = (kind: string) => {
   switch (kind) {
     case "link":
@@ -200,6 +209,8 @@ export const kindIcon = (kind: string) => {
       return IconFiles;
     case "rich":
       return IconRich;
+    case "custom":
+      return IconOther;
     default:
       return IconText;
   }

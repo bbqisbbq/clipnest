@@ -2,27 +2,27 @@
 
 > 常驻托盘的 Windows 剪贴板管理器 · [Wails v3](https://v3.wails.io) + Go + React + TypeScript
 
-ClipNest 在你使用电脑时安静地记录复制过的内容——文本、链接、图片、富文本，以及文件（只记引用），
-并提供一个干净的窗口来搜索、收藏、删除和回填这些记录。关闭窗口不会退出程序，它会回到托盘继续工作。
+ClipNest 在你使用电脑时安静地记录进入过系统剪贴板的一切——文本、链接、图片、富文本、文件（只记引用），
+连 Excel 区间、颜色、音频这类私有格式也原样留底。按一次快捷键，列表就在**光标旁边**弹出来，
+方向键或鼠标选中，回车直接粘到当前位置。
 
-![主界面](docs/images/history.png)
+![快速粘贴](docs/images/picker.png)
 
 ## 特性
 
+- **光标处快速粘贴**：`Ctrl+Shift+V` 在文本光标旁弹出列表，`↑↓` 选择、`Enter` 直接粘贴进
+  当前程序、`Ctrl+Enter` 只复制不粘贴、`Esc` 关掉并把焦点还回去。
 - **托盘常驻**：关闭窗口只是隐藏窗口，进程继续监听；只有托盘菜单的「退出 ClipNest」才真正退出。
 - **静默收集**：基于 Win32 `AddClipboardFormatListener` + `WM_CLIPBOARDUPDATE`，不做轮询、几乎零开销。
-- **多格式**：
-  - 纯文本（自动识别单个链接 → 归类为「链接」）
-  - 图片（`PNG` / `CF_DIB` / `CF_DIBV5` 三种来源都支持，24/32 bpp 手写 DIB 解码）
-  - 富文本（`HTML Format` 片段 + 纯文本回退）
-  - 文件（`CF_HDROP`，只记路径引用，见下文）
-  - OLE 延迟渲染的剪贴板（部分应用只暴露 `IDataObject`）也有回退读取路径
+- **多格式，且不漏**：文本、链接、图片（`PNG`/`CF_DIB`/`CF_DIBV5`）、富文本（`HTML Format` / RTF）、
+  文件（`CF_HDROP`）、OLE 延迟渲染的剪贴板，最后还有「其它格式」兜底（原样保存私有格式字节，
+  可原样粘回）。覆盖细节见 [docs/CAPTURE.md](docs/CAPTURE.md)。
 - **去重**：按内容哈希去重，重复复制只更新时间戳与次数，不产生垃圾条目。
-- **收藏 / 搜索 / 分类**：全部、文本、链接、图片、文件、富文本、收藏；搜索匹配正文、文件名与来源程序。
+- **收藏 / 搜索 / 分类**：全部、文本、链接、图片、文件、富文本、其它格式、收藏；搜索匹配正文、文件名与来源程序。
 - **一键回填**：选中「复制」或双击条目，把内容重新写回剪贴板，并抑制自己写入产生的回声记录。
 - **保留策略**：最多条数、最长天数、单条文本长度上限；收藏条目永不被自动清理。
 - **隐私开关**：可按程序名或正则忽略（密码管理器、内部后台等），也可整体暂停收集。
-- **其它**：全局快捷键唤出窗口、开机自启（写 HKCU Run）、单实例（第二次启动只是把窗口拉到前台）。
+- **其它**：开机自启（写 HKCU Run）、单实例（第二次启动只是把窗口拉到前台）、诊断日志。
 - **纯本地**：不联网、不上传，数据全部存在 `%APPDATA%\ClipNest`。
 
 ## 文件复制怎么处理？—— 四种方案与当前选择
@@ -74,14 +74,30 @@ wails3 package      # 生成 NSIS 安装包（需要 NSIS，模板已内置配�
 
 ## 使用
 
+### 快速粘贴（日常主力）
+
+在任意输入框里按 `Ctrl+Shift+V`：列表弹在光标旁边，键盘或鼠标都行。
+
+| 按键 / 操作 | 效果 |
+| --- | --- |
+| `↑` `↓`（或 `Ctrl+P` / `Ctrl+N`） | 移动选择 |
+| 直接输入 | 过滤条目（匹配正文、文件名、来源程序） |
+| `Enter` / 单击 | 写入剪贴板并**自动粘贴**到刚才那个窗口 |
+| `Ctrl+Enter` | 只写入剪贴板，不自动粘贴 |
+| `Esc` | 关闭并把焦点还给原窗口 |
+
+弹窗位置：优先贴住文本框的光标（`GetGUIThreadInfo` 的 `rcCaret`），没有光标（资源管理器、
+部分游戏）就用鼠标位置；靠近屏幕边缘时会自动翻转/夹到工作区内。
+
+### 管理窗口
+
+![管理窗口](docs/images/history.png)
+
 | 操作 | 方式 |
 | --- | --- |
-| 唤出窗口 | 托盘图标左键 / 全局快捷键（默认 `Ctrl+Shift+V`） |
+| 打开管理窗口 | 托盘图标左键 / 托盘菜单「显示管理窗口」 |
 | 收起到托盘 | 关闭窗口按钮（×）或窗口右上「收起到托盘」 |
-| 复制回剪贴板 | 选中条目后按 `Enter` 或双击 / 点「复制」 |
-| 上下选择 | `↑` `↓` |
-| 删除当前条目 | `Delete` |
-| 搜索 | `Ctrl+F` |
+| 上下选择 / 复制 / 删除 / 搜索 | `↑` `↓` / `Enter`、双击 / `Delete` / `Ctrl+F` |
 | 彻底退出 | 托盘菜单 →「退出 ClipNest」 |
 
 ## 数据与存储
@@ -90,7 +106,8 @@ wails3 package      # 生成 NSIS 安装包（需要 NSIS，模板已内置配�
 %APPDATA%\ClipNest\
   items.jsonl     # 一行一条记录（JSON），改动后防抖 400ms 原子重写
   settings.json   # 采集/保留/忽略/快捷键等设置
-  blobs\          # 图片条目的 PNG 数据（<id>.png）
+  blobs\          # 图片（<id>.png）与其它格式（<id>.bin）的原始数据
+  clipnest.log    # 诊断日志（启动、弹窗定位、粘贴结果）
 ```
 
 - 单条记录见 `internal/clip/model.go` 的 `Item`；
@@ -100,36 +117,45 @@ wails3 package      # 生成 NSIS 安装包（需要 NSIS，模板已内置配�
 ## 目录结构
 
 ```
-main.go                       应用装配：托盘、窗口、关窗不退出、快捷键、单实例
+main.go                       应用装配：托盘、两个窗口（管理窗 + 弹窗）、关窗不退出、快捷键、单实例
 internal/clip/
   model.go                    Item / Filter / Stats / Captured 等数据结构
   settings.go                 设置结构与默认值
-  store.go                    文件存储：JSONL 索引 + blob、去重、保留策略
-  service.go                 绑定给前端的 ClipService（21 个方法）
+  store.go                    文件存储：JSONL 索引 + blob、去重、保留策略、诊断日志
+  service.go                  绑定给前端的 ClipService（25 个方法）
   win32_windows.go            Win32 基元：剪贴板 API、前景程序、开机自启
-  clipboard_windows.go        读取/写回各类剪贴板格式
+  clipboard_windows.go        读取/写回各类剪贴板格式（含自定义格式与 RTF）
   dib_windows.go              CF_DIB(V5) ↔ image.NRGBA 互转
   ole_windows.go              OLE IDataObject 回退（延迟渲染场景）
   watcher_windows.go          消息窗口 + WM_CLIPBOARDUPDATE 监听
+  picker_windows.go           光标定位、前台接管、合成 Ctrl+V
   shell_windows.go            ShellExecute / 资源管理器定位
   platform_other.go           非 Windows 桩实现（保持可编译）
-frontend/                     React + TS + Vite 管理界面
-  src/App.tsx                 主布局、事件订阅、键盘快捷键
+frontend/                     React + TS + Vite
+  src/App.tsx                 管理窗口：布局、事件订阅、键盘快捷键
+  src/Picker.tsx              快速粘贴弹窗（`?mode=picker`）
   src/components/             Sidebar / ItemRow / DetailPanel / SettingsView / Icons
   src/lib/                    api（绑定封装）、format（时间与体积）
-  bindings/                   wails3 生成的 TS 绑定（由 `wails3 generate bindings` 产出）
+  bindings/                   wails3 生成的 TS 绑定
 scripts/make_icon.py          生成 appicon.png 与 windows/icon.ico
-scratch/clipdump/             开发期剪贴板格式转储小工具
+scratch/clipdump/             开发期剪贴板格式转储工具
+scratch/setclip/              开发期投放 RTF / 自定义格式到剪贴板的工具
+scratch/e2e-picker*.ps1       弹窗端到端自动化（回车粘贴 / Esc / Ctrl+Enter）
+docs/CAPTURE.md               收集机制、格式覆盖矩阵与已知缺口
 docs/FILE-STRATEGY.md         文件复制的方案对比与数据模型
 ```
 
 ## 已知限制
 
-- **只在 Windows 上有意义**：监听、DIB 解码、托盘均为 Win32 实现；其它平台编译出的是空壳。
-- **富文本回填**：写回时同时写 `HTML Format` 与纯文本，个别应用（如旧版 Office）可能只取纯文本。
-- **OLE 延迟渲染**：已做 `IDataObject` 回退（文件、文本），但图片仍依赖原生 `PNG`/`DIB` 格式。
+- **只在 Windows 上有意义**：监听、DIB 解码、光标定位、托盘均为 Win32 实现；其它平台编译出的是空壳。
+- **权限不对等**：如果目标程序以管理员身份运行，而 ClipNest 是普通权限，Windows 的 UIPI 会拦住合成的
+  `Ctrl+V`（内容仍在剪贴板里，手动粘贴即可）。需要粘贴进提权窗口时，请以管理员身份运行 ClipNest。
+- **富文本回填**：写回时同时写 `HTML Format`/RTF 与纯文本，个别老旧应用可能只取纯文本。
+- **OLE 延迟渲染**：已做 `IDataObject` 回退（文件、文本），图片仍依赖原生 `PNG`/`DIB`。
+- **GDI 图片格式**：只认 `CF_DIB`/`CF_DIBV5`/`PNG`，用 `CF_BITMAP` 句柄传图的程序需要 `GetDIBits`（未实现）。
+- **自定义格式上限 1 MiB**：超出的私有格式会被跳过，避免撑爆历史。
 - **不做跨屏 DPI 特调**：窗口按系统 DPI 缩放，多屏不同缩放下位置由 Wails/WebView2 决定。
-- **历史全量在内存**：十万级条目需要改成 SQLite 或分页索引（当前上限默认 1000 条，足够日常）。
+- **历史全量在内存**：十万级条目需要改成 SQLite 或分页索引（当前默认上限 1000 条，足够日常）。
 
 ## 隐私
 

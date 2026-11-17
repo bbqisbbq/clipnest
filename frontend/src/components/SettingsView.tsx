@@ -106,7 +106,13 @@ export default function SettingsView({ settings, appInfo, storageBytes, onSave, 
             <Toggle label="链接" checked={draft.captureLink} onChange={(v) => patch({ captureLink: v })} />
             <Toggle label="图片" checked={draft.captureImage} onChange={(v) => patch({ captureImage: v })} />
             <Toggle label="文件（仅路径引用）" checked={draft.captureFiles} onChange={(v) => patch({ captureFiles: v })} />
-            <Toggle label="富文本（HTML）" checked={draft.captureRich} onChange={(v) => patch({ captureRich: v })} />
+            <Toggle label="富文本（HTML / RTF）" checked={draft.captureRich} onChange={(v) => patch({ captureRich: v })} />
+            <Toggle
+              label="其它格式（原样存字节）"
+              hint="Excel 区间、颜色、音频等私有格式"
+              checked={draft.captureCustom}
+              onChange={(v) => patch({ captureCustom: v })}
+            />
           </div>
           <label className="field">
             <span className="field-label">
@@ -183,11 +189,17 @@ export default function SettingsView({ settings, appInfo, storageBytes, onSave, 
           <h3>行为</h3>
           <label className="field">
             <span className="field-label">
-              唤出快捷键
-              <em>例如 Ctrl+Shift+V，留空表示不注册</em>
+              快速粘贴快捷键
+              <em>在光标处弹出列表；留空表示不注册</em>
             </span>
             <input value={draft.hotkey} placeholder="Ctrl+Shift+V" onChange={(e) => patch({ hotkey: e.target.value })} />
           </label>
+          <Toggle
+            label="选中后自动粘贴"
+            hint="关闭则只写入剪贴板，需自己按 Ctrl+V"
+            checked={draft.pasteOnPick}
+            onChange={(v) => patch({ pasteOnPick: v })}
+          />
           <Toggle label="开机自动启动" hint="写入当前用户的开机启动项" checked={draft.autoStart} onChange={(v) => patch({ autoStart: v })} />
           <Toggle
             label="启动时打开管理窗口"

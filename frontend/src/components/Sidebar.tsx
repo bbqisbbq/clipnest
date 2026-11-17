@@ -1,5 +1,5 @@
 import type { Stats } from "../lib/api";
-import { IconAll, IconFiles, IconImage, IconLink, IconPause, IconPlay, IconRich, IconSettings, IconStar, IconText } from "./Icons";
+import { IconAll, IconFiles, IconImage, IconLink, IconOther, IconPause, IconPlay, IconRich, IconSettings, IconStar, IconText } from "./Icons";
 
 type Props = {
   view: "history" | "settings";
@@ -20,6 +20,7 @@ const KINDS = [
   { id: "image", label: "图片", Icon: IconImage },
   { id: "files", label: "文件", Icon: IconFiles },
   { id: "rich", label: "富文本", Icon: IconRich },
+  { id: "custom", label: "其它格式", Icon: IconOther },
 ];
 
 export default function Sidebar(props: Props) {

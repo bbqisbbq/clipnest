@@ -9,11 +9,12 @@ import "time"
 type Kind string
 
 const (
-	KindText     Kind = "text" // plain text
-	KindLink     Kind = "link" // a single URL
+	KindText     Kind = "text"   // plain text
+	KindLink     Kind = "link"   // a single URL
 	KindImage    Kind = "image"
-	KindFiles    Kind = "files" // CF_HDROP: file/folder paths (references only)
-	KindRichText Kind = "rich" // HTML fragment + plain text fallback
+	KindFiles    Kind = "files"  // CF_HDROP: file/folder paths (references only)
+	KindRichText Kind = "rich"   // HTML fragment or RTF + plain text fallback
+	KindCustom   Kind = "custom" // any other clipboard format, kept as raw bytes
 )
 
 // FileRef is one entry of a captured file list. ClipNest deliberately stores a
@@ -46,8 +47,17 @@ type Item struct {
 	Width     int    `json:"width,omitempty"`
 	Height    int    `json:"height,omitempty"`
 
-	// Rich text entries keep the HTML fragment; Text holds the plain version.
+	// Rich text entries keep the HTML fragment or the RTF payload; Text holds
+	// the plain version.
 	HTML string `json:"html,omitempty"`
+	RTF  string `json:"rtf,omitempty"`
+
+	// Custom (otherwise unknown) formats: the raw bytes live in a blob file and
+	// the original clipboard format is kept so the entry can be put back
+	// exactly as it was.
+	BinaryFile string `json:"binaryFile,omitempty"`
+	FormatName string `json:"formatName,omitempty"`
+	FormatID   uint32 `json:"formatId,omitempty"`
 
 	// File entries.
 	Files []FileRef `json:"files,omitempty"`
@@ -76,7 +86,9 @@ type Captured struct {
 	Kind      Kind
 	Text      string
 	HTML      string
+	RTF       string
 	PNG       []byte // encoded PNG for image entries
+	Binary    []byte // raw payload for custom formats
 	Width     int
 	Height    int
 	Files     []FileRef
@@ -84,4 +96,7 @@ type Captured struct {
 	Preview   string
 	Size      int
 	SourceApp string
+
+	FormatName string
+	FormatID   uint32
 }

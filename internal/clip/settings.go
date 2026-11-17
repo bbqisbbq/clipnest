@@ -14,6 +14,11 @@ type Settings struct {
 	CaptureFiles bool `json:"captureFiles"`
 	CaptureRich  bool `json:"captureRich"`
 
+	// CaptureCustom keeps clipboard entries whose format ClipNest does not
+	// classify (Excel ranges, colours, audio …). They are stored as raw bytes so
+	// they can be put back untouched.
+	CaptureCustom bool `json:"captureCustom"`
+
 	// MaxTextLength skips text entries longer than this many characters (0 =
 	// unlimited). Guards against pasting whole documents into the history.
 	MaxTextLength int `json:"maxTextLength"`
@@ -30,7 +35,12 @@ type Settings struct {
 	IgnoreApps []string `json:"ignoreApps"`
 
 	// Hotkey is a Wails accelerator, e.g. "Ctrl+Shift+V". Empty disables it.
+	// Pressing it pops the picker at the text caret and pastes the chosen entry
+	// straight into the focused application.
 	Hotkey string `json:"hotkey"`
+	// PasteOnPick synthesises Ctrl+V after the picker writes the entry to the
+	// clipboard. Turning it off makes the picker copy-only.
+	PasteOnPick bool `json:"pasteOnPick"`
 	// ShowOnLaunch opens the manager window at startup instead of staying in
 	// the tray.
 	ShowOnLaunch bool `json:"showOnLaunch"`
@@ -52,12 +62,14 @@ func DefaultSettings() Settings {
 		CaptureImage:   true,
 		CaptureFiles:   true,
 		CaptureRich:    true,
+		CaptureCustom:  true,
 		MaxTextLength:  100_000,
 		MaxItems:       1000,
 		MaxAgeDays:     30,
 		IgnorePatterns: nil,
 		IgnoreApps:     nil,
 		Hotkey:         "Ctrl+Shift+V",
+		PasteOnPick:    true,
 		ShowOnLaunch:   false,
 		CloseToTray:    true,
 		AutoStart:      false,

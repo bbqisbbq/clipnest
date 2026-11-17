@@ -19,8 +19,65 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+// clipFormat is one entry of the clipboard format enumeration.
+type clipFormat struct {
+	id   uint32
+	name string
+}
+
+// enumerateFormats lists every format currently on the open clipboard.
+func enumerateFormats() []clipFormat {
+	out := make([]clipFormat, 0, 16)
+	var next uint32
+	for {
+		id, _, _ := procEnumClipboardFormats.Call(uintptr(next))
+		if id == 0 {
+			break
+		}
+		next = uint32(id)
+		out = append(out, clipFormat{id: next, name: formatName(next)})
+	}
+	return out
+}
+
+// formatName resolves a clipboard format id to its name where possible.
+func formatName(id uint32) string {
+	if id < 0xC000 {
+		switch id {
+		case cfText:
+			return "CF_TEXT"
+		case cfBitmap:
+			return "CF_BITMAP"
+		case 3:
+			return "CF_METAFILEPICT"
+		case 8:
+			return "CF_DIB"
+		case 9:
+			return "CF_PALETTE"
+		case cfUnicodeText:
+			return "CF_UNICODETEXT"
+		case 14:
+			return "CF_ENHMETAFILE"
+		case cfHDrop:
+			return "CF_HDROP"
+		case cfDIBV5:
+			return "CF_DIBV5"
+		}
+		return ""
+	}
+	buf := make([]uint16, 256)
+	n, _, _ := procGetClipboardFormatNameW.Call(uintptr(id), uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
+	if n == 0 {
+		return ""
+	}
+	return windows.UTF16ToString(buf[:n])
+}
+
 // captureClipboard inspects the current clipboard and returns a Captured value.
 // It returns (nil, nil) when the clipboard holds nothing ClipNest can store.
+//
+// Classification order (first match wins, because that is what a user expects to
+// paste back): files → image → HTML → RTF → text/URI → any other raw format.
 func captureClipboard() (*Captured, error) {
 	initFormats()
 	if err := openClipboard(); err != nil {
@@ -28,8 +85,18 @@ func captureClipboard() (*Captured, error) {
 	}
 	defer closeClipboard()
 
+	formatsOnClipboard := enumerateFormats()
+	has := func(id uint32) bool {
+		for _, f := range formatsOnClipboard {
+			if f.id == id {
+				return true
+			}
+		}
+		return false
+	}
+
 	// ---- file list (CF_HDROP) -------------------------------------------
-	if formatAvailable(cfHDrop) {
+	if has(cfHDrop) {
 		if files, ok := readHDrop(); ok && len(files) > 0 {
 			return buildFilesCapture(files), nil
 		}
@@ -40,20 +107,21 @@ func captureClipboard() (*Captured, error) {
 		return c, nil
 	}
 
-	// ---- rich text (HTML Format) ----------------------------------------
+	// ---- plain text (needed as the fallback for rich formats) -----------
 	text := ""
-	if formatAvailable(cfUnicodeText) {
+	if has(cfUnicodeText) {
 		if b, err := readFormat(cfUnicodeText); err == nil {
 			text = decodeUTF16(b)
 		}
 	}
-	if text == "" && formatAvailable(cfText) {
+	if text == "" && has(cfText) {
 		if b, err := readFormat(cfText); err == nil {
 			text = decodeANSI(b)
 		}
 	}
 
-	if formats.html != 0 && formatAvailable(formats.html) {
+	// ---- HTML fragment ---------------------------------------------------
+	if formats.html != 0 && has(formats.html) {
 		if b, err := readFormat(formats.html); err == nil {
 			if frag := htmlFragment(b); frag != "" {
 				plain := text
@@ -61,14 +129,28 @@ func captureClipboard() (*Captured, error) {
 					plain = stripTags(frag)
 				}
 				if strings.TrimSpace(plain) != "" || strings.TrimSpace(frag) != "" {
-					return buildRichCapture(plain, frag), nil
+					return buildHTMLCapture(plain, frag), nil
 				}
 			}
 		}
 	}
 
+	// ---- RTF (Word, WordPad, Outlook …) ---------------------------------
+	if formats.rtf != 0 && has(formats.rtf) {
+		if b, err := readFormat(formats.rtf); err == nil {
+			rtf := stripANSI(string(b))
+			if strings.TrimSpace(rtf) != "" {
+				plain := text
+				if plain == "" {
+					plain = rtfToText(rtf)
+				}
+				return buildRTFCapture(plain, rtf), nil
+			}
+		}
+	}
+
 	// ---- uri-list --------------------------------------------------------
-	if formats.uriList != 0 && formatAvailable(formats.uriList) {
+	if formats.uriList != 0 && has(formats.uriList) {
 		if b, err := readFormat(formats.uriList); err == nil {
 			for _, line := range strings.Split(stripANSI(string(b)), "\n") {
 				line = strings.TrimSpace(line)
@@ -94,7 +176,211 @@ func captureClipboard() (*Captured, error) {
 		return buildTextCapture(oleText), nil
 	}
 
+	// ---- anything else, kept as raw bytes -------------------------------
+	if c := readCustomLocked(formatsOnClipboard); c != nil {
+		return c, nil
+	}
+
 	return nil, nil
+}
+
+// readCustomLocked stores the first "real" format ClipNest does not classify.
+func readCustomLocked(formatsOnClipboard []clipFormat) *Captured {
+	const maxCustom = 1 << 20 // 1 MiB: enough for colours, ranges, small blobs
+	for _, f := range formatsOnClipboard {
+		if !isStorableCustomFormat(f) {
+			continue
+		}
+		data, err := readFormat(f.id)
+		if err != nil || len(data) == 0 || len(data) > maxCustom {
+			continue
+		}
+		name := f.name
+		if name == "" {
+			name = fmt.Sprintf("CF_%d", f.id)
+		}
+		sum := sha256.Sum256(append([]byte(name+"\x00"), data...))
+		return &Captured{
+			Kind:       KindCustom,
+			Binary:     data,
+			FormatName: name,
+			FormatID:   f.id,
+			Text:       name,
+			Preview:    fmt.Sprintf("%s · %s", name, humanBytes(len(data))),
+			Hash:       hex.EncodeToString(sum[:16]),
+			Size:       len(data),
+			SourceApp:  foregroundAppName(),
+		}
+	}
+	return nil
+}
+
+// isStorableCustomFormat filters out handles that are not HGLOBAL payloads
+// (GlobalSize on a HBITMAP/HMETAFILE corrupts the heap) and clipboard plumbing.
+func isStorableCustomFormat(f clipFormat) bool {
+	switch f.id {
+	case cfBitmap, 3 /*CF_METAFILEPICT*/, 9 /*CF_PALETTE*/, 14 /*CF_ENHMETAFILE*/,
+		cfText, cfUnicodeText, cfHDrop, cfDIB, cfDIBV5:
+		return false
+	}
+	if formats.png != 0 && f.id == formats.png {
+		return false
+	}
+	if formats.html != 0 && f.id == formats.html {
+		return false
+	}
+	if formats.rtf != 0 && f.id == formats.rtf {
+		return false
+	}
+	if formats.uriList != 0 && f.id == formats.uriList {
+		return false
+	}
+	switch strings.ToLower(f.name) {
+	case "", "dataobject", "ole private data", "dataobjectattributes",
+		"dataobjectattributesrequiringelevation", "shell idlist array",
+		"preferred dropeffect", "dropdescription", "zoneidentifier",
+		"filename", "filenamew", "filegroupdescriptor", "filegroupdescriptorw",
+		"untrusteddragdrop", "logical file name", "file contents":
+		return false
+	}
+	return true
+}
+
+// WriteRTFToClipboard puts an RTF payload plus a plain-text fallback on the
+// clipboard, which is what Word/WordPad/Outlook expect.
+func WriteRTFToClipboard(rtf, plain string) error {
+	initFormats()
+	if formats.rtf == 0 {
+		return errors.New("当前系统没有可用的 RTF 剪贴板格式")
+	}
+	if err := openClipboard(); err != nil {
+		return err
+	}
+	defer closeClipboard()
+	if r, _, cerr := procEmptyClipboard.Call(); r == 0 {
+		return fmt.Errorf("EmptyClipboard: %v", cerr)
+	}
+	if err := setClipboardBytes(formats.rtf, []byte(rtf)); err != nil {
+		return err
+	}
+	if plain == "" {
+		plain = rtfToText(rtf)
+	}
+	if plain == "" {
+		return nil
+	}
+	return setClipboardBytes(cfUnicodeText, utf16Bytes(plain))
+}
+
+// WriteRawToClipboard restores a custom entry under its original format id.
+func WriteRawToClipboard(formatID uint32, formatName string, data []byte) error {
+	initFormats()
+	if len(data) == 0 {
+		return errors.New("没有可复制的数据")
+	}
+	id := formatID
+	if formatName != "" {
+		if reg := registerFormat(formatName); reg != 0 {
+			id = reg
+		}
+	}
+	if id == 0 {
+		return fmt.Errorf("无法还原剪贴板格式 %q", formatName)
+	}
+	if err := openClipboard(); err != nil {
+		return err
+	}
+	defer closeClipboard()
+	if r, _, cerr := procEmptyClipboard.Call(); r == 0 {
+		return fmt.Errorf("EmptyClipboard: %v", cerr)
+	}
+	return setClipboardBytes(id, data)
+}
+
+// rtfToText is a small RTF-to-plain converter: enough for previews and for the
+// text fallback, not a full RTF parser.
+func rtfToText(rtf string) string {
+	var b strings.Builder
+	depth := 0
+	skipDepth := 0 // depth of the group we are currently ignoring (0 = not skipping)
+
+	for i := 0; i < len(rtf); i++ {
+		c := rtf[i]
+		switch c {
+		case '{':
+			depth++
+			if i+1 < len(rtf) {
+				head := rtf[i+1:]
+				for _, dest := range []string{
+					"\\fonttbl", "\\colortbl", "\\stylesheet", "\\info", "\\*", "\\pict",
+					"\\header", "\\footer", "\\object", "\\themedata", "\\datastore",
+				} {
+					if strings.HasPrefix(head, dest) {
+						if skipDepth == 0 {
+							skipDepth = depth
+						}
+						break
+					}
+				}
+			}
+		case '}':
+			if skipDepth != 0 && depth <= skipDepth {
+				skipDepth = 0
+			}
+			depth--
+		case '\\':
+			j := i + 1
+			for j < len(rtf) && ((rtf[j] >= 'a' && rtf[j] <= 'z') || (rtf[j] >= 'A' && rtf[j] <= 'Z')) {
+				j++
+			}
+			word := rtf[i+1 : j]
+			for j < len(rtf) && (rtf[j] == '-' || (rtf[j] >= '0' && rtf[j] <= '9')) {
+				j++
+			}
+			if j < len(rtf) && rtf[j] == ' ' {
+				j++
+			}
+			if skipDepth == 0 {
+				switch word {
+				case "par", "line", "sect", "row":
+					b.WriteString("\n")
+				case "tab", "cell":
+					b.WriteString("\t")
+				case "emdash":
+					b.WriteString("—")
+				case "endash":
+					b.WriteString("–")
+				case "lquote":
+					b.WriteString("‘")
+				case "rquote":
+					b.WriteString("’")
+				case "ldblquote":
+					b.WriteString("“")
+				case "rdblquote":
+					b.WriteString("”")
+				case "bullet":
+					b.WriteString("•")
+				}
+			}
+			i = j - 1
+		default:
+			if skipDepth == 0 && c != '\r' && c != '\n' {
+				b.WriteByte(c)
+			}
+		}
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func humanBytes(n int) string {
+	switch {
+	case n >= 1<<20:
+		return fmt.Sprintf("%.1f MB", float64(n)/(1<<20))
+	case n >= 1<<10:
+		return fmt.Sprintf("%.1f KB", float64(n)/(1<<10))
+	default:
+		return fmt.Sprintf("%d B", n)
+	}
 }
 
 func readImageLocked() (*Captured, error) {
@@ -167,7 +453,7 @@ func buildTextCapture(text string) *Captured {
 	}
 }
 
-func buildRichCapture(plain, htmlFragment string) *Captured {
+func buildHTMLCapture(plain, htmlFragment string) *Captured {
 	sum := sha256.Sum256([]byte("rich\x00" + plain + "\x00" + htmlFragment))
 	return &Captured{
 		Kind:      KindRichText,
@@ -176,6 +462,19 @@ func buildRichCapture(plain, htmlFragment string) *Captured {
 		Preview:   makePreview(strings.TrimSpace(plain), 240),
 		Hash:      hex.EncodeToString(sum[:16]),
 		Size:      len(plain) + len(htmlFragment),
+		SourceApp: foregroundAppName(),
+	}
+}
+
+func buildRTFCapture(plain, rtf string) *Captured {
+	sum := sha256.Sum256([]byte("rtf\x00" + plain + "\x00" + rtf))
+	return &Captured{
+		Kind:      KindRichText,
+		Text:      plain,
+		RTF:       rtf,
+		Preview:   makePreview(strings.TrimSpace(plain), 240),
+		Hash:      hex.EncodeToString(sum[:16]),
+		Size:      len(plain) + len(rtf),
 		SourceApp: foregroundAppName(),
 	}
 }

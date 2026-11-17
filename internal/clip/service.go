@@ -26,17 +26,24 @@ type AppInfo struct {
 	PlatformNote string `json:"platformNote"`
 }
 
-// Hooks lets main.go wire the ClipService to application-level concerns (window
-// visibility, quitting, tray menu labels) without importing Wails here.
+// Hooks lets main.go wire the service to application-level concerns (window
+// visibility, the picker popup, quitting, tray menu labels) without importing
+// Wails here.
 type Hooks struct {
 	Emit          func(name string, data any)
 	ShowWindow    func()
 	HideWindow    func()
-	OnSettings    func(Settings) error
 	Quit          func()
+	OnSettings    func(Settings) error
 	ExePath       string
 	PlatformNote  string
 	PlatformWorks bool
+
+	// ShowPickerAt shows the popup window anchored at the given screen point and
+	// reports whether it could be shown.
+	ShowPickerAt func(x, y int) bool
+	// HidePicker hides the popup window.
+	HidePicker func()
 }
 
 // ClipService is the object bound to the webview.
@@ -51,6 +58,9 @@ type ClipService struct {
 	ignoreRe     []*regexp.Regexp
 	stopCh       chan struct{}
 	stopped      bool
+	// targetHwnd is the window that had focus when the picker was opened; it is
+	// where the pasted content must land.
+	targetHwnd uintptr
 }
 
 // NewService opens the store inside dataDir.
@@ -77,6 +87,12 @@ func (s *ClipService) Start() error {
 	s.watcher = w
 	go s.captureLoop()
 	go s.refreshFilesLoop()
+	// Whatever is already on the clipboard when the app starts is also part of
+	// "what went through the clipboard", so record it once.
+	go func() {
+		time.Sleep(400 * time.Millisecond)
+		s.handleClipboardChange()
+	}()
 	return nil
 }
 
@@ -107,7 +123,7 @@ func (s *ClipService) captureLoop() {
 			return
 		case <-s.watcher.Changes():
 			pending = true
-			debounce.Reset(120 * time.Millisecond)
+			debounce.Reset(45 * time.Millisecond)
 		case <-debounce.C:
 			if !pending {
 				continue
@@ -200,6 +216,10 @@ func (s *ClipService) handleClipboardChange() {
 		if !st.CaptureRich {
 			return
 		}
+	case KindCustom:
+		if !st.CaptureCustom {
+			return
+		}
 	}
 
 	if st.MaxTextLength > 0 && (cap.Kind == KindText || cap.Kind == KindLink || cap.Kind == KindRichText) {
@@ -289,36 +309,49 @@ func (s *ClipService) CopyItem(id string) error {
 	if !ok {
 		return errors.New("条目不存在")
 	}
-	s.mu.Lock()
-	s.suppressHash = it.Hash
-	s.suppressAt = time.Now()
-	s.mu.Unlock()
-
-	var err error
-	switch it.Kind {
-	case KindImage:
-		var data []byte
-		data, err = os.ReadFile(s.store.BlobPath(it.ImageFile))
-		if err == nil {
-			err = WriteImageToClipboard(data)
-		}
-	case KindFiles:
-		paths := make([]string, 0, len(it.Files))
-		for _, f := range it.Files {
-			paths = append(paths, f.Path)
-		}
-		err = WriteFilesToClipboard(paths)
-	case KindRichText:
-		err = WriteHTMLToClipboard(it.HTML, it.Text)
-	default:
-		err = WriteTextToClipboard(it.Text)
-	}
-	if err != nil {
+	if err := s.writeToClipboard(it); err != nil {
 		return err
 	}
 	s.store.MarkCopied(id)
 	s.emit("clip:stats", s.store.Stats())
 	return nil
+}
+
+// writeToClipboard puts an entry on the clipboard and suppresses the capture
+// echo that the clipboard listener would otherwise turn into a new entry.
+func (s *ClipService) writeToClipboard(it Item) error {
+	s.mu.Lock()
+	s.suppressHash = it.Hash
+	s.suppressAt = time.Now()
+	s.mu.Unlock()
+
+	switch it.Kind {
+	case KindImage:
+		data, err := os.ReadFile(s.store.BlobPath(it.ImageFile))
+		if err != nil {
+			return err
+		}
+		return WriteImageToClipboard(data)
+	case KindFiles:
+		paths := make([]string, 0, len(it.Files))
+		for _, f := range it.Files {
+			paths = append(paths, f.Path)
+		}
+		return WriteFilesToClipboard(paths)
+	case KindRichText:
+		if it.RTF != "" {
+			return WriteRTFToClipboard(it.RTF, it.Text)
+		}
+		return WriteHTMLToClipboard(it.HTML, it.Text)
+	case KindCustom:
+		data, err := os.ReadFile(s.store.BlobPath(it.BinaryFile))
+		if err != nil {
+			return err
+		}
+		return WriteRawToClipboard(it.FormatID, it.FormatName, data)
+	default:
+		return WriteTextToClipboard(it.Text)
+	}
 }
 
 // DeleteItem removes one entry.
@@ -382,6 +415,8 @@ func (s *ClipService) OpenItem(id string) error {
 			return err
 		}
 		return shellOpen(tmp)
+	case KindCustom:
+		return fmt.Errorf("「%s」是自定义剪贴板格式，只能复制回剪贴板", it.FormatName)
 	default:
 		return errors.New("该类型不支持直接打开")
 	}
@@ -470,6 +505,92 @@ func (s *ClipService) Quit() {
 
 // Version returns the app version as a string method too (handy in JS).
 func (s *ClipService) GetVersion() string { return Version }
+
+// ---- picker (hotkey popup) ---------------------------------------------
+
+// PickerSize is the popup's logical size; main.go uses it for clamping.
+const (
+	PickerWidth  = 468
+	PickerHeight = 424
+)
+
+// ShowPicker pops the list at the caret of whatever window has focus.
+func (s *ClipService) ShowPicker() error {
+	if s.hooks.ShowPickerAt == nil {
+		return errors.New("弹窗窗口未就绪")
+	}
+	// Capture the target window before our popup steals focus.
+	s.mu.Lock()
+	s.targetHwnd = ForegroundWindowHandle()
+	target := s.targetHwnd
+	s.mu.Unlock()
+	if target == 0 {
+		return errors.New("没有可粘贴的目标窗口")
+	}
+	x, y := CaretAnchor()
+	ok := s.hooks.ShowPickerAt(x, y)
+	Logf(s.store.Dir(), "picker show: target=%#x anchor=(%d,%d) shown=%v", target, x, y, ok)
+	if !ok {
+		return errors.New("无法显示弹窗")
+	}
+	return nil
+}
+
+// HidePicker dismisses the popup and gives focus back to the target window.
+func (s *ClipService) HidePicker() {
+	if s.hooks.HidePicker != nil {
+		s.hooks.HidePicker()
+	}
+	s.mu.Lock()
+	target := s.targetHwnd
+	s.mu.Unlock()
+	if target != 0 {
+		go ActivateWindow(target)
+	}
+}
+
+// PickItem copies an entry and, when paste is true, pastes it into the window
+// that was focused when the popup opened. It returns a short status string the
+// popup can show while it closes.
+func (s *ClipService) PickItem(id string, paste bool) (string, error) {
+	it, ok := s.store.Get(id)
+	if !ok {
+		return "", errors.New("条目不存在")
+	}
+	if err := s.writeToClipboard(it); err != nil {
+		return "", err
+	}
+	s.store.MarkCopied(id)
+
+	s.mu.Lock()
+	target := s.targetHwnd
+	s.mu.Unlock()
+
+	if s.hooks.HidePicker != nil {
+		s.hooks.HidePicker()
+	}
+	s.emit("clip:stats", s.store.Stats())
+	Logf(s.store.Dir(), "picker pick: id=%s kind=%s paste=%v target=%#x", it.ID, it.Kind, paste, target)
+
+	if !paste {
+		if target != 0 {
+			go ActivateWindow(target)
+		}
+		return "已复制", nil
+	}
+	go func() {
+		if err := PasteInto(target); err != nil {
+			Logf(s.store.Dir(), "picker paste failed: %v", err)
+			s.emit("picker:paste-failed", err.Error())
+			return
+		}
+		Logf(s.store.Dir(), "picker paste sent: target=%#x", target)
+	}()
+	return "已粘贴", nil
+}
+
+// PickerHotkey returns the accelerator that opens the picker ("" = disabled).
+func (s *ClipService) PickerHotkey() string { return s.store.Settings().Hotkey }
 
 // encodeBase64 is shared by the store's data URL helper.
 func encodeBase64(b []byte) string { return base64.StdEncoding.EncodeToString(b) }

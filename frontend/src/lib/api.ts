@@ -17,6 +17,7 @@ export const KIND_LABEL: Record<string, string> = {
   image: "图片",
   files: "文件",
   rich: "富文本",
+  custom: "其它格式",
 };
 
 // newFilter builds the Filter payload the Go side expects.
@@ -32,12 +33,14 @@ export function emptySettings(): Settings {
     captureImage: true,
     captureFiles: true,
     captureRich: true,
+    captureCustom: true,
     maxTextLength: 100000,
     maxItems: 1000,
     maxAgeDays: 30,
     ignorePatterns: [],
     ignoreApps: [],
     hotkey: "Ctrl+Shift+V",
+    pasteOnPick: true,
     showOnLaunch: false,
     closeToTray: true,
     autoStart: false,

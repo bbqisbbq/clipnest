@@ -86,6 +86,13 @@ export function GetVersion(): $CancellablePromise<string> {
 }
 
 /**
+ * HidePicker dismisses the popup and gives focus back to the target window.
+ */
+export function HidePicker(): $CancellablePromise<void> {
+    return $Call.ByID(1409824831);
+}
+
+/**
  * HideWindow hides the manager window to the tray.
  */
 export function HideWindow(): $CancellablePromise<void> {
@@ -105,6 +112,22 @@ export function OpenDataDir(): $CancellablePromise<void> {
  */
 export function OpenItem(id: string): $CancellablePromise<void> {
     return $Call.ByID(661447306, id);
+}
+
+/**
+ * PickItem copies an entry and, when paste is true, pastes it into the window
+ * that was focused when the popup opened. It returns a short status string the
+ * popup can show while it closes.
+ */
+export function PickItem(id: string, paste: boolean): $CancellablePromise<string> {
+    return $Call.ByID(1064293167, id, paste);
+}
+
+/**
+ * PickerHotkey returns the accelerator that opens the picker ("" = disabled).
+ */
+export function PickerHotkey(): $CancellablePromise<string> {
+    return $Call.ByID(677716557);
 }
 
 /**
@@ -141,6 +164,13 @@ export function SetCapture(enabled: boolean): $CancellablePromise<$models.Settin
  */
 export function SetPinned(id: string, pinned: boolean): $CancellablePromise<$models.Item> {
     return $Call.ByID(301380581, id, pinned);
+}
+
+/**
+ * ShowPicker pops the list at the caret of whatever window has focus.
+ */
+export function ShowPicker(): $CancellablePromise<void> {
+    return $Call.ByID(482016686);
 }
 
 /**

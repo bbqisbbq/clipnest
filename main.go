@@ -33,15 +33,20 @@ func init() {
 	application.RegisterEvent[int]("clip:cleared")
 	application.RegisterEvent[clip.Stats]("clip:stats")
 	application.RegisterEvent[clip.Settings]("settings:changed")
+	application.RegisterEvent[string]("picker:opened")
+	application.RegisterEvent[string]("picker:paste-failed")
 }
 
 func main() {
 	dataDir := defaultDataDir()
 	exePath, _ := os.Executable()
+	clip.TrimLog(dataDir, 2<<20)
+	clip.Logf(dataDir, "=== ClipNest %s starting (exe=%s) ===", clip.Version, exePath)
 
 	var (
 		app           *application.App
 		win           *application.WebviewWindow
+		picker        *application.WebviewWindow
 		pauseItem     *application.MenuItem
 		currentHotkey string
 		svc           *clip.ClipService
@@ -60,6 +65,35 @@ func main() {
 		}
 	}
 
+	// The picker: a frameless always-on-top popup that appears at the caret.
+	showPickerAt := func(x, y int) bool {
+		if picker == nil {
+			return false
+		}
+		px, py := clip.ClampToWorkArea(x, y, clip.PickerWidth, clip.PickerHeight)
+		// Window calls and the foreground hand-off must happen on the main
+		// thread: that is the thread that owns the popup window.
+		application.InvokeSync(func() {
+			picker.SetPosition(px, py)
+			picker.Show()
+			if hwnd := uintptr(picker.NativeWindow()); hwnd != 0 {
+				clip.ActivateWindow(hwnd)
+			}
+			picker.Focus()
+			clip.Logf(dataDir, "picker window: pos=(%d,%d) hwnd=%#x fg=%#x",
+				px, py, uintptr(picker.NativeWindow()), clip.ForegroundWindowHandle())
+		})
+		if app != nil {
+			app.Event.Emit("picker:opened", "")
+		}
+		return true
+	}
+	hidePicker := func() {
+		if picker != nil {
+			picker.Hide()
+		}
+	}
+
 	var applyHotkey func(string) error
 	applyHotkey = func(accel string) error {
 		if accel == currentHotkey {
@@ -72,7 +106,11 @@ func main() {
 		if accel == "" {
 			return nil
 		}
-		if err := app.GlobalShortcut.Register(accel, showWindow); err != nil {
+		if err := app.GlobalShortcut.Register(accel, func() {
+			if err := svc.ShowPicker(); err != nil {
+				log.Printf("打开快速粘贴窗失败: %v", err)
+			}
+		}); err != nil {
 			return err
 		}
 		currentHotkey = accel
@@ -114,6 +152,8 @@ func main() {
 		Quit:          quit,
 		ExePath:       exePath,
 		PlatformWorks: true,
+		ShowPickerAt:  showPickerAt,
+		HidePicker:    hidePicker,
 		OnSettings: func(st clip.Settings) error {
 			if pauseItem != nil {
 				setPauseLabel(pauseItem, st.Capture)
@@ -169,6 +209,25 @@ func main() {
 		win.Hide()
 	})
 
+	// Quick paste popup. Frameless, always on top, hidden until the hotkey
+	// asks for it; it hides itself as soon as it loses focus.
+	picker = app.Window.NewWithOptions(application.WebviewWindowOptions{
+		Name:            "picker",
+		Title:           "ClipNest",
+		Width:           clip.PickerWidth,
+		Height:          clip.PickerHeight,
+		Frameless:       true,
+		AlwaysOnTop:     true,
+		Hidden:          true,
+		DisableResize:   true,
+		HideOnFocusLost: true,
+		Windows: application.WindowsWindow{
+			Theme: application.SystemDefault,
+		},
+		BackgroundColour: application.NewRGB(18, 21, 28),
+		URL:              "/?mode=picker",
+	})
+
 	applyHotkey(preSettings.Hotkey)
 
 	// Tray icon + menu.
@@ -179,6 +238,11 @@ func main() {
 
 	menu := application.NewMenu()
 	menu.Add("显示管理窗口").OnClick(func(_ *application.Context) { showWindow() })
+	menu.Add("快速粘贴（光标处）").OnClick(func(_ *application.Context) {
+		if err := svc.ShowPicker(); err != nil {
+			log.Printf("打开快速粘贴窗失败: %v", err)
+		}
+	})
 	pauseItem = menu.Add(pauseLabel(preSettings.Capture))
 	pauseItem.OnClick(func(_ *application.Context) {
 		st := svc.GetSettings()

@@ -74,6 +74,29 @@ func Open(dir string) (*Store, error) {
 	return s, nil
 }
 
+// Logf appends one diagnostic line to <dir>/clipnest.log. Logging failures are
+// deliberately silent: diagnostics must never break the app.
+func Logf(dir, format string, args ...any) {
+	if dir == "" {
+		return
+	}
+	line := fmt.Sprintf("%s %s\n", time.Now().Format("2006-01-02 15:04:05.000"), fmt.Sprintf(format, args...))
+	f, err := os.OpenFile(filepath.Join(dir, "clipnest.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	_, _ = f.WriteString(line)
+}
+
+// TrimLog keeps clipnest.log below limit bytes so it cannot grow forever.
+func TrimLog(dir string, limit int64) {
+	p := filepath.Join(dir, "clipnest.log")
+	if info, err := os.Stat(p); err == nil && info.Size() > limit {
+		_ = os.WriteFile(p, nil, 0o644)
+	}
+}
+
 // Dir returns the data directory.
 func (s *Store) Dir() string { return s.dir }
 
@@ -273,9 +296,9 @@ func hashOf(parts ...string) string {
 	return hex.EncodeToString(h.Sum(nil))[:32]
 }
 
-// SaveBlob persists an image payload and returns its file name.
-func (s *Store) SaveBlob(id string, data []byte) (string, error) {
-	name := id + ".png"
+// SaveBlob persists a payload and returns its file name.
+func (s *Store) SaveBlob(id, ext string, data []byte) (string, error) {
+	name := id + ext
 	if err := os.WriteFile(filepath.Join(s.blobs, name), data, 0o644); err != nil {
 		return "", err
 	}
@@ -311,13 +334,20 @@ func (s *Store) deleteBlob(name string) {
 // The bool reports whether the entry is new to the history.
 func (s *Store) Add(c Captured) (*Item, bool, error) {
 	id := newID()
-	imageFile := ""
+	imageFile, binaryFile := "", ""
 	if len(c.PNG) > 0 {
-		name, err := s.SaveBlob(id, c.PNG)
+		name, err := s.SaveBlob(id, ".png", c.PNG)
 		if err != nil {
 			return nil, false, err
 		}
 		imageFile = name
+	}
+	if len(c.Binary) > 0 {
+		name, err := s.SaveBlob(id, ".bin", c.Binary)
+		if err != nil {
+			return nil, false, err
+		}
+		binaryFile = name
 	}
 
 	now := nowUTC()
@@ -348,12 +378,16 @@ func (s *Store) Add(c Captured) (*Item, bool, error) {
 		CreatedAt: now,
 		UpdatedAt: now,
 		SeenCount: 1,
-		SourceApp: c.SourceApp,
-		ImageFile: imageFile,
-		Width:     c.Width,
-		Height:    c.Height,
-		HTML:      c.HTML,
-		Files:     c.Files,
+		SourceApp:  c.SourceApp,
+		ImageFile:  imageFile,
+		Width:      c.Width,
+		Height:     c.Height,
+		HTML:       c.HTML,
+		RTF:        c.RTF,
+		BinaryFile: binaryFile,
+		FormatName: c.FormatName,
+		FormatID:   c.FormatID,
+		Files:      c.Files,
 	}
 	s.items[it.ID] = it
 	if c.Hash != "" {
@@ -460,6 +494,7 @@ func (s *Store) Delete(id string) bool {
 	}
 	s.mu.Unlock()
 	s.deleteBlob(it.ImageFile)
+	s.deleteBlob(it.BinaryFile)
 	s.markDirty()
 	return true
 }

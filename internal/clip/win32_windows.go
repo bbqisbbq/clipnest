@@ -82,6 +82,7 @@ type clipboardFormats struct {
 	html     uint32
 	png      uint32
 	uriList  uint32
+	rtf      uint32
 	initOnce bool
 }
 
@@ -103,6 +104,7 @@ func initFormats() {
 	formats.html = registerFormat("HTML Format")
 	formats.png = registerFormat("PNG")
 	formats.uriList = registerFormat("text/uri-list")
+	formats.rtf = registerFormat("Rich Text Format")
 	formats.initOnce = true
 }
 
