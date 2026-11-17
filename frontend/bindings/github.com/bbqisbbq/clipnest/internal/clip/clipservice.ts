@@ -15,6 +15,14 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 import * as $models from "./models.js";
 
 /**
+ * AutoStartTarget is the command line that would be registered, for the UI to
+ * show what "开机自启" actually points at.
+ */
+export function AutoStartTarget(): $CancellablePromise<string> {
+    return $Call.ByID(1235473775);
+}
+
+/**
  * CopyItem writes an entry back to the Windows clipboard.
  */
 export function CopyItem(id: string): $CancellablePromise<void> {
@@ -107,6 +115,21 @@ export function HideWindow(): $CancellablePromise<void> {
 }
 
 /**
+ * IsAutoStartEnabled reports the actual registry state, not just the setting.
+ */
+export function IsAutoStartEnabled(): $CancellablePromise<boolean> {
+    return $Call.ByID(4217922907);
+}
+
+/**
+ * LogClient records a frontend error/note in clipnest.log, so a blank window or
+ * a broken binding can be diagnosed from outside the webview.
+ */
+export function LogClient(message: string): $CancellablePromise<void> {
+    return $Call.ByID(3758327778, message);
+}
+
+/**
  * OpenDataDir reveals the data directory in Explorer.
  */
 export function OpenDataDir(): $CancellablePromise<void> {
@@ -145,6 +168,19 @@ export function Quit(): $CancellablePromise<void> {
 }
 
 /**
+ * ReconcileAutoStart makes the Run registry entry match the stored setting,
+ * repairing a stale path after the app was moved or reinstalled. Called once at
+ * startup so a moved installation doesn't silently break autostart.
+ * 
+ * A pre-existing entry that ClipNest did not write itself (for example, the one
+ * the installer creates when the user ticks "开机自动启动") is adopted rather
+ * than deleted: the installer's choice wins on first run.
+ */
+export function ReconcileAutoStart(): $CancellablePromise<void> {
+    return $Call.ByID(4196985168);
+}
+
+/**
  * RefreshItem re-checks a file entry's references.
  */
 export function RefreshItem(id: string): $CancellablePromise<$models.Item> {
@@ -157,6 +193,13 @@ export function RefreshItem(id: string): $CancellablePromise<$models.Item> {
  */
 export function SaveSettings(st: $models.Settings): $CancellablePromise<$models.Settings> {
     return $Call.ByID(4110371229, st);
+}
+
+/**
+ * SetAutoStart toggles the logon entry (tray menu / settings both use it).
+ */
+export function SetAutoStart(enabled: boolean): $CancellablePromise<$models.Settings> {
+    return $Call.ByID(1307836, enabled);
 }
 
 /**

@@ -25,6 +25,8 @@ type AppInfo struct {
 	AutoStart    bool   `json:"autoStart"`
 	PlatformOK   bool   `json:"platformOk"`
 	PlatformNote string `json:"platformNote"`
+	// AutoStartTarget is the command line the logon entry points at.
+	AutoStartTarget string `json:"autoStartTarget"`
 }
 
 // Hooks lets main.go wire the service to application-level concerns (window
@@ -477,20 +479,84 @@ func (s *ClipService) SetCapture(enabled bool) (Settings, error) {
 	return s.SaveSettings(st)
 }
 
+// SetAutoStart toggles the logon entry (tray menu / settings both use it).
+func (s *ClipService) SetAutoStart(enabled bool) (Settings, error) {
+	st := s.store.Settings()
+	st.AutoStart = enabled
+	return s.SaveSettings(st)
+}
+
+// IsAutoStartEnabled reports the actual registry state, not just the setting.
+func (s *ClipService) IsAutoStartEnabled() bool {
+	if !s.hooks.PlatformWorks {
+		return false
+	}
+	return autoStartEnabled()
+}
+
+// ReconcileAutoStart makes the Run registry entry match the stored setting,
+// repairing a stale path after the app was moved or reinstalled. Called once at
+// startup so a moved installation doesn't silently break autostart.
+//
+// A pre-existing entry that ClipNest did not write itself (for example, the one
+// the installer creates when the user ticks "开机自动启动") is adopted rather
+// than deleted: the installer's choice wins on first run.
+func (s *ClipService) ReconcileAutoStart() {
+	if !s.hooks.PlatformWorks || s.hooks.ExePath == "" {
+		return
+	}
+	st := s.store.Settings()
+	have := strings.ToLower(autoStartCommandValue())
+	want := strings.ToLower(s.hooks.ExePath)
+
+	switch {
+	case st.AutoStart && !strings.Contains(have, want):
+		if err := setAutoStart(true, s.hooks.ExePath); err != nil {
+			Logf(s.store.Dir(), "autostart reconcile failed: %v", err)
+			return
+		}
+		Logf(s.store.Dir(), "autostart registered: %s", autoStartCommand(s.hooks.ExePath))
+	case !st.AutoStart && strings.Contains(have, "clipnest"):
+		// Adopt the existing entry (installer choice) into the settings.
+		st.AutoStart = true
+		if err := s.store.SaveSettings(st); err != nil {
+			Logf(s.store.Dir(), "autostart adopt failed: %v", err)
+			return
+		}
+		Logf(s.store.Dir(), "autostart adopted from registry: %s", have)
+		s.emit("settings:changed", st)
+	}
+}
+
+// AutoStartTarget is the command line that would be registered, for the UI to
+// show what "开机自启" actually points at.
+func (s *ClipService) AutoStartTarget() string {
+	if cmd := autoStartCommandValue(); cmd != "" {
+		return cmd
+	}
+	if s.hooks.ExePath == "" {
+		return ""
+	}
+	return autoStartCommand(s.hooks.ExePath)
+}
+
 // GetAppInfo returns version/paths for the about panel.
 func (s *ClipService) GetAppInfo() AppInfo {
 	autoStart := false
+	target := ""
 	if s.hooks.PlatformWorks {
 		autoStart = autoStartEnabled()
+		target = s.AutoStartTarget()
 	}
 	return AppInfo{
-		Version:      Version,
-		DataDir:      s.store.Dir(),
-		ExePath:      s.hooks.ExePath,
-		OS:           "windows",
-		AutoStart:    autoStart,
-		PlatformOK:   s.hooks.PlatformWorks,
-		PlatformNote: s.hooks.PlatformNote,
+		Version:         Version,
+		DataDir:         s.store.Dir(),
+		ExePath:         s.hooks.ExePath,
+		OS:              "windows",
+		AutoStart:       autoStart,
+		PlatformOK:      s.hooks.PlatformWorks,
+		PlatformNote:    s.hooks.PlatformNote,
+		AutoStartTarget: target,
 	}
 }
 
@@ -606,6 +672,15 @@ func (s *ClipService) PickItem(id string, paste bool) (string, error) {
 
 // PickerHotkey returns the accelerator that opens the picker ("" = disabled).
 func (s *ClipService) PickerHotkey() string { return s.store.Settings().Hotkey }
+
+// LogClient records a frontend error/note in clipnest.log, so a blank window or
+// a broken binding can be diagnosed from outside the webview.
+func (s *ClipService) LogClient(message string) {
+	if len(message) > 4000 {
+		message = message[:4000] + "…"
+	}
+	Logf(s.store.Dir(), "ui: %s", message)
+}
 
 // encodeBase64 is shared by the store's data URL helper.
 func encodeBase64(b []byte) string { return base64.StdEncoding.EncodeToString(b) }

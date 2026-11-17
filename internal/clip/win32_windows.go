@@ -238,6 +238,16 @@ func foregroundAppName() string {
 const autoRunKey = `Software\Microsoft\Windows\CurrentVersion\Run`
 const autoRunValue = "ClipNest"
 
+// autoStartCommand is what gets written to the Run key. The --background flag
+// tells the app it was started by Windows at logon, so it stays in the tray
+// instead of popping the window in the user's face.
+//
+// NOTE: build the quoted command line by hand — fmt's %q would escape the
+// backslashes into `C:\\path\\app.exe`, which the Windows loader cannot resolve.
+func autoStartCommand(exePath string) string {
+	return `"` + exePath + `" --background`
+}
+
 // setAutoStart registers/unregisters the app in HKCU Run.
 func setAutoStart(enabled bool, exePath string) error {
 	k, err := registry.OpenKey(registry.CURRENT_USER, autoRunKey, registry.SET_VALUE|registry.QUERY_VALUE)
@@ -254,7 +264,7 @@ func setAutoStart(enabled bool, exePath string) error {
 	if exePath == "" {
 		return errors.New("无法确定程序路径")
 	}
-	return k.SetStringValue(autoRunValue, fmt.Sprintf("%q", exePath))
+	return k.SetStringValue(autoRunValue, autoStartCommand(exePath))
 }
 
 // autoStartEnabled reports whether the Run entry exists.
@@ -266,4 +276,18 @@ func autoStartEnabled() bool {
 	defer k.Close()
 	_, _, err = k.GetStringValue(autoRunValue)
 	return err == nil
+}
+
+// autoStartCommandValue returns the registered command line ("" when absent).
+func autoStartCommandValue() string {
+	k, err := registry.OpenKey(registry.CURRENT_USER, autoRunKey, registry.QUERY_VALUE)
+	if err != nil {
+		return ""
+	}
+	defer k.Close()
+	v, _, err := k.GetStringValue(autoRunValue)
+	if err != nil {
+		return ""
+	}
+	return v
 }

@@ -249,7 +249,14 @@ export default function SettingsView(props: Props) {
             <Row label="启动时打开管理窗口" tip="关闭则启动后只驻留托盘。" >
               <Switch checked={draft.showOnLaunch} onChange={(v) => patch({ showOnLaunch: v })} />
             </Row>
-            <Row label="开机自动启动" tip="写入当前用户的开机启动项（HKCU\...\Run）。">
+            <Row
+              label="开机自动启动"
+              tip={
+                appInfo?.autoStartTarget
+                  ? `登录 Windows 时自动运行（写入 HKCU\\...\\Run），以 --background 参数启动，只驻留托盘不弹窗。当前命令：${appInfo.autoStartTarget}`
+                  : "登录 Windows 时自动运行（写入 HKCU\\...\\Run），以 --background 参数启动，只驻留托盘不弹窗。"
+              }
+            >
               <Switch checked={draft.autoStart} onChange={(v) => patch({ autoStart: v })} />
             </Row>
           </Section>

@@ -43,6 +43,41 @@ ClipNest 在你使用电脑时安静地记录进入过系统剪贴板的一切�
 > 详细取舍、数据模型与后续可选实现见 [docs/FILE-STRATEGY.md](docs/FILE-STRATEGY.md)。
 > 当前版本实现的是 A+B；E 的「一键归档」已预留在数据模型里（`Item.Files` 与 blob 目录）。
 
+## 安装
+
+两个安装包（同一份代码，区别只在安装位置与权限）：
+
+| 文件 | 安装到 | 权限 |
+| --- | --- | --- |
+| `bin\clipnest-0.1.0-amd64-setup.exe` | `C:\Program Files\bbqisbbq\ClipNest` | 需要管理员（UAC） |
+| `bin\clipnest-0.1.0-amd64-setup-per-user.exe` | `%LOCALAPPDATA%\Programs\ClipNest` | 免 UAC，当前用户 |
+
+安装向导（简体中文）会问三件事：
+
+1. **安装位置**
+2. **是否「开机自动启动」**（默认勾选）——写当前用户的 `HKCU\...\Run`，命令是
+   `"<安装目录>\clipnest.exe" --background`，登录后静默驻留托盘、不弹窗。
+   之后随时可以在托盘菜单或设置页的「开机自动启动」关掉，两边状态是同步的。
+3. 装完勾选「立即启动」。
+
+其它行为：
+
+- 缺少 WebView2 运行时会自动安装（安装包里内置 bootstrapper 才会联网下载）。
+- 卸载在「设置 → 应用 → 已安装的应用」里；**会先询问是否删除剪贴板历史**（默认保留），
+  静默卸载 `/S` 总是保留数据。卸载同时会清掉开机启动项、桌面与开始菜单快捷方式。
+- 安装包未做代码签名，首次运行可能触发 SmartScreen 提示（「更多信息 → 仍要运行」）。
+
+打包命令：
+
+```powershell
+wails3 package                        # 机器级安装包（需要管理员）
+wails3 package INSTALL_SCOPE=user     # 单用户安装包（免 UAC）
+# 产物：bin\clipnest-amd64-installer.exe
+```
+
+> 安装脚本在 `build/windows/nsis/project.nsi`（UTF-8 **带 BOM**，NSIS 要求），
+> 可自定义欢迎页、组件页、卸载时是否保留数据、签名命令等。
+
 ## 快速开始
 
 ### 依赖

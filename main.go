@@ -49,6 +49,7 @@ func main() {
 		win           *application.WebviewWindow
 		picker        *application.WebviewWindow
 		pauseItem     *application.MenuItem
+		autoStartItem *application.MenuItem
 		currentHotkey string
 		svc           *clip.ClipService
 	)
@@ -134,11 +135,16 @@ func main() {
 		preSettings = st
 	}
 	// `clipnest.exe --show` forces the window open (handy when launching from a
-	// shortcut or while testing).
+	// shortcut or while testing); `--background` is what the logon entry uses so
+	// autostart never pops a window in the user's face.
 	forceShow := false
+	forceHidden := false
 	for _, arg := range os.Args[1:] {
-		if arg == "--show" || arg == "-show" {
+		switch arg {
+		case "--show", "-show":
 			forceShow = true
+		case "--background", "-background":
+			forceHidden = true
 		}
 	}
 
@@ -159,6 +165,9 @@ func main() {
 			if pauseItem != nil {
 				setPauseLabel(pauseItem, st.Capture)
 			}
+			if autoStartItem != nil {
+				autoStartItem.SetChecked(st.AutoStart)
+			}
 			return applyHotkey(st.Hotkey)
 		},
 	})
@@ -176,6 +185,12 @@ func main() {
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
+		},
+		ErrorHandler: func(err error) {
+			clip.Logf(dataDir, "app error: %v", err)
+		},
+		WarningHandler: func(msg string) {
+			clip.Logf(dataDir, "app warning: %s", msg)
 		},
 		SingleInstance: &application.SingleInstanceOptions{
 			UniqueID: "com.bbqisbbq.clipnest",
@@ -196,7 +211,9 @@ func main() {
 		Height:    740,
 		MinWidth:  900,
 		MinHeight: 560,
-		Hidden:    !preSettings.ShowOnLaunch && !forceShow,
+		// --background (logon entry) always wins; --show forces a visible window
+		// even when the setting says "stay in the tray".
+		Hidden:    forceHidden || (!preSettings.ShowOnLaunch && !forceShow),
 		// Frameless: the UI draws its own caption bar so the chrome matches the
 		// content. Resizing still works (the Wails runtime handles edge drags).
 		Frameless: true,
@@ -255,6 +272,14 @@ func main() {
 			setPauseLabel(pauseItem, updated.Capture)
 		}
 	})
+	autoStartItem = menu.AddCheckbox("开机自动启动", svc.IsAutoStartEnabled())
+	autoStartItem.OnClick(func(_ *application.Context) {
+		enabled := !svc.IsAutoStartEnabled()
+		if _, err := svc.SetAutoStart(enabled); err != nil {
+			log.Printf("切换开机启动失败: %v", err)
+		}
+		autoStartItem.SetChecked(svc.IsAutoStartEnabled())
+	})
 	menu.AddSeparator()
 	menu.Add("清空未收藏的历史").OnClick(func(_ *application.Context) {
 		_, _ = svc.DeleteWhere(clip.Filter{})
@@ -275,6 +300,10 @@ func main() {
 	if err := svc.Start(); err != nil {
 		log.Printf("剪贴板监听启动失败: %v", err)
 	}
+
+	// Keep the logon entry in sync with the stored setting (repairs a stale path
+	// after the app is moved).
+	svc.ReconcileAutoStart()
 
 	app.OnShutdown(svc.Shutdown)
 

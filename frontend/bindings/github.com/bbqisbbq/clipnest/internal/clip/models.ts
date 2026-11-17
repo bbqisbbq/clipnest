@@ -12,6 +12,11 @@ export interface AppInfo {
     "autoStart": boolean;
     "platformOk": boolean;
     "platformNote": string;
+
+    /**
+     * AutoStartTarget is the command line the logon entry points at.
+     */
+    "autoStartTarget": string;
 }
 
 /**
