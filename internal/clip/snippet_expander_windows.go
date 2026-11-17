@@ -5,6 +5,7 @@ package clip
 import (
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -61,7 +62,18 @@ const (
 	vkBack       = 0x08
 )
 
+// allowInjectedKeys is a debug switch for end-to-end tests (see comment below).
+var allowInjectedKeys = os.Getenv("CLIPNEST_EXPANDER_ALLOW_INJECTED") == "1"
+var debugExpander = os.Getenv("CLIPNEST_EXPANDER_DEBUG") == "1"
+
 var (
+	imm32                   = windows.NewLazySystemDLL("imm32.dll")
+	procImmGetContext       = imm32.NewProc("ImmGetContext")
+	procImmReleaseContext   = imm32.NewProc("ImmReleaseContext")
+	procImmGetComposition   = imm32.NewProc("ImmGetCompositionStringW")
+	procImmGetOpenStatus    = imm32.NewProc("ImmGetOpenStatus")
+	procImmGetConvertStatus = imm32.NewProc("ImmGetConversionStatus")
+
 	procSetWindowsHookEx    = user32.NewProc("SetWindowsHookExW")
 	procCallNextHookEx      = user32.NewProc("CallNextHookEx")
 	procUnhookWindowsHookEx = user32.NewProc("UnhookWindowsHookEx")
@@ -130,7 +142,11 @@ func StartExpander(suffix string) error {
 			}
 			if wParam == wmKeyDown || wParam == wmSysKeyDown {
 				info := (*kbdllhookstruct)(unsafe.Pointer(lParam))
-				if info.Flags&llkhfInjected == 0 && e.injecting.Load() == false {
+				injected := info.Flags&llkhfInjected != 0
+				// Synthetic keystrokes are ignored so our own injection cannot
+				// re-trigger the hook. CLIPNEST_EXPANDER_ALLOW_INJECTED=1 lets
+				// automation (SendKeys/SendInput tests) drive the expander.
+				if (!injected || allowInjectedKeys) && !e.injecting.Load() {
 					if e.onKey(int(info.VKCode)) {
 						return 1 // swallow the keystroke we just consumed
 					}
@@ -167,7 +183,7 @@ func StartExpander(suffix string) error {
 			activeExpander.Store(nil)
 			return err
 		}
-		Logf(logDir(), "expander: keyboard hook installed")
+		Logf(logDir(), "expander: keyboard hook installed (suffix=%q)", string(e.suffix))
 		return nil
 	case <-e.stop:
 		return errors.New("expander stopped")
@@ -195,6 +211,14 @@ func (e *expander) onKey(vk int) bool {
 		e.buf = e.buf[:0]
 		return false
 	}
+	// 输入法正在组词（中文/日文/韩文）：让 IME 自己处理这些按键，不插手
+	if imeBusy() {
+		if len(e.buf) > 0 {
+			Logf(logDir(), "expander: skip, IME is composing (%q)", string(e.buf))
+		}
+		e.buf = e.buf[:0]
+		return false
+	}
 	if vk == vkBack {
 		if len(e.buf) > 0 {
 			e.buf = e.buf[:len(e.buf)-1]
@@ -202,6 +226,9 @@ func (e *expander) onKey(vk int) bool {
 		return false
 	}
 	r, ok := vkToRune(vk)
+	if debugExpander {
+		Logf(logDir(), "expander debug: vk=%#x rune=%q ok=%v", vk, r, ok)
+	}
 	if !ok {
 		e.buf = e.buf[:0]
 		return false
@@ -219,6 +246,9 @@ func (e *expander) onKey(vk int) bool {
 
 	candidate := string(e.buf[:len(e.buf)-len(e.suffix)])
 	content, hit := lookupTrigger(candidate)
+	if debugExpander {
+		Logf(logDir(), "expander debug: candidate=%q suffix=%q hit=%v", candidate, string(e.suffix), hit)
+	}
 	if !hit {
 		return false
 	}
@@ -234,19 +264,32 @@ func (e *expander) onKey(vk int) bool {
 }
 
 // expandInto deletes the typed trigger and pastes the content in its place.
+// expandInto deletes the typed trigger and types the content in place.
+//
+// Text is injected as Unicode keystrokes instead of going through the
+// clipboard: no clipboard round-trip means the target app never flashes a paste
+// and the user's clipboard keeps its previous content — the difference between
+// "smooth" and "visible flicker". Clipboard paste stays as a fallback for hosts
+// that reject injected Unicode input.
 func expandInto(trigger, content string, erase int) {
-	for i := 0; i < erase; i++ {
-		injectKey(vkBack, false)
-		injectKey(vkBack, true)
+	text, cursor := renderTemplate(content)
+
+	// Remove the abbreviation that was already typed, in one atomic batch.
+	InjectBackspaces(erase)
+	if text != "" {
+		if err := InjectUnicodeText(text); err != nil {
+			Logf(logDir(), "expander: unicode inject failed (%v), falling back to paste", err)
+			if werr := WriteTextToClipboard(text); werr == nil {
+				_ = SendPaste()
+			}
+		}
 	}
-	if err := WriteTextToClipboard(content); err != nil {
-		Logf(logDir(), "expander: keyboard hook installed")
-		return
+	if lefts := leftArrows(text, cursor); lefts > 0 {
+		sendLeftArrows(lefts)
 	}
-	_ = SendPaste()
-	Logf(logDir(), "expander: %q -> %d bytes", trigger, len(content))
-	_ = trigger
+	Logf(logDir(), "expander: %q -> %d bytes (cursor at %d)", trigger, len([]rune(text)), cursor)
 }
+
 
 // vkToRune converts the keys triggers are made of (letters, digits, a few
 // punctuation marks) to the character they produce.
@@ -272,6 +315,49 @@ func injectKey(vk uint16, up bool) {
 		return
 	}
 	sendOneInput(inputT{Type: inputKeyboard, Ki: keyboardInput{WVk: vk}})
+}
+
+// ---- IME awareness -------------------------------------------------------
+//
+// The hook must never fight the input method: while the IME is composing (e.g.
+// Chinese pinyin) the ASCII keys belong to the IME, not to us. Triggering there
+// would delete half-typed pinyin and paste text into a composition window, which
+// is exactly the "janky" behaviour we want to avoid. So we simply do not fire
+// while a composition is in progress, and never touch the IME state ourselves.
+
+const (
+	gcsCompStr     = 0x0008
+	imeCmodeNative = 0x0001
+)
+
+// imeBusy reports whether the foreground window is currently composing text.
+func imeBusy() bool {
+	hwnd := ForegroundWindowHandle()
+	if hwnd == 0 {
+		return false
+	}
+	himc, _, _ := procImmGetContext.Call(hwnd)
+	if himc == 0 {
+		return false // no IME attached to this window
+	}
+	defer procImmReleaseContext.Call(hwnd, himc)
+
+	// A non-empty composition string means the user is mid-word.
+	if n, _, _ := procImmGetComposition.Call(himc, gcsCompStr, 0, 0); int32(n) > 0 {
+		return true
+	}
+
+	// IME open in "native" mode (Chinese/Japanese/Korean) — the next ASCII key
+	// starts a composition, so staying out of the way is the smooth behaviour.
+	if open, _, _ := procImmGetOpenStatus.Call(himc); open != 0 {
+		var conv, sentence uint32
+		if ret, _, _ := procImmGetConvertStatus.Call(himc, uintptr(unsafe.Pointer(&conv)), uintptr(unsafe.Pointer(&sentence))); ret != 0 {
+			if conv&imeCmodeNative != 0 {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // expanderActive reports whether the hook is installed (for the settings page).

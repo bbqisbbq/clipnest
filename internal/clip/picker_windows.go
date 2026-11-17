@@ -38,6 +38,7 @@ const (
 	vkV                     = 0x56
 	inputKeyboard           = 1
 	keyeventfKeyUp          = 0x0002
+	keyeventfUnicode        = 0x0004
 )
 
 type pointT struct {
@@ -272,4 +273,57 @@ func sendLeftArrows(n int) {
 		keybdTap(vkLeft)
 		time.Sleep(6 * time.Millisecond)
 	}
+}
+
+// InjectUnicodeText types text as Unicode keystrokes (KEYEVENTF_UNICODE) instead
+// of going through the clipboard. No clipboard round-trip means no flicker, no
+// "paste" flash in the target app, and the user's clipboard stays untouched.
+func InjectUnicodeText(text string) error {
+	if text == "" {
+		return nil
+	}
+	const chunk = 64
+	units, _ := windows.UTF16FromString(text) // trailing NUL dropped below
+	if len(units) > 0 {
+		units = units[:len(units)-1]
+	}
+	for start := 0; start < len(units); start += chunk {
+		end := start + chunk
+		if end > len(units) {
+			end = len(units)
+		}
+		batch := make([]inputT, 0, (end-start)*2)
+		for _, u := range units[start:end] {
+			batch = append(batch,
+				inputT{Type: inputKeyboard, Ki: keyboardInput{WScan: u, DwFlags: keyeventfUnicode}},
+				inputT{Type: inputKeyboard, Ki: keyboardInput{WScan: u, DwFlags: keyeventfUnicode | keyeventfKeyUp}},
+			)
+		}
+		if ret, _, err := procSendInput.Call(uintptr(len(batch)), uintptr(unsafe.Pointer(&batch[0])),
+			unsafe.Sizeof(batch[0])); ret != uintptr(len(batch)) {
+			return fmt.Errorf("注入文本失败: %d/%d %v", ret, len(batch), err)
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	return nil
+}
+
+// InjectBackspaces sends n backspaces in a single SendInput batch. One batch is
+// atomic from the target app's point of view, which is what makes the erase
+// before an expansion feel instant instead of "backspace, backspace, …".
+func InjectBackspaces(n int) {
+	if n <= 0 {
+		return
+	}
+	if n > 200 {
+		n = 200
+	}
+	batch := make([]inputT, 0, n*2)
+	for i := 0; i < n; i++ {
+		batch = append(batch,
+			inputT{Type: inputKeyboard, Ki: keyboardInput{WVk: vkBack}},
+			inputT{Type: inputKeyboard, Ki: keyboardInput{WVk: vkBack, DwFlags: keyeventfKeyUp}},
+		)
+	}
+	procSendInput.Call(uintptr(len(batch)), uintptr(unsafe.Pointer(&batch[0])), unsafe.Sizeof(batch[0]))
 }

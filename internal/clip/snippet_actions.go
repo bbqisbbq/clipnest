@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"unicode"
 )
 
 // Trigger index: snippets that expand inline, loaded into memory so the keyboard
@@ -26,13 +27,29 @@ var (
 
 // refreshTriggerIndex reloads the in-memory trigger table.
 func (s *ClipService) refreshTriggerIndex() {
+	suffix := strings.TrimSpace(s.store.Settings().ExpandSuffix)
+	if suffix == "" {
+		suffix = "-"
+	}
 	next := make(map[string]triggerEntry, 32)
 	for _, sp := range s.store.AllSnippets() {
-		key := NormalizeTrigger(sp.Trigger)
-		if key == "" {
+		raw := NormalizeTrigger(sp.Trigger)
+		if raw == "" {
 			continue
 		}
-		next[key] = triggerEntry{ID: sp.ID, Kind: sp.Kind, Title: sp.Title, Body: sp.Body}
+		entry := triggerEntry{ID: sp.ID, Kind: sp.Kind, Title: sp.Title, Body: sp.Body}
+		next[raw] = entry
+		// The hook matches "<缩写><后缀>" and looks up the abbreviation part, so
+		// "addr-" must also be reachable as "addr". Strip the configured suffix,
+		// and (belt and braces) any trailing punctuation the user typed in.
+		if trimmed := strings.TrimSuffix(raw, strings.ToLower(suffix)); trimmed != "" && trimmed != raw {
+			next[trimmed] = entry
+		}
+		if trimmed := strings.TrimRightFunc(raw, func(r rune) bool {
+			return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+		}); trimmed != "" && trimmed != raw {
+			next[trimmed] = entry
+		}
 	}
 	triggerMu.Lock()
 	triggerIndex = next
