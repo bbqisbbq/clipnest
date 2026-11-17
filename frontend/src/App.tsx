@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Events } from "@wailsio/runtime";
-import { ClipService, EventNames, newFilter, type AppInfo, type Item, type Settings, type Stats, type SyncStatus, type UpdateInfo } from "./lib/api";
+import { ClipService, EventNames, newFilter, type AppInfo, type Item, type Settings, type Snippet, type Stats, type SyncStatus, type UpdateInfo } from "./lib/api";
 import TitleBar from "./components/TitleBar";
 import Sidebar from "./components/Sidebar";
 import ItemRow from "./components/ItemRow";
 import DetailPanel from "./components/DetailPanel";
 import SettingsView from "./components/SettingsView";
+import SnippetsView from "./components/SnippetsView";
 import { IconSearch } from "./components/Icons";
 
-type View = "history" | "settings";
+type View = "history" | "settings" | "snippets";
 type Confirm = { message: string; action: () => void } | null;
 
 export default function App() {
@@ -23,6 +24,8 @@ export default function App() {
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [snippets, setSnippets] = useState<Snippet[]>([]);
+  const [snippetGroups, setSnippetGroups] = useState<string[]>([]);
   const [updateBanner, setUpdateBanner] = useState(true);
   const [images, setImages] = useState<Record<string, string>>({});
   const [toast, setToast] = useState("");
@@ -117,6 +120,20 @@ export default function App() {
     );
     return () => offs.forEach((off) => off());
   }, [loadItems]);
+
+  const loadSnippets = useCallback(async () => {
+    try {
+      const list = await ClipService.GetSnippets("", "");
+      setSnippets(list ?? []);
+      setSnippetGroups((await ClipService.GetSnippetGroups()) ?? []);
+    } catch (err) {
+      console.error(err);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (view === "snippets") void loadSnippets();
+  }, [view, loadSnippets]);
 
   const selected = useMemo(() => items.find((i) => i.id === selectedId) ?? null, [items, selectedId]);
 
@@ -316,7 +333,7 @@ export default function App() {
   const syncActive = Boolean(settings?.syncEnabled);
 
   return (
-    <div className={`app ${view === "settings" ? "is-settings" : ""}`}>
+    <div className={`app ${view === "settings" ? "is-settings" : ""} ${view === "snippets" ? "is-snippets" : ""}`}>
       <TitleBar capturing={capturing} enabled={settings !== null} onToggleCapture={toggleCapture} />
 
       {updateInfo?.available && updateBanner ? (
@@ -366,6 +383,8 @@ export default function App() {
             setView("history");
             requestAnimationFrame(() => searchRef.current?.focus());
           }}
+          onSelectSnippets={() => setView("snippets")}
+          snippetCount={snippets.length}
           onOpenSettings={() => setView("settings")}
           onToggleCapture={toggleCapture}
         />
@@ -439,6 +458,13 @@ export default function App() {
               }}
             />
           </>
+        ) : view === "snippets" ? (
+          <SnippetsView
+            snippets={snippets}
+            groups={snippetGroups}
+            onReload={loadSnippets}
+            onNotify={notify}
+          />
         ) : (
           <SettingsView
             settings={settings}

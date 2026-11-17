@@ -408,6 +408,28 @@ export default function SettingsView(props: Props) {
             ) : null}
           </Section>
 
+          <Section title="片段与缩写" desc="片段是「经常要用的内容」；缩写让你在任意输入框里直接把它敲出来。">
+            <Row label="弹窗里显示片段" tip="在快速粘贴列表里输入 -- 切换到片段模式（和 eTool 的 -- 搜索一致），回车按类型执行：文本/图片粘贴、网址打开、程序启动、命令执行。">
+              <Switch checked={draft.snippetsInPicker} onChange={(v) => patch({ snippetsInPicker: v })} />
+            </Row>
+            <Row
+              label="缩写自动展开"
+              tip={
+                `打开后键入「缩写 + 后缀」立即替换成片段内容，例如 addr- → 办公地址。这是一个全局键盘钩子：只在普通权限的窗口生效，提权窗口和部分游戏不生效；关掉开关立刻卸载。`
+              }
+            >
+              <Switch checked={draft.expandEnabled} onChange={(v) => patch({ expandEnabled: v })} />
+            </Row>
+            <Row label="触发后缀" tip="缩写后面补这个字符即展开，默认 -。改完后需要点保存。">
+              <input
+                className="input is-trigger"
+                value={draft.expandSuffix}
+                placeholder="-"
+                onChange={(e) => patch({ expandSuffix: e.target.value })}
+              />
+            </Row>
+          </Section>
+
           <Section title="更新" desc="从 GitHub Releases 检查新版本，下载后静默安装并重启。">
             <Row label="自动检查更新" tip="启动 8 秒后检查一次 GitHub 上的最新发布。发现新版本会在窗口顶部提示。">
               <Switch checked={draft.updateCheck} onChange={(v) => patch({ updateCheck: v })} />

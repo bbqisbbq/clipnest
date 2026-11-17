@@ -212,6 +212,22 @@ export interface Settings {
     "closeToTray": boolean;
 
     /**
+     * ---- snippets ----
+     * SnippetsInPicker shows matching snippets in the quick-paste list.
+     */
+    "snippetsInPicker": boolean;
+
+    /**
+     * ExpandEnabled turns on inline trigger expansion (a global keyboard hook).
+     */
+    "expandEnabled": boolean;
+
+    /**
+     * ExpandSuffix is the character(s) that complete a trigger, e.g. "-".
+     */
+    "expandSuffix": string;
+
+    /**
      * UpdateCheck polls GitHub for a newer release shortly after startup.
      */
     "updateCheck": boolean;
@@ -255,6 +271,75 @@ export interface Settings {
      */
     "syncUpdatedAt": string;
 }
+
+/**
+ * Snippet is one reusable entry.
+ */
+export interface Snippet {
+    "id": string;
+    "kind": SnippetKind;
+    "title": string;
+    "trigger"?: string;
+    "group"?: string;
+    "body": string;
+    "hash": string;
+    "size": number;
+    "createdAt": string;
+    "updatedAt": string;
+    "useCount": number;
+    "pinned": boolean;
+
+    /**
+     * ImageFile mirrors the item convention ("<id>.png") so the webview can ask
+     * for a data URL without knowing about the blob table.
+     */
+    "imageFile"?: string;
+}
+
+/**
+ * SnippetKind describes what the body means and which action applies.
+ */
+export enum SnippetKind {
+    /**
+     * The Go zero value for the underlying type of the enum.
+     */
+    $zero = "",
+
+    /**
+     * 文本 / Markdown
+     */
+    SnippetText = "text",
+
+    /**
+     * 敏感文本（掩码显示，但仍参与同步）
+     */
+    SnippetPassword = "password",
+
+    /**
+     * 图片（存在 snippet_blobs）
+     */
+    SnippetImage = "image",
+
+    /**
+     * 文件或文件夹路径
+     */
+    SnippetFile = "file",
+
+    /**
+     * 网址
+     */
+    SnippetURL = "url",
+
+    /**
+     * 启动程序（可带参数）
+     */
+    SnippetApp = "app",
+
+    /**
+     * 执行命令
+     */
+    SnippetCommand = "command",
+};
 
 /**
  * Stats is the summary shown in the UI header.

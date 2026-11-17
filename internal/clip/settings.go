@@ -47,6 +47,14 @@ type Settings struct {
 	// CloseToTray hides the window on close instead of quitting. Kept for
 	// documentation: it is always true in this build.
 	CloseToTray bool `json:"closeToTray"`
+	// ---- snippets ----
+	// SnippetsInPicker shows matching snippets in the quick-paste list.
+	SnippetsInPicker bool `json:"snippetsInPicker"`
+	// ExpandEnabled turns on inline trigger expansion (a global keyboard hook).
+	ExpandEnabled bool `json:"expandEnabled"`
+	// ExpandSuffix is the character(s) that complete a trigger, e.g. "-".
+	ExpandSuffix string `json:"expandSuffix"`
+
 	// UpdateCheck polls GitHub for a newer release shortly after startup.
 	UpdateCheck bool `json:"updateCheck"`
 	// AutoStart registers the app in HKCU\...\Run.
@@ -101,7 +109,10 @@ func DefaultSettings() Settings {
 		SyncFile:        DefaultSyncFile,
 		SyncIntervalMin: 30,
 		SyncSettings:    true,
-		UpdateCheck:     true,
+		SnippetsInPicker: true,
+		ExpandEnabled:    false,
+		ExpandSuffix:     "-",
+		UpdateCheck:      true,
 	}
 }
 

@@ -16,7 +16,7 @@ import {
 } from "./Icons";
 
 type Props = {
-  view: "history" | "settings";
+  view: "history" | "settings" | "snippets";
   kind: string;
   pinnedOnly: boolean;
   stats: Stats | null;
@@ -25,6 +25,8 @@ type Props = {
   onSelectAll: () => void;
   onSelectKind: (kind: string) => void;
   onSelectPinned: () => void;
+  onSelectSnippets?: () => void;
+  snippetCount?: number;
   onOpenSearch: () => void;
   onOpenSettings: () => void;
   onToggleCapture: () => void;
@@ -58,6 +60,16 @@ export default function Sidebar(props: Props) {
             <span>收藏</span>
             <em>{stats?.pinned ?? 0}</em>
           </button>
+          {props.onSelectSnippets ? (
+            <button
+              className={`side-item ${view === "snippets" ? "is-active" : ""}`}
+              onClick={props.onSelectSnippets}
+            >
+              <IconText size={15} />
+              <span>片段</span>
+              <em>{props.snippetCount ?? 0}</em>
+            </button>
+          ) : null}
         </div>
 
         <div className="side-label">类型</div>

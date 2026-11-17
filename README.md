@@ -10,6 +10,10 @@ ClipNest 在你使用电脑时安静地记录进入过系统剪贴板的一切�
 
 ![快速粘贴](docs/images/picker.png)
 
+片段也一样触手可及：弹窗里输入 `--` 直接搜索短语库。
+
+![片段模式](docs/images/picker-snippets.png)
+
 ## 特性
 
 - **光标处快速粘贴**：`Ctrl+Shift+V` 在文本光标旁弹出列表，`↑↓` 选择、`Enter` 直接粘贴进
@@ -23,6 +27,11 @@ ClipNest 在你使用电脑时安静地记录进入过系统剪贴板的一切�
   包内是整份历史 + 附件 + 删除墓碑 + 设置。同步 = 读所有别人的包（并集合并）+ 写自己那一个包，
   请求数与条目数量无关；**每台机器只写自己的文件，写冲突不可能发生**。默认 30 分钟一次，
   内容没变化时连上传都跳过。设计与竞态分析见 [docs/SYNC.md](docs/SYNC.md)。
+- **片段库（短语）**：把常用回复、地址、提示词、图片、文件、网址、程序、命令存成片段，
+  配一个缩写（如 `addr-`）；弹窗里输入 `--` 搜索片段，回车按类型执行（粘贴 / 打开 / 启动 / 执行）。
+  详见 [docs/SNIPPETS.md](docs/SNIPPETS.md)。
+- **缩写自动展开**：打开后在任何输入框键入 `addr-` 立即替换成内容——和 eTool / PhraseExpress 的
+  打字触发一致（默认关闭，属于全局键盘钩子）。
 - **本地数据库**：历史和图片存在一个 SQLite 文件里（`clipnest.db`），搜索走索引、写入事务化，
   备份就是复制一个文件；旧的 JSONL 历史首次启动自动迁移。
 - **自动更新**：启动后检查 GitHub Releases，发现新版本在窗口顶部提示，一键下载并静默安装。
@@ -195,6 +204,9 @@ internal/clip/
   model.go                    Item / Filter / Stats / Captured 等数据结构
   settings.go                 设置结构与默认值（含 WebDAV 字段）
   store.go                    SQLite 存储：条目 + BLOB、去重、保留策略、旧 JSONL 迁移、诊断日志
+  snippet.go                  片段模型与存储（七种类型、缩写、分组、同步字段）
+  snippet_actions.go          片段动作（粘贴/复制/打开/启动/执行）与弹窗入口
+  snippet_expander_windows.go 缩写自动展开（全局键盘钩子）
   service.go                  绑定给前端的 ClipService（30+ 个方法）
   sync.go                     WebDAV 同步 v2：manifest + 每条一个文件的增量同步、设置同步
   update.go                   自更新：GitHub Releases 检查、下载安装包、静默安装
@@ -221,6 +233,7 @@ scratch/e2e-picker*.ps1       弹窗端到端自动化（回车粘贴 / Esc / Ct
 scratch/cap.ps1               窗口截图助手（定位、悬停、滚轮、点击）
 docs/CAPTURE.md               收集机制、格式覆盖矩阵与已知缺口
 docs/SYNC.md                  WebDAV 同步配置、合并规则与限制
+docs/SNIPPETS.md              片段库/缩写触发/同步行为
 docs/FILE-STRATEGY.md         文件复制的方案对比与数据模型
 ```
 
@@ -250,6 +263,7 @@ docs/FILE-STRATEGY.md         文件复制的方案对比与数据模型
 - [x] 同步：打包传输——每台机器一个 zip 包，写冲突不可能发生（0.4.0）
 - [x] 同步面板：每台设备的包大小/最后更新/本轮拉取明细（0.5.0）`n- [ ] 同步增强：字段级冲突合并、可选 DPAPI 加密密码
 - [x] 弹窗：图片缩略图 + 数字键 1–9 直选（0.5.0）
+- [ ] 片段：Markdown 预览、变量占位符（日期/剪贴板）
 - [ ] 分类规则（按来源程序自动打标签）
 - [ ] 条目内图片压缩 / 缩略图缓存，降低 blob 体积
 

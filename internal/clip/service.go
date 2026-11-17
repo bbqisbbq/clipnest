@@ -14,7 +14,7 @@ import (
 )
 
 // Version is shown in the UI and written to the log on start.
-const Version = "0.5.0"
+const Version = "0.6.0"
 
 // AppInfo is static information the frontend needs for the about/settings view.
 type AppInfo struct {
@@ -100,6 +100,8 @@ func (s *ClipService) Start() error {
 	go s.refreshFilesLoop()
 	go s.syncLoop()
 	go s.updateCheckLoop()
+	s.refreshTriggerIndex()
+	s.applyExpander(s.store.Settings())
 	// Whatever is already on the clipboard when the app starts is also part of
 	// "what went through the clipboard", so record it once.
 	go func() {
@@ -471,10 +473,43 @@ func (s *ClipService) SaveSettings(st Settings) (Settings, error) {
 	s.store.Prune(st.MaxItems, st.MaxAgeDays)
 	go s.syncLoop()
 	go s.updateCheckLoop()
+	s.refreshTriggerIndex()
+	s.applyExpander(s.store.Settings())
 	s.emit("settings:changed", st)
 	s.emit("clip:stats", s.store.Stats())
 	return s.store.Settings(), nil
 }
+
+// applyExpander starts/stops the inline-trigger keyboard hook to match settings.
+func (s *ClipService) applyExpander(st Settings) {
+	suffix := strings.TrimSpace(st.ExpandSuffix)
+	if suffix == "" {
+		suffix = "-"
+	}
+	if st.ExpandEnabled {
+		if err := StartExpander(suffix); err != nil {
+			Logf(s.store.Dir(), "expander start failed: %v", err)
+			return
+		}
+		Logf(s.store.Dir(), "expander enabled (suffix=%q, %d triggers)", suffix, len(triggerSnapshot()))
+		return
+	}
+	StopExpander()
+}
+
+// triggerSnapshot returns the loaded triggers (for logging/diagnostics).
+func triggerSnapshot() []string {
+	triggerMu.RLock()
+	defer triggerMu.RUnlock()
+	out := make([]string, 0, len(triggerIndex))
+	for k := range triggerIndex {
+		out = append(out, k)
+	}
+	return out
+}
+
+// ExpanderActive reports whether the inline expansion hook is installed.
+func (s *ClipService) ExpanderActive() bool { return expanderActive() }
 
 // SetCapture is the tray's pause/resume switch.
 func (s *ClipService) SetCapture(enabled bool) (Settings, error) {

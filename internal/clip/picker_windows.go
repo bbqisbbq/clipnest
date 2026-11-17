@@ -254,3 +254,8 @@ func PasteInto(hwnd uintptr) error {
 	time.Sleep(90 * time.Millisecond)
 	return SendPaste()
 }
+
+// sendOneInput injects a single struct via SendInput (used by the expander).
+func sendOneInput(in inputT) {
+	procSendInput.Call(1, uintptr(unsafe.Pointer(&in)), unsafe.Sizeof(in))
+}

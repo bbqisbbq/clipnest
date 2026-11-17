@@ -1,72 +1,103 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Events } from "@wailsio/runtime";
-import { ClipService, KIND_LABEL, newFilter, type Item } from "./lib/api";
+import { ClipService, type Item, type Snippet } from "./lib/api";
 import { formatBytes, formatRelative } from "./lib/format";
 import { IconSearch, kindIcon } from "./components/Icons";
 
-/**
- * Picker is the hotkey popup: it appears at the text caret, lists recent
- * entries, and pastes the chosen one straight into the window that had focus.
- * Keyboard: ↑/↓ move, Enter pastes, Ctrl+Enter copies only, Esc dismisses.
- */
+// 片段在弹窗里的显示名与 Enter 行为（和后端 SnippetAction 对应）
+const SNIPPET_LABEL: Record<string, string> = {
+  text: "文本",
+  password: "密码",
+  image: "图片",
+  file: "文件",
+  url: "网址",
+  app: "程序",
+  command: "命令",
+};
+
+const SNIPPET_ACTION: Record<string, string> = {
+  text: "粘贴",
+  password: "粘贴",
+  image: "粘贴图片",
+  file: "复制文件",
+  url: "打开",
+  app: "启动",
+  command: "执行",
+};
+
+type Row = { kind: "item"; item: Item } | { kind: "snippet"; snippet: Snippet };
+
 export default function Picker() {
   const [items, setItems] = useState<Item[]>([]);
+  const [snippets, setSnippets] = useState<Snippet[]>([]);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const [status, setStatus] = useState("");
-  const inputRef = useRef<HTMLInputElement | null>(null);
-  const listRef = useRef<HTMLDivElement | null>(null);
+  const [thumbs, setThumbs] = useState<Record<string, string>>({});
+  const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
 
-  const load = useCallback(async (q: string) => {
+  // "--" 前缀切到片段模式（和 eTool 的 -- 搜索一致）
+  const snippetMode = query.startsWith("--");
+  const snippetQuery = snippetMode ? query.slice(2).trim() : "";
+
+  const rows: Row[] = useMemo(() => {
+    if (snippetMode) return snippets.map((snippet) => ({ kind: "snippet", snippet }));
+    return items.map((item) => ({ kind: "item", item }));
+  }, [snippetMode, snippets, items]);
+
+  const loadItems = useCallback(async () => {
     try {
-      const list = (await ClipService.GetItems(newFilter(q, "", false, 100))) ?? [];
-      setItems(list);
-      setActive(0);
+      const list = await ClipService.GetItems({ query: "", kind: "", pinned: false, limit: 60, offset: 0 });
+      setItems(list ?? []);
     } catch (err) {
       setStatus(`读取失败：${String(err)}`);
     }
   }, []);
 
-  // Reload (and refocus) every time the popup is opened from the hotkey.
   useEffect(() => {
-    const offs: Array<() => void> = [];
-    offs.push(
+    void loadItems();
+    const offs = [
+      Events.On("clip:new", () => void loadItems()),
+      Events.On("clip:updated", () => void loadItems()),
       Events.On("picker:opened", () => {
         setQuery("");
+        setActive(0);
         setStatus("");
-        void load("");
-        requestAnimationFrame(() => inputRef.current?.focus());
+        void loadItems();
       }),
-    );
-    offs.push(
-      Events.On("clip:new", () => {
-        void load(query);
-      }),
-    );
-    offs.push(
-      Events.On("picker:paste-failed", (ev: any) => {
-        setStatus(`自动粘贴失败：${ev.data}（内容已在剪贴板，可手动 Ctrl+V）`);
-      }),
-    );
-    void load("");
+    ];
     inputRef.current?.focus();
     return () => offs.forEach((off) => off());
-  }, [load, query]);
+  }, [loadItems]);
 
-  // Debounced search.
+  // 片段查询（防抖，随输入变化）
   useEffect(() => {
-    const id = setTimeout(() => void load(query), query ? 120 : 0);
-    return () => clearTimeout(id);
-  }, [query, load]);
+    if (!snippetMode) {
+      setSnippets([]);
+      return;
+    }
+    let alive = true;
+    const timer = setTimeout(() => {
+      void (async () => {
+        try {
+          const list = await ClipService.PickerSnippets(snippetQuery, 30);
+          if (alive) {
+            setSnippets(list ?? []);
+            setActive(0);
+          }
+        } catch (err) {
+          if (alive) setStatus(`片段读取失败：${String(err)}`);
+        }
+      })();
+    }, 80);
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [snippetMode, snippetQuery]);
 
-  // Keep the active row visible.
-  useEffect(() => {
-    const el = listRef.current?.querySelector<HTMLElement>(`[data-index="${active}"]`);
-    el?.scrollIntoView({ block: "nearest" });
-  }, [active, items]);
-
-  // 缩略图：只为前 10 条图片条目按需拉取 data URL，避免一次性解码整段历史
-  const [thumbs, setThumbs] = useState<Record<string, string>>({});
+  // 缩略图：只为前 10 条图片条目按需拉取
   useEffect(() => {
     const wanted = items
       .slice(0, 10)
@@ -88,15 +119,18 @@ export default function Picker() {
     };
   }, [items, thumbs]);
 
-  const pick = useCallback(
-    (item: Item | undefined, paste: boolean) => {
-      if (!item) return;
-      ClipService.PickItem(item.id, paste)
-        .then((msg) => setStatus(msg))
-        .catch((err) => setStatus(`失败：${String(err)}`));
-    },
-    [],
-  );
+  const pick = useCallback(async (row: Row | undefined, paste: boolean) => {
+    if (!row) return;
+    try {
+      const msg =
+        row.kind === "snippet"
+          ? await ClipService.PickSnippet(row.snippet.id, paste)
+          : await ClipService.PickItem(row.item.id, paste);
+      if (msg) setStatus(msg);
+    } catch (err) {
+      setStatus(`失败：${String(err)}`);
+    }
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -107,7 +141,7 @@ export default function Picker() {
       }
       if (e.key === "ArrowDown" || (e.ctrlKey && e.key.toLowerCase() === "n")) {
         e.preventDefault();
-        setActive((i) => Math.min(items.length - 1, i + 1));
+        setActive((i) => Math.min(rows.length - 1, i + 1));
         return;
       }
       if (e.key === "ArrowUp" || (e.ctrlKey && e.key.toLowerCase() === "p")) {
@@ -115,14 +149,26 @@ export default function Picker() {
         setActive((i) => Math.max(0, i - 1));
         return;
       }
+      if (e.key === "1" && snippetMode && query === "-") {
+        // 输入第二个 "-" 由输入框处理，这里不拦截
+      }
+      if (/^[1-9]$/.test(e.key) && !e.altKey && !e.metaKey) {
+        const idx = Number(e.key) - 1;
+        if (idx < rows.length) {
+          e.preventDefault();
+          setActive(idx);
+          void pick(rows[idx], !e.ctrlKey);
+        }
+        return;
+      }
       if (e.key === "Enter") {
         e.preventDefault();
-        pick(items[active], !e.ctrlKey);
+        void pick(rows[active], !e.ctrlKey);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [items, active, pick]);
+  }, [rows, active, pick, snippetMode, query]);
 
   return (
     <div className="picker">
@@ -131,18 +177,57 @@ export default function Picker() {
         <input
           ref={inputRef}
           value={query}
-          placeholder="搜索后回车粘贴…"
+          placeholder="搜索历史，输入 -- 搜索片段…"
           autoFocus
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setActive(0);
+          }}
         />
-        <span className="picker-count">{items.length}</span>
+        <span className="picker-count">{rows.length}</span>
       </div>
 
       <div className="picker-list" ref={listRef}>
-        {items.length === 0 ? (
-          <div className="picker-empty">{query ? "没有匹配的记录" : "还没有记录"}</div>
+        {rows.length === 0 ? (
+          <div className="picker-empty">
+            {snippetMode ? "没有匹配的片段" : query ? "没有匹配的记录" : "还没有记录"}
+          </div>
         ) : (
-          items.map((item, index) => {
+          rows.map((row, index) => {
+            if (row.kind === "snippet") {
+              const sp = row.snippet;
+              const Icon = kindIcon(sp.kind === "url" ? "link" : sp.kind === "image" ? "image" : "text");
+              const masked = sp.kind === "password";
+              return (
+                <div
+                  key={`s-${sp.id}`}
+                  data-index={index}
+                  className={`picker-row is-snippet ${index === active ? "is-active" : ""}`}
+                  onMouseEnter={() => setActive(index)}
+                  onClick={() => void pick(row, true)}
+                >
+                  <div className={`picker-icon kind-${sp.kind === "url" ? "link" : sp.kind}`}>
+                    <Icon size={15} />
+                  </div>
+                  <div className="picker-main">
+                    <span className="picker-preview">
+                      {sp.trigger ? <code className="picker-trigger">{sp.trigger}</code> : null}
+                      {sp.title}
+                      {sp.trigger ? null : <em className="picker-group">{SNIPPET_LABEL[sp.kind] ?? sp.kind}</em>}
+                    </span>
+                    <span className="picker-meta">
+                      片段 · {SNIPPET_LABEL[sp.kind] ?? sp.kind}
+                      {sp.group ? ` · ${sp.group}` : ""} ·{" "}
+                      {masked ? "••••••" : sp.body.replace(/\s+/g, " ").slice(0, 48)}
+                    </span>
+                  </div>
+                  {index < 9 ? <span className="picker-num">{index + 1}</span> : null}
+                  {index === active ? <kbd>{SNIPPET_ACTION[sp.kind] ?? "执行"}</kbd> : null}
+                </div>
+              );
+            }
+
+            const item = row.item;
             const Icon = kindIcon(item.kind);
             const thumb = item.kind === "image" ? thumbs[item.id] : undefined;
             return (
@@ -151,7 +236,7 @@ export default function Picker() {
                 data-index={index}
                 className={`picker-row ${index === active ? "is-active" : ""}`}
                 onMouseEnter={() => setActive(index)}
-                onClick={() => pick(item, true)}
+                onClick={() => void pick(row, true)}
               >
                 <div className={`picker-icon kind-${item.kind} ${thumb ? "has-thumb" : ""}`}>
                   {thumb ? <img className="picker-thumb" src={thumb} alt="" /> : <Icon size={15} />}
@@ -159,9 +244,8 @@ export default function Picker() {
                 <div className="picker-main">
                   <span className="picker-preview">{item.preview || "（空）"}</span>
                   <span className="picker-meta">
-                    {KIND_LABEL[item.kind] ?? item.kind}
-                    {item.sourceApp ? ` · ${item.sourceApp}` : ""} · {formatBytes(item.size)} ·{" "}
-                    {formatRelative(item.updatedAt)}
+                    {item.sourceApp ? `${item.sourceApp} · ` : ""}
+                    {formatBytes(item.size)} · {formatRelative(item.updatedAt)}
                   </span>
                 </div>
                 {index < 9 ? <span className="picker-num">{index + 1}</span> : null}
@@ -175,12 +259,20 @@ export default function Picker() {
       <div className="picker-foot">
         {status ? (
           <span className="picker-status">{status}</span>
+        ) : snippetMode ? (
+          <>
+            <span>片段模式</span>
+            <span>↑↓ 选择</span>
+            <span>↵ 执行</span>
+            <span>Ctrl+↵ 仅复制</span>
+            <span>Esc 关闭</span>
+          </>
         ) : (
           <>
             <span>↑↓ 选择</span>
             <span>1–9 直选</span>
             <span>↵ 粘贴</span>
-            <span>Ctrl+↵ 仅复制</span>
+            <span>-- 搜片段</span>
             <span>Esc 关闭</span>
           </>
         )}

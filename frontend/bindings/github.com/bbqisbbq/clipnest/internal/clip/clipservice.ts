@@ -44,6 +44,13 @@ export function DeleteItem(id: string): $CancellablePromise<void> {
 }
 
 /**
+ * DeleteSnippet removes one snippet.
+ */
+export function DeleteSnippet(id: string): $CancellablePromise<boolean> {
+    return $Call.ByID(3956258923, id);
+}
+
+/**
  * DeleteWhere removes non-pinned entries matching the filter and reports how
  * many disappeared.
  */
@@ -56,6 +63,13 @@ export function DeleteWhere(filter: $models.Filter): $CancellablePromise<number>
  */
 export function DownloadUpdate(): $CancellablePromise<string> {
     return $Call.ByID(912302016);
+}
+
+/**
+ * ExpanderActive reports whether the inline expansion hook is installed.
+ */
+export function ExpanderActive(): $CancellablePromise<boolean> {
+    return $Call.ByID(634901060);
 }
 
 /**
@@ -94,6 +108,27 @@ export function GetSettings(): $CancellablePromise<$models.Settings> {
 }
 
 /**
+ * GetSnippetGroups lists distinct groups.
+ */
+export function GetSnippetGroups(): $CancellablePromise<string[] | null> {
+    return $Call.ByID(2795034284);
+}
+
+/**
+ * GetSnippetImage returns a data URL for an image snippet.
+ */
+export function GetSnippetImage(id: string): $CancellablePromise<string> {
+    return $Call.ByID(2792085841, id);
+}
+
+/**
+ * GetSnippets returns snippets for the manager view / picker.
+ */
+export function GetSnippets(query: string, group: string): $CancellablePromise<$models.Snippet[] | null> {
+    return $Call.ByID(4219966901, query, group);
+}
+
+/**
  * GetStats returns counters for the header.
  */
 export function GetStats(): $CancellablePromise<$models.Stats> {
@@ -120,6 +155,14 @@ export function GetSyncStatus(): $CancellablePromise<$models.SyncStatus> {
  */
 export function GetVersion(): $CancellablePromise<string> {
     return $Call.ByID(2407259921);
+}
+
+/**
+ * GrabClipboardImage returns the image currently on the clipboard as base64 PNG
+ * ("" when there is none). Used by the snippet editor's "从剪贴板抓取图片".
+ */
+export function GrabClipboardImage(): $CancellablePromise<string> {
+    return $Call.ByID(2902528052);
 }
 
 /**
@@ -191,10 +234,24 @@ export function PickItem(id: string, paste: boolean): $CancellablePromise<string
 }
 
 /**
+ * PickSnippet is the picker's entry point: run the snippet and dismiss the popup.
+ */
+export function PickSnippet(id: string, paste: boolean): $CancellablePromise<string> {
+    return $Call.ByID(1403686181, id, paste);
+}
+
+/**
  * PickerHotkey returns the accelerator that opens the picker ("" = disabled).
  */
 export function PickerHotkey(): $CancellablePromise<string> {
     return $Call.ByID(677716557);
+}
+
+/**
+ * PickerSnippets powers "--" search inside the popup.
+ */
+export function PickerSnippets(query: string, limit: number): $CancellablePromise<$models.Snippet[] | null> {
+    return $Call.ByID(169391773, query, limit);
 }
 
 /**
@@ -230,6 +287,14 @@ export function RefreshItem(id: string): $CancellablePromise<$models.Item> {
  */
 export function SaveSettings(st: $models.Settings): $CancellablePromise<$models.Settings> {
     return $Call.ByID(4110371229, st);
+}
+
+/**
+ * SaveSnippet creates or updates a snippet. Image snippets carry their PNG in
+ * imageDataB64 (base64), because the webview cannot hand us a file handle.
+ */
+export function SaveSnippet(sp: $models.Snippet, imageDataB64: string): $CancellablePromise<$models.Snippet> {
+    return $Call.ByID(3917329013, sp, imageDataB64);
 }
 
 /**
@@ -286,6 +351,13 @@ export function Start(): $CancellablePromise<void> {
  */
 export function SyncNow(): $CancellablePromise<$models.SyncStatus> {
     return $Call.ByID(2942154482);
+}
+
+/**
+ * TestSnippet runs a snippet from the manager window (no pasting into a target).
+ */
+export function TestSnippet(id: string): $CancellablePromise<string> {
+    return $Call.ByID(1627635062, id);
 }
 
 /**

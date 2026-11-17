@@ -7,7 +7,8 @@ export {
 };
 
 export {
-    Kind
+    Kind,
+    SnippetKind
 } from "./models.js";
 
 export type {
@@ -16,6 +17,7 @@ export type {
     Filter,
     Item,
     Settings,
+    Snippet,
     Stats,
     SyncDetail,
     SyncDeviceInfo,

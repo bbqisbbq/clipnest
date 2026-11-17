@@ -319,6 +319,21 @@ func main() {
 	// after the app is moved).
 	svc.ReconcileAutoStart()
 
+	// The inline expander must not act inside ClipNest's own windows.
+	clip.SetExpanderForegroundGuard(func() bool {
+		fg := clip.ForegroundWindowHandle()
+		if fg == 0 {
+			return false
+		}
+		if win != nil && fg == uintptr(win.NativeWindow()) {
+			return true
+		}
+		if picker != nil && fg == uintptr(picker.NativeWindow()) {
+			return true
+		}
+		return false
+	})
+
 	app.OnShutdown(svc.Shutdown)
 
 	if err := app.Run(); err != nil {

@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	_ "modernc.org/sqlite" // pure-Go SQLite driver (no cgo)
@@ -81,6 +82,31 @@ CREATE TABLE IF NOT EXISTS tombstones (
 );
 CREATE INDEX IF NOT EXISTS idx_tomb_deleted ON tombstones(deleted_at);
 
+-- User-authored snippets ("短语"): reusable text, images, paths, links,
+-- launchers and commands, optionally with an inline trigger.
+CREATE TABLE IF NOT EXISTS snippets (
+  id           TEXT PRIMARY KEY,
+  kind         TEXT NOT NULL,
+  title        TEXT NOT NULL DEFAULT '',
+  trigger_key  TEXT NOT NULL DEFAULT '',
+  group_name   TEXT NOT NULL DEFAULT '',
+  body         TEXT NOT NULL DEFAULT '',
+  hash         TEXT NOT NULL DEFAULT '',
+  size         INTEGER NOT NULL DEFAULT 0,
+  created_at   TEXT NOT NULL,
+  updated_at   TEXT NOT NULL,
+  use_count    INTEGER NOT NULL DEFAULT 0,
+  pinned       INTEGER NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_snippets_hash ON snippets(hash);
+CREATE INDEX IF NOT EXISTS idx_snippets_trigger ON snippets(trigger_key);
+
+CREATE TABLE IF NOT EXISTS snippet_blobs (
+  snippet_id TEXT PRIMARY KEY,
+  ext        TEXT NOT NULL,
+  data       BLOB NOT NULL
+);
+
 -- Small key/value scratch space (sync fingerprints and other one-off flags).
 CREATE TABLE IF NOT EXISTS meta (
   k TEXT PRIMARY KEY,
@@ -106,7 +132,11 @@ func Open(dir string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("初始化数据库失败: %w", err)
 	}
+	// Older databases predate the snippet tombstones: add the scope column in
+	// place. SQLite has no "ADD COLUMN IF NOT EXISTS", so the error is expected.
+	_, _ = db.Exec(`ALTER TABLE tombstones ADD COLUMN scope TEXT NOT NULL DEFAULT 'item'`)
 
+	logDirValue.Store(dir)
 	s := &Store{
 		db:           db,
 		dir:          dir,
@@ -647,6 +677,61 @@ type Tombstone struct {
 	Device    string    `json:"device,omitempty"`
 }
 
+// AddTombstoneScoped records a deletion marker for an item or a snippet.
+func (s *Store) AddTombstoneScoped(scope, hash string, at time.Time, device string) {
+	if hash == "" {
+		return
+	}
+	if scope == "" {
+		scope = "item"
+	}
+	_, _ = s.db.Exec(
+		`INSERT INTO tombstones (hash, deleted_at, device, scope) VALUES (?,?,?,?)
+		 ON CONFLICT(hash) DO UPDATE SET deleted_at = MAX(deleted_at, excluded.deleted_at)`,
+		hash, encodeTime(at), device, scope,
+	)
+}
+
+// TombstonesScoped returns deletion markers of one scope.
+func (s *Store) TombstonesScoped(scope string, since time.Time, limit int) []Tombstone {
+	if limit <= 0 || limit > 10000 {
+		limit = 2000
+	}
+	rows, err := s.db.Query(
+		`SELECT hash, deleted_at, device FROM tombstones
+		 WHERE scope = ? AND deleted_at >= ? ORDER BY deleted_at DESC LIMIT ?`,
+		scope, encodeTime(since), limit)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var out []Tombstone
+	for rows.Next() {
+		var t Tombstone
+		var at string
+		if rows.Scan(&t.Hash, &at, &t.Device) == nil {
+			t.DeletedAt = decodeTime(at)
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// DeleteSnippetByHash drops a snippet because a peer deleted it.
+func (s *Store) DeleteSnippetByHash(hash string) bool {
+	var id string
+	if err := s.db.QueryRow(`SELECT id FROM snippets WHERE hash = ?`, hash).Scan(&id); err != nil {
+		return false
+	}
+	res, err := s.db.Exec(`DELETE FROM snippets WHERE id = ?`, id)
+	if err != nil {
+		return false
+	}
+	_, _ = s.db.Exec(`DELETE FROM snippet_blobs WHERE snippet_id = ?`, id)
+	n, _ := res.RowsAffected()
+	return n > 0
+}
+
 // AddTombstone records (or refreshes) a deletion marker.
 func (s *Store) AddTombstone(hash string, at time.Time, device string) {
 	if hash == "" {
@@ -956,6 +1041,17 @@ func (s *Store) ReadBlobData(name string) (string, error) {
 }
 
 // ---- diagnostics --------------------------------------------------------
+
+// logDir remembers the data directory so package-level code (hooks, expander) can
+// log without threading a *Store everywhere.
+var logDirValue atomic.Value // string
+
+func logDir() string {
+	if v, ok := logDirValue.Load().(string); ok {
+		return v
+	}
+	return ""
+}
 
 // Logf appends one diagnostic line to <dir>/clipnest.log. Logging failures are
 // deliberately silent: diagnostics must never break the app.

@@ -13,6 +13,8 @@ export type Filter = Models.Filter;
 export type SyncStatus = Models.SyncStatus;
 export type UpdateInfo = Models.UpdateInfo;
 export type SyncPanel = Models.SyncPanel;
+export type Snippet = Models.Snippet;
+export type SnippetKind = Models.SnippetKind;
 export type SyncDeviceInfo = Models.SyncDeviceInfo;
 export type SyncDetail = Models.SyncDetail;
 
@@ -56,6 +58,9 @@ export function emptySettings(): Settings {
     syncPass: "",
     syncFile: "clipnest-sync.json",
     syncIntervalMin: 15,
+    snippetsInPicker: true,
+    expandEnabled: false,
+    expandSuffix: '-',
     syncSettings: true,
     syncDeviceId: '',
     updateCheck: true,
