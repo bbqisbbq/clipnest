@@ -13,3 +13,8 @@ build/android/gen/
 scratch/*.png
 scratch/*.exe
 
+
+# local WebDAV test directory (sync playground)
+scratch/davroot/
+bin/*.exe
+
