@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import type { AppInfo, Settings, SyncStatus, UpdateInfo } from "../lib/api";
+import { ClipService } from "../lib/api";
+import type { AppInfo, Settings, SyncPanel, SyncStatus, UpdateInfo } from "../lib/api";
 import { formatBytes, formatDateTime } from "../lib/format";
 import { IconFolder, IconSync, IconTrash } from "./Icons";
 import { Tip } from "./Tip";
@@ -95,6 +96,7 @@ export default function SettingsView(props: Props) {
   const [appText, setAppText] = useState("");
   const [testing, setTesting] = useState(false);
   const [checking, setChecking] = useState(false);
+  const [panel, setPanel] = useState<SyncPanel | null>(null);
   const [testResult, setTestResult] = useState("");
 
   useEffect(() => {
@@ -140,6 +142,22 @@ export default function SettingsView(props: Props) {
     }
     setTestResult("");
   };
+
+  // 设备面板：进设置页拉一次，每次同步结束再刷新
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const next = await ClipService.GetSyncPanel();
+        if (alive) setPanel(next);
+      } catch {
+        /* 未配置同步时忽略 */
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [syncStatus?.lastSync, syncStatus?.inProgress]);
 
   const runCheckUpdate = async () => {
     setChecking(true);
@@ -348,6 +366,46 @@ export default function SettingsView(props: Props) {
               </span>
             </div>
             {testResult ? <p className="test-result">{testResult}</p> : null}
+
+            {panel && (panel.devices ?? []).length > 0 ? (
+              <div className="device-list">
+                <div className="device-row is-head">
+                  <span>设备</span>
+                  <span>包大小</span>
+                  <span>最后更新</span>
+                  <span>记录</span>
+                  <span>本轮拉取</span>
+                </div>
+                {(panel.devices ?? []).map((d) => (
+                  <div className={`device-row ${d.self ? "is-self" : ""}`} key={d.name}>
+                    <span title={d.name}>
+                      {d.device}
+                      {d.self ? <em className="badge">本机</em> : null}
+                    </span>
+                    <span className="mono">{formatBytes(d.bytes)}</span>
+                    <span>{d.updatedAt ? formatDateTime(String(d.updatedAt)) : "—"}</span>
+                    <span>{d.items ? d.items : "—"}</span>
+                    <span>
+                      {d.pulledNew || d.pulledUpdated || d.deleted
+                        ? `${d.pulledNew} 新增 / ${d.pulledUpdated} 更新${d.deleted ? ` / ${d.deleted} 删除` : ""}`
+                        : "—"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            {panel?.last?.at ? (
+              <p className="test-result">
+                上次同步 {formatDateTime(String(panel.last.at))} · 耗时 {panel.last.durationMs} ms · 拉取{" "}
+                {panel.last.pulledNew} 新增 / {panel.last.pulledUpdated} 更新
+                {panel.last.deletedLocal ? ` / ${panel.last.deletedLocal} 删除` : ""} ·{" "}
+                {panel.last.pushed ? `上传 ${formatBytes(panel.last.pushedBytes)}` : "未上传"}
+                {panel.last.note ? `（${panel.last.note}）` : ""}
+                {panel.last.settingsPulled ? " · 采纳远端设置" : ""}
+                {panel.last.settingsPushed ? " · 已上传设置" : ""}
+              </p>
+            ) : null}
           </Section>
 
           <Section title="更新" desc="从 GitHub Releases 检查新版本，下载后静默安装并重启。">

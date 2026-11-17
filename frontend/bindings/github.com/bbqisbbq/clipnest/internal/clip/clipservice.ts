@@ -101,6 +101,14 @@ export function GetStats(): $CancellablePromise<$models.Stats> {
 }
 
 /**
+ * GetSyncPanel builds the panel: last run from the local cache, device list from
+ * a fresh PROPFIND when sync is configured.
+ */
+export function GetSyncPanel(): $CancellablePromise<$models.SyncPanel> {
+    return $Call.ByID(870774534);
+}
+
+/**
  * GetSyncStatus returns the current sync state.
  */
 export function GetSyncStatus(): $CancellablePromise<$models.SyncStatus> {

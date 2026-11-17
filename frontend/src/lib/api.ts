@@ -12,6 +12,9 @@ export type AppInfo = Models.AppInfo;
 export type Filter = Models.Filter;
 export type SyncStatus = Models.SyncStatus;
 export type UpdateInfo = Models.UpdateInfo;
+export type SyncPanel = Models.SyncPanel;
+export type SyncDeviceInfo = Models.SyncDeviceInfo;
+export type SyncDetail = Models.SyncDetail;
 
 export const KIND_LABEL: Record<string, string> = {
   text: "文本",

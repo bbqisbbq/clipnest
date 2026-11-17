@@ -268,6 +268,68 @@ export interface Stats {
 }
 
 /**
+ * SyncDetail is the outcome of the most recent run, persisted so the panel shows
+ * something meaningful right after a restart.
+ */
+export interface SyncDetail {
+    "at": string;
+    "durationMs": number;
+    "pulledNew": number;
+    "pulledUpdated": number;
+    "deletedLocal": number;
+    "pushed": boolean;
+    "pushedBytes": number;
+    "devices": number;
+    "settingsPulled": boolean;
+    "settingsPushed": boolean;
+    "note"?: string;
+    "error"?: string;
+}
+
+/**
+ * SyncDeviceInfo describes one package file in the remote directory.
+ */
+export interface SyncDeviceInfo {
+    "name": string;
+
+    /**
+     * Device is the hostname part of the file name ("<deviceId>-<host>.zip").
+     */
+    "device": string;
+    "self": boolean;
+    "bytes": number;
+
+    /**
+     * UpdatedAt is the server-reported modification time of the package.
+     */
+    "updatedAt": string;
+
+    /**
+     * Items is how many records that package held when we last read it.
+     */
+    "items": number;
+
+    /**
+     * Per-run counters (only filled for the run that read this package).
+     */
+    "pulledNew": number;
+    "pulledUpdated": number;
+    "deleted": number;
+}
+
+/**
+ * SyncPanel is what the settings page renders.
+ */
+export interface SyncPanel {
+    "configured": boolean;
+    "message"?: string;
+    "deviceId": string;
+    "intervalMin": number;
+    "devices": SyncDeviceInfo[] | null;
+    "last": SyncDetail;
+}
+
+/**
  * SyncStatus is what the settings page shows.
  */
 export interface SyncStatus {

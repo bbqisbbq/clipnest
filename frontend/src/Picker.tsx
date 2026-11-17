@@ -65,6 +65,29 @@ export default function Picker() {
     el?.scrollIntoView({ block: "nearest" });
   }, [active, items]);
 
+  // 缩略图：只为前 10 条图片条目按需拉取 data URL，避免一次性解码整段历史
+  const [thumbs, setThumbs] = useState<Record<string, string>>({});
+  useEffect(() => {
+    const wanted = items
+      .slice(0, 10)
+      .filter((it) => it.kind === "image" && it.imageFile && !thumbs[it.id]);
+    if (wanted.length === 0) return;
+    let alive = true;
+    void (async () => {
+      for (const it of wanted) {
+        try {
+          const url = await ClipService.GetImageData(it.id);
+          if (alive && url) setThumbs((prev) => ({ ...prev, [it.id]: url }));
+        } catch {
+          /* 缩略图失败不影响选择 */
+        }
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [items, thumbs]);
+
   const pick = useCallback(
     (item: Item | undefined, paste: boolean) => {
       if (!item) return;
@@ -121,6 +144,7 @@ export default function Picker() {
         ) : (
           items.map((item, index) => {
             const Icon = kindIcon(item.kind);
+            const thumb = item.kind === "image" ? thumbs[item.id] : undefined;
             return (
               <div
                 key={item.id}
@@ -129,8 +153,8 @@ export default function Picker() {
                 onMouseEnter={() => setActive(index)}
                 onClick={() => pick(item, true)}
               >
-                <div className={`picker-icon kind-${item.kind}`}>
-                  <Icon size={15} />
+                <div className={`picker-icon kind-${item.kind} ${thumb ? "has-thumb" : ""}`}>
+                  {thumb ? <img className="picker-thumb" src={thumb} alt="" /> : <Icon size={15} />}
                 </div>
                 <div className="picker-main">
                   <span className="picker-preview">{item.preview || "（空）"}</span>
@@ -140,6 +164,7 @@ export default function Picker() {
                     {formatRelative(item.updatedAt)}
                   </span>
                 </div>
+                {index < 9 ? <span className="picker-num">{index + 1}</span> : null}
                 {index === active ? <kbd>↵</kbd> : null}
               </div>
             );
@@ -153,6 +178,7 @@ export default function Picker() {
         ) : (
           <>
             <span>↑↓ 选择</span>
+            <span>1–9 直选</span>
             <span>↵ 粘贴</span>
             <span>Ctrl+↵ 仅复制</span>
             <span>Esc 关闭</span>

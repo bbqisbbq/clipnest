@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"strconv"
 	"sort"
 	"strings"
 	"sync"
@@ -318,7 +319,14 @@ func (c syncConfig) mkcol(dir string) error {
 }
 
 // listPackages returns the package names (without directory) inside dir.
-func (c syncConfig) listPackages(dir string) ([]string, error) {
+// davEntry is one file in the remote directory, as reported by PROPFIND.
+type davEntry struct {
+	Name     string
+	Bytes    int64
+	Modified time.Time
+}
+
+func (c syncConfig) listPackages(dir string) ([]davEntry, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), syncHTTPTimeout)
 	defer cancel()
 	req, err := c.newRequest(ctx, "PROPFIND", dir+"/", strings.NewReader(
@@ -349,24 +357,43 @@ func (c syncConfig) listPackages(dir string) ([]string, error) {
 	}
 	var ms struct {
 		Responses []struct {
-			Href string `xml:"href"`
+			Href     string `xml:"href"`
+			Propstat []struct {
+				Prop struct {
+					ContentLength string `xml:"getcontentlength"`
+					LastModified  string `xml:"getlastmodified"`
+					ResourceType  struct {
+						Collection *struct{} `xml:"collection"`
+					} `xml:"resourcetype"`
+				} `xml:"prop"`
+			} `xml:"propstat"`
 		} `xml:"response"`
 	}
 	if err := xml.Unmarshal(data, &ms); err != nil {
 		return nil, fmt.Errorf("目录列表解析失败: %w", err)
 	}
 
-	out := make([]string, 0, len(ms.Responses))
+	out := make([]davEntry, 0, len(ms.Responses))
 	for _, r := range ms.Responses {
 		name := path.Base(strings.TrimSuffix(r.Href, "/"))
 		if unescaped, err := url.PathUnescape(name); err == nil {
 			name = unescaped
 		}
-		if strings.HasSuffix(strings.ToLower(name), ".zip") {
-			out = append(out, name)
+		if !strings.HasSuffix(strings.ToLower(name), ".zip") {
+			continue
 		}
+		e := davEntry{Name: name}
+		for _, ps := range r.Propstat {
+			if n, err := strconv.ParseInt(strings.TrimSpace(ps.Prop.ContentLength), 10, 64); err == nil {
+				e.Bytes = n
+			}
+			if t, err := http.ParseTime(strings.TrimSpace(ps.Prop.LastModified)); err == nil {
+				e.Modified = t
+			}
+		}
+		out = append(out, e)
 	}
-	sort.Strings(out)
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
 }
 
@@ -541,14 +568,18 @@ func (s *ClipService) TestSync() (string, error) {
 	if err := cfg.mkcol(syncDevicesDir); err != nil {
 		return "", err
 	}
-	names, err := cfg.listPackages(syncDevicesDir)
+	entries, err := cfg.listPackages(syncDevicesDir)
 	if err != nil {
 		return "", err
 	}
-	if len(names) == 0 {
+	if len(entries) == 0 {
 		return "连接成功，远端还没有任何设备的同步包（首次同步会创建）", nil
 	}
-	return fmt.Sprintf("连接成功，远端有 %d 个设备的同步包：%s", len(names), strings.Join(names, "、")), nil
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		names = append(names, fmt.Sprintf("%s（%s）", e.Name, humanBytes(int(e.Bytes))))
+	}
+	return fmt.Sprintf("连接成功，远端有 %d 个设备的同步包：%s", len(entries), strings.Join(names, "、")), nil
 }
 
 // SyncNow performs a full two-way merge.
@@ -569,6 +600,7 @@ func (s *ClipService) syncOnce(upload bool) (SyncStatus, error) {
 	s.syncStatus.InProgress = true
 	s.syncMu.Unlock()
 
+	startedAt := time.Now()
 	s.emit("sync:status", s.GetSyncStatus())
 	defer func() {
 		s.syncMu.Lock()
@@ -582,18 +614,30 @@ func (s *ClipService) syncOnce(upload bool) (SyncStatus, error) {
 		return s.GetSyncStatus(), err
 	}
 
-	names, err := cfg.listPackages(syncDevicesDir)
+	entries, err := cfg.listPackages(syncDevicesDir)
 	if err != nil {
 		s.setSyncError(err)
 		return s.GetSyncStatus(), err
 	}
 
 	ownName := cfg.packageName()
-	peers := make([]string, 0, len(names))
-	for _, name := range names {
-		if name != ownName {
-			peers = append(peers, name)
+	peers := make([]string, 0, len(entries))
+	deviceInfo := make([]SyncDeviceInfo, 0, len(entries)+1)
+	for _, e := range entries {
+		info := SyncDeviceInfo{
+			Name:      e.Name,
+			Device:    deviceLabelFromName(e.Name),
+			Bytes:     e.Bytes,
+			UpdatedAt: e.Modified,
+			Self:      e.Name == ownName,
 		}
+		deviceInfo = append(deviceInfo, info)
+		if e.Name != ownName {
+			peers = append(peers, e.Name)
+		}
+	}
+	if len(deviceInfo) == 0 {
+		deviceInfo = append(deviceInfo, SyncDeviceInfo{Name: ownName, Device: hostName(), Self: true})
 	}
 
 	// ---- pull every peer package (bounded parallelism) ----
@@ -638,6 +682,19 @@ func (s *ClipService) syncOnce(upload bool) (SyncStatus, error) {
 		if res.pkg == nil {
 			continue
 		}
+		newBefore, updBefore, delBefore := pulledNew, pulledUpd, deletedLocal
+		recordPeer := func() {
+			for i := range deviceInfo {
+				if deviceInfo[i].Name != res.name {
+					continue
+				}
+				deviceInfo[i].Items = len(res.pkg.index.Items)
+				deviceInfo[i].PulledNew = pulledNew - newBefore
+				deviceInfo[i].PulledUpdated = pulledUpd - updBefore
+				deviceInfo[i].Deleted = deletedLocal - delBefore
+			}
+		}
+		defer recordPeer()
 		for _, mi := range res.pkg.index.Items {
 			if mi.Hash == "" {
 				continue
@@ -735,11 +792,14 @@ func (s *ClipService) syncOnce(upload bool) (SyncStatus, error) {
 
 	// ---- push our package ----
 	var pushedBytes int64
+	skipNote := ""
+	pushedNow := false
 	if upload && len(s.store.All()) == 0 && peerItemCount > 0 {
 		// Our pull clearly did not work; publishing an empty package would make
 		// this device look authoritative about having no history.
 		Logf(s.store.Dir(), "sync: skip push, local history is empty but peers hold %d records", peerItemCount)
 		upload = false
+		skipNote = "本地历史为空但对方有数据，已跳过上传"
 	}
 	if upload {
 		payload, fingerprint, err := s.buildOwnPackage(peerHasBlob, peerTombstones, cur)
@@ -753,6 +813,7 @@ func (s *ClipService) syncOnce(upload bool) (SyncStatus, error) {
 		if fingerprint == lastPush {
 			// Nothing changed since the last successful push: skip the upload
 			// entirely, so an idle 30-minute tick costs one PROPFIND.
+			skipNote = "内容未变化，已跳过上传"
 			Logf(s.store.Dir(), "sync: package unchanged (%d KiB), push skipped", len(payload)/1024)
 		} else {
 			if resolved, err := cfg.urlFor(target); err == nil {
@@ -763,6 +824,7 @@ func (s *ClipService) syncOnce(upload bool) (SyncStatus, error) {
 				return s.GetSyncStatus(), err
 			}
 			_ = s.store.SetMeta("sync.lastPush", fingerprint)
+			pushedNow = true
 			Logf(s.store.Dir(), "sync: pushed %s (%d KiB)", target, len(payload)/1024)
 		}
 	}
@@ -792,6 +854,28 @@ func (s *ClipService) syncOnce(upload bool) (SyncStatus, error) {
 	s.syncStatus.Devices = len(peers) + 1
 	s.syncStatus.LastBytes = pushedBytes
 	s.syncMu.Unlock()
+
+	if pushedNow {
+		for i := range deviceInfo {
+			if deviceInfo[i].Self {
+				deviceInfo[i].Bytes = pushedBytes
+				deviceInfo[i].Items = len(s.store.All())
+				deviceInfo[i].UpdatedAt = time.Now()
+			}
+		}
+	}
+	s.saveSyncDetail(SyncDetail{
+		At:            time.Now(),
+		DurationMs:    time.Since(startedAt).Milliseconds(),
+		PulledNew:     pulledNew,
+		PulledUpdated: pulledUpd,
+		DeletedLocal:  deletedLocal,
+		Pushed:        pushedNow,
+		PushedBytes:   pushedBytes,
+		SettingsPull:  settingsPulled,
+		SettingsPush:  settingsPushed,
+		Note:          skipNote,
+	}, deviceInfo)
 
 	Logf(s.store.Dir(), "sync ok: %s", result)
 	s.emit("clip:stats", s.store.Stats())

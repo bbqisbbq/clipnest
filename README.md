@@ -56,8 +56,21 @@ ClipNest 在你使用电脑时安静地记录进入过系统剪贴板的一切�
 
 | 文件 | 安装到 | 权限 |
 | --- | --- | --- |
-| `bin\clipnest-0.2.0-amd64-setup.exe` | `C:\Program Files\bbqisbbq\ClipNest` | 需要管理员（UAC） |
-| `bin\clipnest-0.2.0-amd64-setup-per-user.exe` | `%LOCALAPPDATA%\Programs\ClipNest` | 免 UAC，当前用户 |
+| `bin\clipnest-0.5.0-amd64-setup.exe` | `C:\Program Files\bbqisbbq\ClipNest` | 需要管理员（UAC） |
+| `bin\clipnest-0.5.0-amd64-setup-per-user.exe` | `%LOCALAPPDATA%\Programs\ClipNest` | 免 UAC，当前用户 |
+
+安装包已做 **Authenticode 签名**（自签名，发布者显示 `ClipNest (self-signed)`）。自签名不会自动消除
+Windows 的"无法验证发布者"提示，但有两个实际好处：文件被篡改会被立刻发现，并且把
+`build\signing\clipnest-selfsigned.cer` 导入「受信任的根证书颁发机构 + 受信任的发布者」后不再报警。
+
+```powershell
+# 自签名（默认，无需证书）
+powershell -File scripts\sign.ps1 -Path "bin\clipnest-0.5.0-amd64-setup.exe,bin\clipnest-0.5.0-amd64-setup-per-user.exe,bin\clipnest.exe" -SelfSigned
+
+# 正式证书（买了 OV/EV 证书后；带时间戳才能长期有效）
+$env:CLIPNEST_SIGN_PFX="D:\certs\clipnest.pfx"; $env:CLIPNEST_SIGN_PASSWORD="***"
+powershell -File scripts\sign.ps1 -Path "bin\*.exe" -Timestamp http://timestamp.digicert.com
+```
 
 安装向导（简体中文）会问三件事：
 
@@ -235,8 +248,8 @@ docs/FILE-STRATEGY.md         文件复制的方案对比与数据模型
 - [ ] 方案 E：条目「归档到库」按钮 + 归档目录配额
 - [x] 同步：删除墓碑（tombstone，0.3.0）
 - [x] 同步：打包传输——每台机器一个 zip 包，写冲突不可能发生（0.4.0）
-- [ ] 同步增强：字段级冲突合并、可选 DPAPI 加密密码
-- [ ] 弹窗：图片/文件条目缩略图预览 + 数字键 1–9 快速选择
+- [x] 同步面板：每台设备的包大小/最后更新/本轮拉取明细（0.5.0）`n- [ ] 同步增强：字段级冲突合并、可选 DPAPI 加密密码
+- [x] 弹窗：图片缩略图 + 数字键 1–9 直选（0.5.0）
 - [ ] 分类规则（按来源程序自动打标签）
 - [ ] 条目内图片压缩 / 缩略图缓存，降低 blob 体积
 

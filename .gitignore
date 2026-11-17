@@ -25,3 +25,7 @@ scratch/dev-*/
 
 scratch/probe.txt
 
+
+# 签名用的自签名证书与私钥（绝不入库）
+build/signing/
+
