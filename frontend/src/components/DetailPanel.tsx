@@ -13,6 +13,7 @@ type Props = {
   onOpen: () => void;
   onClose: () => void;
   onRefresh: () => void;
+  onSaveAsSnippet: () => void;
 };
 
 export default function DetailPanel(props: Props) {
@@ -157,6 +158,9 @@ export default function DetailPanel(props: Props) {
         <button className={"btn btn-ghost" + (item.pinned ? " is-on" : "")} onClick={props.onTogglePin}>
           <IconStar size={14} filled={item.pinned} />
           {item.pinned ? "已收藏" : "收藏"}
+        </button>
+        <button className="btn btn-ghost" onClick={props.onSaveAsSnippet} title="把这条历史存成可复用的片段（之后可配缩写）">
+          存为片段
         </button>
         {canOpen ? (
           <button className="btn btn-ghost" onClick={props.onOpen}>

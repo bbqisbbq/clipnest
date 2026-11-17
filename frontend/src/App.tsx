@@ -447,6 +447,15 @@ export default function App() {
                 ClipService.OpenItem(selected.id).catch((err) => notify(`打开失败：${String(err)}`));
               }}
               onClose={() => setSelectedId(null)}
+              onSaveAsSnippet={() => {
+                if (!selected) return;
+                ClipService.SaveItemAsSnippet(selected.id)
+                  .then(() => {
+                    notify("已存为片段，可在「片段」里配缩写");
+                    void loadSnippets();
+                  })
+                  .catch((err) => notify(`保存失败：${String(err)}`));
+              }}
               onRefresh={() => {
                 if (!selected) return;
                 ClipService.RefreshItem(selected.id)

@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
+import { marked } from "marked";
 import { ClipService, type Snippet } from "../lib/api";
 import { formatRelative } from "../lib/format";
 import { IconTrash } from "./Icons";
@@ -42,6 +43,7 @@ export default function SnippetsView(props: Props) {
   const [group, setGroup] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [preview, setPreview] = useState(false);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -56,6 +58,20 @@ export default function SnippetsView(props: Props) {
       );
     });
   }, [props.snippets, query, group]);
+
+  // 纯本地内容，做最小化清理即可：去掉脚本/iframe/内联事件与 javascript: 链接
+  const previewHtml = useMemo(() => {
+    const raw = marked.parse(draft.body ?? "", { async: false }) as string;
+    return raw
+      .replace(/<script[\s\S]*?<\/script>/gi, "")
+      .replace(/<iframe[\s\S]*?<\/iframe>/gi, "")
+      .replace(/ on[a-z]+="[^"]*"/gi, "")
+      .replace(/javascript:/gi, "");
+  }, [draft.body]);
+
+  const insertVariable = useCallback((token: string) => {
+    setDraft((cur) => ({ ...cur, body: `${cur.body ?? ""}${token}` }));
+  }, []);
 
   const pick = useCallback((sp: Snippet) => {
     setDraft({ ...sp });
@@ -265,7 +281,22 @@ export default function SnippetsView(props: Props) {
             </div>
           ) : (
             <div className="field is-stacked">
-              <span className="field-label">内容</span>
+              <span className="field-label">
+                内容
+                <button className="link-btn" onClick={() => setPreview((v) => !v)}>
+                  {preview ? "编辑" : "预览"}
+                </button>
+              </span>
+              <div className="var-chips">
+                {["{{date}}", "{{time}}", "{{datetime}}", "{{clipboard}}", "{{cursor}}"].map((token) => (
+                  <button key={token} className="chip" onClick={() => insertVariable(token)} title="插入到内容末尾">
+                    {token}
+                  </button>
+                ))}
+              </div>
+              {preview ? (
+                <div className="snip-preview" dangerouslySetInnerHTML={{ __html: previewHtml }} />
+              ) : (
               <textarea
                 className="input is-area"
                 rows={draft.kind === "text" || draft.kind === "password" ? 10 : 4}
@@ -283,6 +314,7 @@ export default function SnippetsView(props: Props) {
                 }
                 onChange={(e) => setDraft({ ...draft, body: e.target.value })}
               />
+              )}
             </div>
           )}
 

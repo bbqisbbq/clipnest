@@ -14,7 +14,7 @@ import (
 )
 
 // Version is shown in the UI and written to the log on start.
-const Version = "0.6.0"
+const Version = "0.7.0"
 
 // AppInfo is static information the frontend needs for the about/settings view.
 type AppInfo struct {

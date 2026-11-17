@@ -282,6 +282,14 @@ export function RefreshItem(id: string): $CancellablePromise<$models.Item> {
 }
 
 /**
+ * SaveItemAsSnippet turns a clipboard-history entry into a snippet ("存为片段"),
+ * so something you just copied can become a reusable phrase with a trigger.
+ */
+export function SaveItemAsSnippet(itemID: string): $CancellablePromise<$models.Snippet> {
+    return $Call.ByID(2119030672, itemID);
+}
+
+/**
  * SaveSettings persists settings, applies side effects and returns what was
  * actually stored.
  */

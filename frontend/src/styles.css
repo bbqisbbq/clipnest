@@ -1846,3 +1846,71 @@ body.is-picker {
 .snip-fields {
   align-items: stretch;
 }
+/* 片段编辑器：变量芯片与 Markdown 预览 */
+.var-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 4px;
+}
+
+.link-btn {
+  margin-left: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent-soft, #a9b4ff);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.snip-preview {
+  min-height: 160px;
+  max-height: 380px;
+  overflow-y: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-sm, 8px);
+  background: var(--surface-1, #0e1015);
+  font-size: 12.5px;
+  line-height: 1.65;
+}
+
+.snip-preview h1,
+.snip-preview h2,
+.snip-preview h3 {
+  margin: 0.6em 0 0.35em;
+  font-size: 13.5px;
+}
+
+.snip-preview code {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  background: rgba(125, 140, 255, 0.12);
+  padding: 1px 4px;
+  border-radius: 4px;
+}
+
+.snip-preview pre {
+  background: #0b0d12;
+  padding: 8px 10px;
+  border-radius: 6px;
+  overflow-x: auto;
+}
+
+.snip-preview ul,
+.snip-preview ol {
+  padding-left: 20px;
+  margin: 0.3em 0;
+}
+
+.snip-preview a {
+  color: #a9b4ff;
+}
+
+.snip-preview blockquote {
+  margin: 0.4em 0;
+  padding-left: 10px;
+  border-left: 2px solid var(--border-strong);
+  color: var(--text-dim);
+}

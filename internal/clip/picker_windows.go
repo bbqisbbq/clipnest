@@ -33,6 +33,7 @@ const (
 	monitorDefaultToNearest = 0x00000002
 	swRestore               = 9
 	vkControl               = 0x11
+	vkLeft                  = 0x25
 	vkMenu                  = 0x12
 	vkV                     = 0x56
 	inputKeyboard           = 1
@@ -258,4 +259,17 @@ func PasteInto(hwnd uintptr) error {
 // sendOneInput injects a single struct via SendInput (used by the expander).
 func sendOneInput(in inputT) {
 	procSendInput.Call(1, uintptr(unsafe.Pointer(&in)), unsafe.Sizeof(in))
+}
+// sendLeftArrows walks the caret left by n characters (used by {{cursor}}).
+func sendLeftArrows(n int) {
+	if n <= 0 {
+		return
+	}
+	if n > 200 {
+		n = 200
+	}
+	for i := 0; i < n; i++ {
+		keybdTap(vkLeft)
+		time.Sleep(6 * time.Millisecond)
+	}
 }

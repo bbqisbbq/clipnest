@@ -57,6 +57,65 @@ func lookupTrigger(key string) (string, bool) {
 	return "", false
 }
 
+func init() {
+	// {{clipboard}} 读取当前剪贴板文本
+	clipboardTextForTemplate = func() string {
+		cap, err := captureClipboard()
+		if err != nil || cap == nil {
+			return ""
+		}
+		return cap.Text
+	}
+}
+
+// SaveItemAsSnippet turns a clipboard-history entry into a snippet ("存为片段"),
+// so something you just copied can become a reusable phrase with a trigger.
+func (s *ClipService) SaveItemAsSnippet(itemID string) (Snippet, error) {
+	it, ok := s.store.Get(itemID)
+	if !ok {
+		return Snippet{}, errors.New("条目不存在")
+	}
+
+	sp := Snippet{Title: truncateRunes(it.Preview, 24), Group: "来自历史"}
+	switch it.Kind {
+	case KindText, KindRichText:
+		sp.Kind = SnippetText
+		sp.Body = it.Text
+	case KindLink:
+		sp.Kind = SnippetURL
+		sp.Body = it.Text
+	case KindFiles:
+		sp.Kind = SnippetFile
+		paths := make([]string, 0, len(it.Files))
+		for _, f := range it.Files {
+			paths = append(paths, f.Path)
+		}
+		sp.Body = strings.Join(paths, "\n")
+	case KindImage:
+		sp.Kind = SnippetImage
+		sp.Body = it.Preview
+	default:
+		return Snippet{}, errors.New("这个类型暂不支持存为片段")
+	}
+
+	saved, err := s.store.SaveSnippet(sp)
+	if err != nil {
+		return Snippet{}, err
+	}
+	if it.Kind == KindImage {
+		if payload, err := s.store.LoadBlobByName(it.ImageFile); err == nil && len(payload) > 0 {
+			_ = s.store.SaveSnippetBlob(saved.ID, ".png", payload)
+		}
+	}
+	s.refreshTriggerIndex()
+	Logf(s.store.Dir(), "snippet from history: item=%s -> snippet=%s (%s)", it.ID, saved.ID, saved.Kind)
+	out, ok := s.store.GetSnippet(saved.ID)
+	if !ok {
+		return Snippet{}, errors.New("片段保存失败")
+	}
+	return out, nil
+}
+
 // decodeBase64Image accepts a "data:image/png;base64,…" URL or bare base64.
 func decodeBase64Image(s string) ([]byte, error) {
 	s = strings.TrimSpace(s)
@@ -83,11 +142,12 @@ func (s *ClipService) runSnippet(sp Snippet, paste bool, target uintptr) (string
 
 	switch sp.Kind {
 	case SnippetText, SnippetPassword:
-		if err := WriteTextToClipboard(sp.Body); err != nil {
+		text, cursor := renderTemplate(sp.Body)
+		if err := WriteTextToClipboard(text); err != nil {
 			return "", err
 		}
 		if paste && target != 0 {
-			go s.pasteAndLog(target, "snippet")
+			go s.pasteAndLogAt(target, "snippet", leftArrows(text, cursor))
 			return "已粘贴", nil
 		}
 		if target != 0 {
@@ -179,12 +239,21 @@ func (s *ClipService) runSnippet(sp Snippet, paste bool, target uintptr) (string
 }
 
 func (s *ClipService) pasteAndLog(target uintptr, what string) {
+	s.pasteAndLogAt(target, what, 0)
+}
+
+// pasteAndLogAt pastes and then walks the caret back `lefts` characters, which
+// is how {{cursor}} ends up "ready to type" instead of at the end of the text.
+func (s *ClipService) pasteAndLogAt(target uintptr, what string, lefts int) {
 	if err := PasteInto(target); err != nil {
 		Logf(s.store.Dir(), "%s paste failed: %v", what, err)
 		s.emit("picker:paste-failed", err.Error())
 		return
 	}
-	Logf(s.store.Dir(), "%s paste sent: target=%#x", what, target)
+	if lefts > 0 {
+		sendLeftArrows(lefts)
+	}
+	Logf(s.store.Dir(), "%s paste sent: target=%#x lefts=%d", what, target, lefts)
 }
 
 func (s *ClipService) openExternal(url string) error {
