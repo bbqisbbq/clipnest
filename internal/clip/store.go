@@ -70,6 +70,16 @@ CREATE TABLE IF NOT EXISTS blobs (
   ext     TEXT NOT NULL,
   data    BLOB NOT NULL
 );
+
+-- Tombstones record user-initiated deletions so they can propagate through sync.
+-- Retention pruning deliberately does NOT write here: one machine's retention
+-- policy must never delete another machine's history.
+CREATE TABLE IF NOT EXISTS tombstones (
+  hash       TEXT PRIMARY KEY,
+  deleted_at TEXT NOT NULL,
+  device     TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_tomb_deleted ON tombstones(deleted_at);
 `
 
 // Open opens (or creates and migrates) the database inside dir.
@@ -565,6 +575,16 @@ func (s *Store) Count(f Filter) int {
 
 // Delete removes one entry (its blob goes with it).
 func (s *Store) Delete(id string) bool {
+	return s.deleteRow(id, true)
+}
+
+// deleteRow removes an entry and (optionally) leaves a tombstone so peers drop
+// their copy too. Retention pruning passes false: a full history on another
+// machine is not a reason to erase it there.
+func (s *Store) deleteRow(id string, tombstone bool) bool {
+	var hash string
+	_ = s.db.QueryRow(`SELECT hash FROM items WHERE id = ?`, id).Scan(&hash)
+
 	res, err := s.db.Exec(`DELETE FROM items WHERE id = ?`, id)
 	if err != nil {
 		return false
@@ -573,6 +593,9 @@ func (s *Store) Delete(id string) bool {
 		return false
 	}
 	_, _ = s.db.Exec(`DELETE FROM blobs WHERE item_id = ?`, id)
+	if tombstone && hash != "" {
+		s.AddTombstone(hash, nowUTC(), hostName())
+	}
 	return true
 }
 
@@ -589,6 +612,68 @@ func (s *Store) DeleteWhere(f Filter) int {
 		}
 	}
 	return n
+}
+
+// ---- tombstones ---------------------------------------------------------
+
+// Tombstone is a deletion marker that travels with sync.
+type Tombstone struct {
+	Hash      string    `json:"hash"`
+	DeletedAt time.Time `json:"deletedAt"`
+	Device    string    `json:"device,omitempty"`
+}
+
+// AddTombstone records (or refreshes) a deletion marker.
+func (s *Store) AddTombstone(hash string, at time.Time, device string) {
+	if hash == "" {
+		return
+	}
+	_, _ = s.db.Exec(
+		`INSERT INTO tombstones (hash, deleted_at, device) VALUES (?,?,?)
+		 ON CONFLICT(hash) DO UPDATE SET deleted_at = MAX(deleted_at, excluded.deleted_at)`,
+		hash, encodeTime(at), device,
+	)
+}
+
+// Tombstones returns deletion markers newer than since, newest first.
+func (s *Store) Tombstones(since time.Time, limit int) []Tombstone {
+	if limit <= 0 || limit > 10000 {
+		limit = 2000
+	}
+	rows, err := s.db.Query(
+		`SELECT hash, deleted_at, device FROM tombstones WHERE deleted_at >= ? ORDER BY deleted_at DESC LIMIT ?`,
+		encodeTime(since), limit)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var out []Tombstone
+	for rows.Next() {
+		var t Tombstone
+		var at string
+		if rows.Scan(&t.Hash, &at, &t.Device) == nil {
+			t.DeletedAt = decodeTime(at)
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// PruneTombstones drops markers older than the retention horizon.
+func (s *Store) PruneTombstones(before time.Time) int {
+	res, err := s.db.Exec(`DELETE FROM tombstones WHERE deleted_at < ?`, encodeTime(before))
+	if err != nil {
+		return 0
+	}
+	n, _ := res.RowsAffected()
+	return int(n)
+}
+
+func hostName() string {
+	if h, err := os.Hostname(); err == nil {
+		return h
+	}
+	return "windows"
 }
 
 // SetPinned toggles the favourite flag.
@@ -728,7 +813,7 @@ func (s *Store) Prune(maxItems, maxAgeDays int) int {
 	if maxAgeDays > 0 {
 		cutoff := encodeTime(nowUTC().AddDate(0, 0, -maxAgeDays))
 		for _, id := range s.collectIDs(`SELECT id FROM items WHERE pinned = 0 AND updated_at < ?`, cutoff) {
-			if s.Delete(id) {
+			if s.deleteRow(id, false) {
 				removed++
 			}
 		}
@@ -738,7 +823,7 @@ func (s *Store) Prune(maxItems, maxAgeDays int) int {
 		if err := s.db.QueryRow(`SELECT COUNT(*) FROM items`).Scan(&total); err == nil && total > maxItems {
 			for _, id := range s.collectIDs(
 				`SELECT id FROM items WHERE pinned = 0 ORDER BY updated_at ASC LIMIT ?`, total-maxItems) {
-				if s.Delete(id) {
+				if s.deleteRow(id, false) {
 					removed++
 				}
 			}

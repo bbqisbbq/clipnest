@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"time"
 	"testing"
 
 	"golang.org/x/net/webdav"
@@ -224,4 +225,99 @@ func tinyPNG(t *testing.T) []byte {
 		t.Fatalf("encode png: %v", err)
 	}
 	return buf.Bytes()
+}
+
+func TestSyncPropagatesDeletion(t *testing.T) {
+	base, _ := newTestDAV(t)
+
+	a := newTestService(t, t.TempDir())
+	item, _, _ := a.store.Add(Captured{Kind: KindText, Text: "delete me", Preview: "delete me", Hash: "del-hash", Size: 9})
+	if _, _, err := a.store.Add(Captured{Kind: KindText, Text: "keep me", Preview: "keep me", Hash: "keep-hash", Size: 7}); err != nil {
+		t.Fatal(err)
+	}
+	stA := a.store.Settings()
+	stA.SyncEnabled, stA.SyncURL = true, base
+	_ = a.store.SaveSettings(stA)
+	if _, err := a.SyncNow(); err != nil {
+		t.Fatalf("A upload: %v", err)
+	}
+
+	b := newTestService(t, t.TempDir())
+	stB := b.store.Settings()
+	stB.SyncEnabled, stB.SyncURL = true, base
+	_ = b.store.SaveSettings(stB)
+	if _, err := b.SyncNow(); err != nil {
+		t.Fatalf("B pull: %v", err)
+	}
+	if len(b.store.All()) != 2 {
+		t.Fatalf("B should have both entries, got %d", len(b.store.All()))
+	}
+
+	// A deletes one entry (user action → tombstone) and syncs.
+	if !a.store.Delete(item.ID) {
+		t.Fatal("delete failed")
+	}
+	if len(a.store.Tombstones(time.Now().Add(-time.Hour), 10)) != 1 {
+		t.Fatal("expected exactly one tombstone")
+	}
+	if _, err := a.SyncNow(); err != nil {
+		t.Fatalf("A resync: %v", err)
+	}
+
+	// B must drop its copy instead of re-uploading it.
+	status, err := b.SyncNow()
+	if err != nil {
+		t.Fatalf("B resync: %v", err)
+	}
+	if got := len(b.store.All()); got != 1 {
+		t.Fatalf("B items = %d after deletion sync, want 1", got)
+	}
+	if !contains(status.LastResult, "删除 1 条") {
+		t.Errorf("status should mention the deletion: %q", status.LastResult)
+	}
+	if _, ok := b.store.findByHash("del-hash"); ok {
+		t.Error("deleted entry came back on B")
+	}
+
+	// And A's next pull must not resurrect it either.
+	if _, err := a.SyncNow(); err != nil {
+		t.Fatalf("A third sync: %v", err)
+	}
+	if got := len(a.store.All()); got != 1 {
+		t.Fatalf("A items = %d after round trip, want 1", got)
+	}
+}
+
+func TestSyncRecopyAfterDeleteResurrects(t *testing.T) {
+	base, _ := newTestDAV(t)
+
+	a := newTestService(t, t.TempDir())
+	item, _, _ := a.store.Add(Captured{Kind: KindText, Text: "zombie", Preview: "zombie", Hash: "zombie-hash", Size: 6})
+	stA := a.store.Settings()
+	stA.SyncEnabled, stA.SyncURL = true, base
+	_ = a.store.SaveSettings(stA)
+	if _, err := a.SyncNow(); err != nil {
+		t.Fatalf("A upload: %v", err)
+	}
+
+	a.store.Delete(item.ID)
+	if _, err := a.SyncNow(); err != nil {
+		t.Fatalf("A delete sync: %v", err)
+	}
+
+	// Copying the same content again is a new intent: it must survive the older
+	// tombstone instead of being deleted on the next sync.
+	time.Sleep(5 * time.Millisecond)
+	if _, _, err := a.store.Add(Captured{Kind: KindText, Text: "zombie", Preview: "zombie", Hash: "zombie-hash", Size: 6}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.SyncNow(); err != nil {
+		t.Fatalf("A recopy sync: %v", err)
+	}
+	if _, err := a.SyncNow(); err != nil {
+		t.Fatalf("A idle sync: %v", err)
+	}
+	if _, ok := a.store.findByHash("zombie-hash"); !ok {
+		t.Fatal("re-copied entry was deleted by its own older tombstone")
+	}
 }

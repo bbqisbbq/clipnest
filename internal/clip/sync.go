@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"sort"
 	"strings"
 	"time"
 )
@@ -39,6 +40,11 @@ const (
 	// syncMaxPerRun caps how many records one run moves, so a first sync of a
 	// huge history does not look like a hang.
 	syncMaxPerRun = 800
+	// tombstoneRetentionDays keeps deletion markers long enough for a machine
+	// that was offline for a while to still learn about the deletion.
+	tombstoneRetentionDays = 180
+	// maxTombstones caps the index growth from deletions.
+	maxTombstones = 2000
 )
 
 // SyncStatus is what the settings page shows.
@@ -79,7 +85,10 @@ type syncManifest struct {
 	Device    string           `json:"device"`
 	UpdatedAt time.Time        `json:"updatedAt"`
 	Items     []manifestItem   `json:"items"`
-	Settings  *settingsPayload `json:"settings,omitempty"`
+	// Deleted carries deletion markers so a removal on one machine is honoured
+	// everywhere instead of being resurrected by the next pull.
+	Deleted  []Tombstone      `json:"deleted,omitempty"`
+	Settings *settingsPayload `json:"settings,omitempty"`
 }
 
 // itemRecord is the per-item file body.
@@ -443,12 +452,37 @@ func (s *ClipService) syncOnce(upload bool) (SyncStatus, error) {
 	}
 	remoteIdx := remote.index()
 
+	// ---- deletions first: a peer that deleted an entry must not be undone by
+	// our copy of it ----
+	deletedLocal := 0
+	tombIdx := make(map[string]time.Time, len(remote.Deleted))
+	for _, t := range remote.Deleted {
+		if t.Hash == "" {
+			continue
+		}
+		if cur, ok := tombIdx[t.Hash]; !ok || t.DeletedAt.After(cur) {
+			tombIdx[t.Hash] = t.DeletedAt
+		}
+		local, ok := s.store.findByHash(t.Hash)
+		if !ok {
+			continue
+		}
+		// Only honour the marker when it is newer than our copy: re-copying the
+		// same content later legitimately resurrects the entry.
+		if t.DeletedAt.After(local.UpdatedAt) && s.store.deleteRow(local.ID, false) {
+			deletedLocal++
+		}
+	}
+
 	// ---- pull ----
 	pulledNew, pulledUpd := 0, 0
 	seen := 0
 	for _, ri := range remote.Items {
 		if seen >= syncMaxPerRun {
 			break
+		}
+		if at, killed := tombIdx[ri.Hash]; killed && !ri.UpdatedAt.After(at) {
+			continue // records may outlive their marker; the tombstone wins
 		}
 		local, ok := s.store.findByHash(ri.Hash)
 		if ok && !ri.UpdatedAt.After(local.UpdatedAt) {
@@ -527,6 +561,9 @@ func (s *ClipService) syncOnce(upload bool) (SyncStatus, error) {
 		// ---- manifest ----
 		final := s.buildManifest(remote)
 		final.Settings = remote.Settings
+		horizon := time.Now().AddDate(0, 0, -tombstoneRetentionDays)
+		final.Deleted = mergeTombstones(remote.Deleted, s.store.Tombstones(horizon, maxTombstones))
+		s.store.PruneTombstones(horizon)
 		if err := putManifest(cfg, final); err != nil {
 			s.setSyncError(err)
 			return s.GetSyncStatus(), err
@@ -535,6 +572,9 @@ func (s *ClipService) syncOnce(upload bool) (SyncStatus, error) {
 	}
 
 	result := fmt.Sprintf("拉取 %d 条新增 / %d 条更新", pulledNew, pulledUpd)
+	if deletedLocal > 0 {
+		result += fmt.Sprintf("，删除 %d 条", deletedLocal)
+	}
 	if upload {
 		result += fmt.Sprintf("，推送 %d 条", pushed)
 	}
@@ -612,6 +652,35 @@ func (s *ClipService) buildManifest(remote *syncManifest) *syncManifest {
 		}
 	}
 	return m
+}
+
+// mergeTombstones unions local and remote deletion markers, keeping the newest
+// timestamp per hash and preferring records that still know which device did it.
+func mergeTombstones(remote, local []Tombstone) []Tombstone {
+	best := make(map[string]Tombstone, len(remote)+len(local))
+	add := func(t Tombstone) {
+		if t.Hash == "" {
+			return
+		}
+		if cur, ok := best[t.Hash]; !ok || t.DeletedAt.After(cur.DeletedAt) {
+			best[t.Hash] = t
+		}
+	}
+	for _, t := range remote {
+		add(t)
+	}
+	for _, t := range local {
+		add(t)
+	}
+	out := make([]Tombstone, 0, len(best))
+	for _, t := range best {
+		out = append(out, t)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].DeletedAt.After(out[j].DeletedAt) })
+	if len(out) > maxTombstones {
+		out = out[:maxTombstones]
+	}
+	return out
 }
 
 func truncateRunes(s string, n int) string {
