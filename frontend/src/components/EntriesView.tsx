@@ -1,12 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { marked } from "marked";
 import Composer from "./Composer";
-import SnippetFields from "./SnippetFields";
+import EntryEditor from "./EntryEditor";
+import Lightbox from "./Lightbox";
 import { ClipService, type Entry, type EntryFilter, type EntryQuery } from "../lib/api";
 import { collectImageHashes, resolveImages } from "../lib/images";
 
 // 统一内容视图：剪贴板采集、片段、手写备忘都在这里，靠属性区分。
-// 上面是时间线（按创建时间正序，最新的贴着底部输入框），下面是 Composer。
+//
+// 交互约定：
+//   点卡片      → 展开/收起（看全文）
+//   点「编辑」   → 全屏 EntryEditor
+//   点图片      → 大图
+//   底部输入框   → 只负责记新的
 
 type Props = {
   filter: EntryFilter;
@@ -16,6 +22,7 @@ type Props = {
 };
 
 const PAGE_SIZE = 40;
+const ACTION_LABEL: Record<string, string> = { clipboard: "剪贴板", snippet: "片段" };
 
 function dayKey(iso: string): string {
   const d = new Date(iso);
@@ -49,11 +56,6 @@ function sourceLabel(e: Entry): string {
   return "";
 }
 
-const ACTION_LABEL: Record<string, string> = {
-  clipboard: "剪贴板",
-  snippet: "片段",
-};
-
 export default function EntriesView({ filter, day, onNotify, onChanged }: Props) {
   const [query, setQuery] = useState("");
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -61,8 +63,11 @@ export default function EntriesView({ filter, day, onNotify, onChanged }: Props)
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [imgCache, setImgCache] = useState<Record<string, string>>({});
 
-  const [draft, setDraft] = useState("");
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<Entry | null>(null);
+  const [lightbox, setLightbox] = useState<string | null>(null);
+
+  const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -158,7 +163,7 @@ export default function EntriesView({ filter, day, onNotify, onChanged }: Props)
     };
   }, [draft, entries, imgCache]);
 
-  // ---- 写与改 ------------------------------------------------------------
+  // ---- 写新的 ------------------------------------------------------------
 
   const save = useCallback(async () => {
     if (!draft.trim()) {
@@ -168,15 +173,9 @@ export default function EntriesView({ filter, day, onNotify, onChanged }: Props)
     setBusy(true);
     setError("");
     try {
-      if (editing) {
-        await ClipService.SaveEntry({ ...editing, content: draft } as never);
-        onNotify("已更新");
-      } else {
-        await ClipService.SaveEntry({ content: draft, source: "manual", kind: "text" } as never);
-        onNotify("已记下");
-      }
+      await ClipService.SaveEntry({ content: draft, source: "manual", kind: "text" } as never);
+      onNotify("已记下");
       setDraft("");
-      setEditing(null);
       stickToBottom.current = true;
       await loadLatest();
       onChanged();
@@ -185,7 +184,18 @@ export default function EntriesView({ filter, day, onNotify, onChanged }: Props)
     } finally {
       setBusy(false);
     }
-  }, [draft, editing, loadLatest, onChanged, onNotify]);
+  }, [draft, loadLatest, onChanged, onNotify]);
+
+  const pasteImage = useCallback(async (dataUrl: string) => {
+    try {
+      const token = await ClipService.SaveImage(dataUrl);
+      setDraft((prev) => prev + (prev && !prev.endsWith("\n") ? "\n" : "") + `![](${token})\n`);
+    } catch (err) {
+      setError(String(err));
+    }
+  }, []);
+
+  // ---- 卡片操作 ----------------------------------------------------------
 
   const patchEntry = useCallback(
     async (e: Entry, patch: Partial<Entry>) => {
@@ -204,10 +214,6 @@ export default function EntriesView({ filter, day, onNotify, onChanged }: Props)
     async (e: Entry) => {
       try {
         await ClipService.DeleteEntry(e.id);
-        if (editing?.id === e.id) {
-          setEditing(null);
-          setDraft("");
-        }
         await loadLatest();
         onChanged();
         onNotify("已删除");
@@ -215,7 +221,7 @@ export default function EntriesView({ filter, day, onNotify, onChanged }: Props)
         onNotify(`删除失败：${String(err)}`);
       }
     },
-    [editing, loadLatest, onChanged, onNotify],
+    [loadLatest, onChanged, onNotify],
   );
 
   const makeSnippet = useCallback(
@@ -260,23 +266,14 @@ export default function EntriesView({ filter, day, onNotify, onChanged }: Props)
     [patchEntry, onNotify],
   );
 
-  const pasteImage = useCallback(
-    async (dataUrl: string) => {
-      try {
-        const token = await ClipService.SaveImage(dataUrl);
-        setDraft((prev) => prev + (prev && !prev.endsWith("\n") ? "\n" : "") + `![](${token})\n`);
-      } catch (err) {
-        setError(String(err));
-      }
-    },
-    [],
-  );
-
-  const sourceHint =
-    editing && editing.source === "clipboard"
-      ? `采集自 ${editing.sourceApp || "剪贴板"} · 复制 ${editing.copyCount || 1} 次` +
-        ((editing.seenCount ?? 0) > 1 ? ` · 出现 ${editing.seenCount} 次` : "")
-      : undefined;
+  const toggleExpand = (id: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   return (
     <div className="entries">
@@ -321,12 +318,11 @@ export default function EntriesView({ filter, day, onNotify, onChanged }: Props)
                   <EntryCard
                     key={e.id}
                     entry={e}
-                    active={editing?.id === e.id}
+                    expanded={expanded.has(e.id)}
                     imgCache={imgCache}
-                    onOpen={() => {
-                      setEditing(e);
-                      setDraft(e.content);
-                    }}
+                    onToggleExpand={() => toggleExpand(e.id)}
+                    onEdit={() => setEditing(e)}
+                    onImage={(src) => setLightbox(src)}
                     onTogglePin={() => void patchEntry(e, { pinned: !e.pinned })}
                     onToggleArchive={() => void patchEntry(e, { archived: !e.archived })}
                     onToggleClipboard={() => void toggleClipboard(e)}
@@ -340,9 +336,21 @@ export default function EntriesView({ filter, day, onNotify, onChanged }: Props)
         </div>
       </div>
 
-      {editing && editing.triggerKey ? (
-        <SnippetFields
+      <Composer
+        value={draft}
+        onChange={setDraft}
+        onSave={() => void save()}
+        onImagePaste={(u) => void pasteImage(u)}
+        busy={busy}
+        error={error}
+        imageCache={imgCache}
+      />
+
+      {editing ? (
+        <EntryEditor
           entry={editing}
+          imageCache={imgCache}
+          onClose={() => setEditing(null)}
           onSaved={() => {
             void loadLatest();
             onChanged();
@@ -351,33 +359,20 @@ export default function EntriesView({ filter, day, onNotify, onChanged }: Props)
         />
       ) : null}
 
-      <Composer
-        value={draft}
-        onChange={setDraft}
-        onSave={() => void save()}
-        onImagePaste={(u) => void pasteImage(u)}
-        editing={!!editing}
-        onReset={() => {
-          setDraft("");
-          setEditing(null);
-          setError("");
-        }}
-        busy={busy}
-        error={error}
-        imageCache={imgCache}
-        sourceHint={sourceHint}
-      />
+      {lightbox ? <Lightbox src={lightbox} onClose={() => setLightbox(null)} /> : null}
     </div>
   );
 }
 
-// ---- 一条内容的卡片（纯展示 + 回调，不含业务） ---------------------------
+// ---- 一条内容的卡片 ------------------------------------------------------
 
 type CardProps = {
   entry: Entry;
-  active: boolean;
+  expanded: boolean;
   imgCache: Record<string, string>;
-  onOpen: () => void;
+  onToggleExpand: () => void;
+  onEdit: () => void;
+  onImage: (src: string) => void;
   onTogglePin: () => void;
   onToggleArchive: () => void;
   onToggleClipboard: () => void;
@@ -386,23 +381,31 @@ type CardProps = {
 };
 
 function EntryCard(props: CardProps) {
-  const { entry: e, active, imgCache } = props;
+  const { entry: e, expanded, imgCache } = props;
   const collected = e.source === "clipboard";
   const inClipboard = (e.actions ?? []).includes("clipboard");
+  const html = resolveImages(marked.parse(e.content, { async: false }) as string, imgCache);
 
   return (
     <article
-      className={`memo-card entry-card ${collected ? "is-collected" : ""} ${active ? "is-active" : ""} ${
+      className={`memo-card entry-card ${collected ? "is-collected" : ""} ${
         e.pinned ? "is-pinned" : ""
-      }`}
-      onClick={props.onOpen}
+      } ${expanded ? "is-expanded" : ""}`}
+      onClick={props.onToggleExpand}
+      title={expanded ? "点击收起" : "点击展开全文"}
     >
       <div
-        className={e.kind === "image" ? "entry-image" : "memo-body"}
-        dangerouslySetInnerHTML={{
-          __html: resolveImages(marked.parse(e.content, { async: false }) as string, imgCache),
+        className={e.kind === "image" ? "entry-image" : "memo-body clampable"}
+        dangerouslySetInnerHTML={{ __html: html }}
+        onClick={(ev) => {
+          const t = ev.target as HTMLElement;
+          if (t.tagName === "IMG") {
+            ev.stopPropagation();
+            props.onImage((t as HTMLImageElement).src);
+          }
         }}
       />
+
       <footer className="memo-meta">
         <span>{timeLabel(e.createdAt)}</span>
         {(e.actions ?? []).map((a) => (
@@ -418,6 +421,15 @@ function EntryCard(props: CardProps) {
         {e.triggerKey ? <span className="entry-trigger">{e.triggerKey}</span> : null}
         {collected ? <span className="memo-src">{sourceLabel(e)}</span> : null}
         <span className="memo-actions">
+          <button
+            className="link-btn"
+            onClick={(ev) => {
+              ev.stopPropagation();
+              props.onEdit();
+            }}
+          >
+            编辑
+          </button>
           <button
             className={e.pinned ? "link-btn is-on" : "link-btn"}
             onClick={(ev) => {

@@ -111,6 +111,8 @@ type Props = {
   value: string;
   onChange: (next: string) => void;
   onSave?: () => void;
+  /** Esc：用于关闭浮窗（不传则交给浏览器默认行为）。 */
+  onEscape?: () => void;
   // 粘贴图片：收到 data URL，由调用方存进附件并插入 Markdown
   onImagePaste?: (dataUrl: string) => void;
   placeholder?: string;
@@ -125,17 +127,19 @@ export type MarkdownEditorHandle = {
 };
 
 const MarkdownEditor = forwardRef<MarkdownEditorHandle, Props>(function MarkdownEditor(
-  { value, onChange, onSave, onImagePaste, placeholder, autoFocus }: Props,
+  { value, onChange, onSave, onEscape, onImagePaste, placeholder, autoFocus }: Props,
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
   const onSaveRef = useRef(onSave);
+  const onEscapeRef = useRef(onEscape);
   const onPasteRef = useRef(onImagePaste);
   onPasteRef.current = onImagePaste;
   onChangeRef.current = onChange;
   onSaveRef.current = onSave;
+  onEscapeRef.current = onEscape;
 
   useEffect(() => {
     if (!hostRef.current) return;
@@ -149,6 +153,14 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, Props>(function Markdown
       tagHighlighter,
       cmPlaceholder(placeholder ?? ""),
       keymap.of([
+        {
+          key: "Escape",
+          run: () => {
+            if (!onEscapeRef.current) return false;
+            onEscapeRef.current();
+            return true;
+          },
+        },
         {
           key: "Mod-Enter",
           run: () => {
