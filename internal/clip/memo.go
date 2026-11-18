@@ -528,3 +528,22 @@ func (s *Store) AllMemos() []Memo {
 	}
 	return out
 }
+// EnsureCaptureHotkey repairs the one-time damage done by an older build whose
+// defaults lacked the field: such a profile stored captureHotkey="" which means
+// "disabled", so the shortcut silently never registered. We only heal once (a
+// later deliberate clear is respected).
+func (s *ClipService) EnsureCaptureHotkey() {
+	if s.store.Meta("capture.hotkeyInit") != "" {
+		return
+	}
+	st := s.store.Settings()
+	if st.CaptureHotkey == "" {
+		st.CaptureHotkey = DefaultSettings().CaptureHotkey
+		if err := s.store.SaveSettings(st); err != nil {
+			Logf(s.store.Dir(), "capture hotkey heal failed: %v", err)
+		} else {
+			Logf(s.store.Dir(), "capture hotkey healed to %q (older profile had it empty)", st.CaptureHotkey)
+		}
+	}
+	_ = s.store.SetMeta("capture.hotkeyInit", "1")
+}

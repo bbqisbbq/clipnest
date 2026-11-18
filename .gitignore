@@ -32,3 +32,6 @@ build/signing/
 
 # wails3 生成绑定时产生的临时目录
 frontend/.bindings-tmp-*/
+
+# 升级前的本地数据备份（含真实历史，别进仓库）
+scratch/backup-*/

@@ -105,6 +105,16 @@ export function DraftSnippetFromItem(itemID: string): $CancellablePromise<$model
 }
 
 /**
+ * EnsureCaptureHotkey repairs the one-time damage done by an older build whose
+ * defaults lacked the field: such a profile stored captureHotkey="" which means
+ * "disabled", so the shortcut silently never registered. We only heal once (a
+ * later deliberate clear is respected).
+ */
+export function EnsureCaptureHotkey(): $CancellablePromise<void> {
+    return $Call.ByID(3754874877);
+}
+
+/**
  * ExpandActive reports whether the keyboard hook is installed.
  */
 export function ExpandActive(): $CancellablePromise<boolean> {

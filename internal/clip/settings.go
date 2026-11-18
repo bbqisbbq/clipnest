@@ -108,6 +108,7 @@ func DefaultSettings() Settings {
 		IgnorePatterns: nil,
 		IgnoreApps:     nil,
 		Hotkey:         "Ctrl+Shift+V",
+		CaptureHotkey:   "Ctrl+Shift+N",
 		PasteOnPick:    true,
 		ShowOnLaunch:   false,
 		CloseToTray:    true,
