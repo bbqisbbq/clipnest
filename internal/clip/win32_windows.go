@@ -315,7 +315,21 @@ func PrepareWindowlessStart() {
 	}
 	procGetConsoleWindow := kernel32.NewProc("GetConsoleWindow")
 	procFreeConsole := kernel32.NewProc("FreeConsole")
-	if hwnd, _, _ := procGetConsoleWindow.Call(); hwnd != 0 {
-		procFreeConsole.Call()
+	procGetConsoleProcList := kernel32.NewProc("GetConsoleProcessList")
+
+	hwnd, _, _ := procGetConsoleWindow.Call()
+	if hwnd == 0 {
+		return // already windowless
 	}
+
+	// Only detach a console that exists *for us* (started by the shell at logon,
+	// which produces a black window nobody wants). If other processes share the
+	// console — `go run .`, a terminal the developer launched us from — keep it:
+	// stdout/stderr stay visible, and there is no window of our own to close.
+	var pids [8]uint32
+	if count, _, _ := procGetConsoleProcList.Call(uintptr(unsafe.Pointer(&pids[0])), uintptr(len(pids))); count > 1 {
+		return
+	}
+
+	procFreeConsole.Call()
 }
