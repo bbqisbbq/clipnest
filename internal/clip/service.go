@@ -11,10 +11,12 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/bbqisbbq/clipnest/internal/expand"
 )
 
 // Version is shown in the UI and written to the log on start.
-const Version = "0.9.0"
+const Version = "1.0.0"
 
 // AppInfo is static information the frontend needs for the about/settings view.
 type AppInfo struct {
@@ -67,6 +69,12 @@ type ClipService struct {
 	// where the pasted content must land.
 	targetHwnd uintptr
 
+	// engine is the inline-trigger engine (internal/expand); it owns the keyboard
+	// hook and asks this service for content through expand.Host.
+	engine *expand.Engine
+	// ownWindow reports whether one of our own windows is focused.
+	ownWindow func() bool
+
 	// syncMu guards the sync status; syncRestart serialises loop restarts.
 	syncMu      sync.Mutex
 	syncStatus  SyncStatus
@@ -85,6 +93,7 @@ func NewClipService(dataDir string, hooks Hooks) (*ClipService, error) {
 		hooks:  hooks,
 		stopCh: make(chan struct{}),
 	}
+	s.engine = expand.New(s)
 	s.compileIgnorePatterns(s.store.Settings())
 	return s, nil
 }
@@ -100,14 +109,7 @@ func (s *ClipService) Start() error {
 	go s.refreshFilesLoop()
 	go s.syncLoop()
 	go s.updateCheckLoop()
-	s.refreshTriggerIndex()
-	// The expander needs a way to run command/app snippets and paste image
-	// snippets; it lives in platform code without a *ClipService handle.
-	SetSnippetActionHooks(
-		func(id string) (string, error) { return s.TestSnippet(id) },
-		func(id string) error { return s.pasteImageInline(id) },
-		func(id string) (string, error) { return s.snippetCommandOutput(id) },
-	)
+	s.refreshTriggers()
 	s.applyExpander(s.store.Settings())
 	// Whatever is already on the clipboard when the app starts is also part of
 	// "what went through the clipboard", so record it once.
@@ -480,43 +482,47 @@ func (s *ClipService) SaveSettings(st Settings) (Settings, error) {
 	s.store.Prune(st.MaxItems, st.MaxAgeDays)
 	go s.syncLoop()
 	go s.updateCheckLoop()
-	s.refreshTriggerIndex()
+	s.refreshTriggers()
 	s.applyExpander(s.store.Settings())
 	s.emit("settings:changed", st)
 	s.emit("clip:stats", s.store.Stats())
 	return s.store.Settings(), nil
 }
 
-// applyExpander starts/stops the inline-trigger keyboard hook to match settings.
+// applyExpander pushes trigger settings into the expansion engine.
 func (s *ClipService) applyExpander(st Settings) {
 	suffix := strings.TrimSpace(st.ExpandSuffix)
 	if suffix == "" {
 		suffix = "-"
 	}
-	if st.ExpandEnabled {
-		if err := StartExpander(suffix); err != nil {
-			Logf(s.store.Dir(), "expander start failed: %v", err)
-			return
-		}
-		Logf(s.store.Dir(), "expander enabled (suffix=%q, %d triggers)", suffix, len(triggerSnapshot()))
+	endChars := st.ExpandEndChars
+	if endChars == "" {
+		endChars = DefaultEndChars
+	}
+	err := s.engine.Configure(expand.Config{
+		Enabled:   st.ExpandEnabled,
+		Suffix:    suffix,
+		EndChars:  endChars,
+		Debug:     false,
+		IdleReset: 2 * time.Second,
+		Logf:      func(format string, args ...any) { Logf(s.store.Dir(), format, args...) },
+	})
+	if err != nil {
+		Logf(s.store.Dir(), "expander start failed: %v", err)
 		return
 	}
-	StopExpander()
-}
-
-// triggerSnapshot returns the loaded triggers (for logging/diagnostics).
-func triggerSnapshot() []string {
-	triggerMu.RLock()
-	defer triggerMu.RUnlock()
-	out := make([]string, 0, len(triggerIndex))
-	for k := range triggerIndex {
-		out = append(out, k)
+	if st.ExpandEnabled {
+		Logf(s.store.Dir(), "expander enabled (suffix=%q endChars=%q, %d triggers)",
+			suffix, endChars, s.triggerCount())
 	}
-	return out
 }
 
-// ExpanderActive reports whether the inline expansion hook is installed.
-func (s *ClipService) ExpanderActive() bool { return expanderActive() }
+// triggerCount reports how many triggers are loaded (for diagnostics).
+func (s *ClipService) triggerCount() int {
+	trigMu.RLock()
+	defer trigMu.RUnlock()
+	return len(trigIndex.folded)
+}
 
 // SetCapture is the tray's pause/resume switch.
 func (s *ClipService) SetCapture(enabled bool) (Settings, error) {

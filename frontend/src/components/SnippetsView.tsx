@@ -8,6 +8,7 @@ import { NO_GROUP } from "./Sidebar";
 const KINDS: Array<{ value: string; label: string; hint: string }> = [
   { value: "text", label: "文本", hint: "复制到剪贴板；在弹窗里回车直接粘贴；缩写触发时直接打字出来" },
   { value: "password", label: "密码", hint: "同文本，但在列表里掩码显示；仍会同步；缩写触发时打字出来" },
+  { value: "html", label: "富文本", hint: "粘贴为富文本（HTML，含格式）；Word / 邮件里保留格式" },
   { value: "image", label: "图片", hint: "粘贴 PNG（从剪贴板抓一张）；缩写触发时直接粘贴图片" },
   { value: "file", label: "文件", hint: "一行一个路径；单个目录 = 打开它，文件 = 复制到剪贴板；缩写触发时把路径打出来" },
   { value: "url", label: "网址", hint: "回车用默认浏览器打开，Ctrl+回车只复制；缩写触发时打网址出来" },
@@ -39,7 +40,19 @@ const EMPTY: Snippet = {
   updatedAt: "",
   useCount: 0,
   pinned: false,
+  caseSensitive: false,
+  keepTrigger: false,
+  apps: [],
+  excludeApps: [],
 };
+
+// splitCsv parses the process-list inputs ("code.exe, winword.exe").
+function splitCsv(value: string): string[] {
+  return value
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
 
 export default function SnippetsView(props: Props) {
   const [draft, setDraft] = useState<Snippet>(EMPTY);
@@ -255,9 +268,58 @@ export default function SnippetsView(props: Props) {
             <span className="field-control">
               <input
                 className="input is-trigger"
-                placeholder="例如 addr（结尾加 - 触发）"
+                placeholder="例如 addr"
                 value={draft.trigger}
                 onChange={(e) => setDraft({ ...draft, trigger: e.target.value })}
+              />
+            </span>
+          </label>
+          <p className="snip-hint">
+            打 <code>{draft.trigger || "addr"}</code> 后按空格 / 回车 / 标点即展开（终止符可在设置里改）
+          </p>
+
+          <div className="field is-stacked">
+            <span className="field-label">触发选项</span>
+            <div className="field-control snip-opts">
+              <label className="snip-check">
+                <input
+                  type="checkbox"
+                  checked={draft.caseSensitive ?? false}
+                  onChange={(e) => setDraft({ ...draft, caseSensitive: e.target.checked })}
+                />
+                区分大小写
+              </label>
+              <label className="snip-check">
+                <input
+                  type="checkbox"
+                  checked={draft.keepTrigger ?? false}
+                  onChange={(e) => setDraft({ ...draft, keepTrigger: e.target.checked })}
+                />
+                保留缩写（在后面追加）
+              </label>
+            </div>
+          </div>
+
+          <label className="field">
+            <span className="field-label">仅在此</span>
+            <span className="field-control">
+              <input
+                className="input"
+                placeholder="只在列出的程序里展开，逗号分隔，如 code.exe,winword.exe（留空 = 所有程序）"
+                value={(draft.apps ?? []).join(", ")}
+                onChange={(e) => setDraft({ ...draft, apps: splitCsv(e.target.value) })}
+              />
+            </span>
+          </label>
+
+          <label className="field">
+            <span className="field-label">排除</span>
+            <span className="field-control">
+              <input
+                className="input"
+                placeholder="在这些程序里不展开，如 windowsterminal.exe,mstsc.exe"
+                value={(draft.excludeApps ?? []).join(", ")}
+                onChange={(e) => setDraft({ ...draft, excludeApps: splitCsv(e.target.value) })}
               />
             </span>
           </label>

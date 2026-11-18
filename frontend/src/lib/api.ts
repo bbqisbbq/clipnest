@@ -61,6 +61,7 @@ export function emptySettings(): Settings {
     snippetsInPicker: true,
     expandEnabled: false,
     expandSuffix: '-',
+    expandEndChars: ' \\t,.;:!?)]}',
     syncSettings: true,
     syncDeviceId: '',
     updateCheck: true,

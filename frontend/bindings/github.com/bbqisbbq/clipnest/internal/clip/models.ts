@@ -228,6 +228,13 @@ export interface Settings {
     "expandSuffix": string;
 
     /**
+     * ExpandEndChars are the characters that finish an abbreviation: typing any of
+     * them (space, tab, punctuation) expands. This is what makes "addr␣" work
+     * without remembering a special suffix.
+     */
+    "expandEndChars": string;
+
+    /**
      * UpdateCheck polls GitHub for a newer release shortly after startup.
      */
     "updateCheck": boolean;
@@ -294,6 +301,23 @@ export interface Snippet {
      * for a data URL without knowing about the blob table.
      */
     "imageFile"?: string;
+
+    /**
+     * ---- trigger behaviour ----
+     * CaseSensitive makes "Addr" and "addr" different abbreviations.
+     */
+    "caseSensitive": boolean;
+
+    /**
+     * KeepTrigger inserts the phrase after the abbreviation instead of replacing it.
+     */
+    "keepTrigger": boolean;
+
+    /**
+     * Apps / ExcludeApps limit where the trigger fires (process image names).
+     */
+    "apps"?: string[] | null;
+    "excludeApps"?: string[] | null;
 }
 
 /**
@@ -352,6 +376,11 @@ export enum SnippetKind {
      * 执行命令
      */
     SnippetCommand = "command",
+
+    /**
+     * 富文本（HTML，走剪贴板）
+     */
+    SnippetHTML = "html",
 };
 
 /**

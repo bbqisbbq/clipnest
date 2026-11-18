@@ -325,7 +325,7 @@ func main() {
 	svc.ReconcileAutoStart()
 
 	// The inline expander must not act inside ClipNest's own windows.
-	clip.SetExpanderForegroundGuard(func() bool {
+	svc.SetOwnWindowCheck(func() bool {
 		fg := clip.ForegroundWindowHandle()
 		if fg == 0 {
 			return false

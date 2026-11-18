@@ -34,9 +34,13 @@ func TestSnippetCRUDAndTriggerLookup(t *testing.T) {
 		t.Errorf("groups = %v", got)
 	}
 
-	// Trigger lookup is case-insensitive and feeds the inline expander.
-	if entry, ok := lookupTrigger("ADDR-"); !ok || inlineText(entry) != saved.Body {
-		t.Errorf("lookupTrigger(ADDR-) = %+v,%v", entry, ok)
+	// The engine asks Match what the buffer ends with; case-insensitive by default.
+	trig, n, ok := svc.Match("ADDR")
+	if !ok || n != 4 || trig.ID != saved.ID {
+		t.Errorf("Match(ADDR) = %+v,%d,%v", trig, n, ok)
+	}
+	if text, _ := svc.Render(trig); text != saved.Body {
+		t.Errorf("Render = %q", text)
 	}
 
 	// Saving the same meaning again updates instead of duplicating.
@@ -57,7 +61,7 @@ func TestSnippetCRUDAndTriggerLookup(t *testing.T) {
 	if got := len(svc.GetSnippets("", "")); got != 0 {
 		t.Errorf("snippets = %d after delete", got)
 	}
-	if _, ok := lookupTrigger("addr-"); ok {
+	if _, _, ok := svc.Match("addr"); ok {
 		t.Error("trigger should be gone after delete")
 	}
 }
@@ -190,51 +194,30 @@ func TestSnippetSyncRoundTrip(t *testing.T) {
 	}
 }
 
-func TestInlineModeDispatch(t *testing.T) {
-	cases := []struct {
-		kind SnippetKind
-		mode string
-	}{
-		{SnippetText, inlineType},
-		{SnippetPassword, inlineType},
-		{SnippetURL, inlineType},
-		{SnippetFile, inlineType},
-		{SnippetImage, inlineImage},
-		{SnippetCommand, inlineRun},
-		{SnippetApp, inlineExecute},
+func TestTriggerIndexRoundTrip(t *testing.T) {
+	svc := newTestService(t, t.TempDir())
+	saved, err := svc.SaveSnippet(Snippet{
+		Kind: SnippetCommand, Title: "查看分支", Trigger: "gb-", Body: "git branch -vv",
+		CaseSensitive: true, KeepTrigger: true,
+		Apps: []string{"code"}, ExcludeApps: []string{"windowsterminal"},
+	}, "")
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, c := range cases {
-		if got := inlineMode(c.kind); got != c.mode {
-			t.Errorf("inlineMode(%s) = %s, want %s", c.kind, got, c.mode)
-		}
+	trig, n, ok := svc.Match("gb-")
+	if !ok || n != 3 || trig.ID != saved.ID {
+		t.Fatalf("Match(gb-) = %+v, %d, %v", trig, n, ok)
+	}
+	if !trig.CaseSensitive || !trig.KeepTrigger {
+		t.Errorf("options lost: %+v", trig)
+	}
+	if len(trig.Apps) != 1 || trig.Apps[0] != "code" || len(trig.ExcludeApps) != 1 {
+		t.Errorf("app filters lost: %+v / %+v", trig.Apps, trig.ExcludeApps)
+	}
+	// Case-sensitive triggers only match the exact spelling.
+	if _, _, ok := svc.Match("GB"); ok && trig.CaseSensitive {
+		t.Error("case-sensitive trigger must not match differently-cased text")
 	}
 
 	// A command snippet must be reachable through its trigger: that was the bug
-	// where `gb-` (命令) silently did nothing while `th-` (文本) expanded.
-	svc := newTestService(t, t.TempDir())
-	if _, err := svc.SaveSnippet(Snippet{Kind: SnippetCommand, Title: "查看分支", Trigger: "gb-", Body: "git branch -vv"}, ""); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := svc.SaveSnippet(Snippet{Kind: SnippetFile, Title: "项目目录", Trigger: "dir-", Body: "E:\\\\default\\\\clipnest\\nE:\\\\default\\\\ops"}, ""); err != nil {
-		t.Fatal(err)
-	}
-
-	entry, ok := lookupTrigger("gb")
-	if !ok {
-		t.Fatal("command trigger gb- not indexed")
-	}
-	if inlineMode(entry.Kind) != inlineRun {
-		t.Errorf("gb- mode = %s, want run (命令跑完把输出打到光标处)", inlineMode(entry.Kind))
-	}
-	if inlineText(entry) != "" {
-		t.Errorf("command snippet should have no inline text, got %q", inlineText(entry))
-	}
-
-	fileEntry, ok := lookupTrigger("dir")
-	if !ok {
-		t.Fatal("file trigger dir- not indexed")
-	}
-	if got := inlineText(fileEntry); got != "E:\\\\default\\\\clipnest\\nE:\\\\default\\\\ops" {
-		t.Errorf("file snippet inline text = %q", got)
-	}
 }

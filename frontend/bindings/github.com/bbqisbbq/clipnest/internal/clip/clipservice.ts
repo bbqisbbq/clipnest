@@ -12,6 +12,10 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as expand$0 from "../expand/models.js";
+
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as $models from "./models.js";
 
 /**
@@ -27,6 +31,13 @@ export function AutoStartTarget(): $CancellablePromise<string> {
  */
 export function CheckUpdate(): $CancellablePromise<$models.UpdateInfo> {
     return $Call.ByID(2960176974);
+}
+
+/**
+ * CommandOutput runs a command trigger and returns its output for typing.
+ */
+export function CommandOutput(t: expand$0.Trigger): $CancellablePromise<string> {
+    return $Call.ByID(4282221819, t);
 }
 
 /**
@@ -73,10 +84,24 @@ export function DraftSnippetFromItem(itemID: string): $CancellablePromise<$model
 }
 
 /**
- * ExpanderActive reports whether the inline expansion hook is installed.
+ * ExpandActive reports whether the keyboard hook is installed.
  */
-export function ExpanderActive(): $CancellablePromise<boolean> {
-    return $Call.ByID(634901060);
+export function ExpandActive(): $CancellablePromise<boolean> {
+    return $Call.ByID(2704746155);
+}
+
+/**
+ * FallbackPaste delivers text through the clipboard when injection is refused.
+ */
+export function FallbackPaste(text: string): $CancellablePromise<void> {
+    return $Call.ByID(1942768190, text);
+}
+
+/**
+ * ForegroundProcess is the focused window's image name ("code.exe").
+ */
+export function ForegroundProcess(): $CancellablePromise<string> {
+    return $Call.ByID(308569877);
 }
 
 /**
@@ -202,11 +227,32 @@ export function IsAutoStartEnabled(): $CancellablePromise<boolean> {
 }
 
 /**
+ * IsOwnWindow reports whether ClipNest itself is focused.
+ */
+export function IsOwnWindow(): $CancellablePromise<boolean> {
+    return $Call.ByID(900724871);
+}
+
+/**
+ * LaunchApp starts a program trigger.
+ */
+export function LaunchApp(t: expand$0.Trigger): $CancellablePromise<void> {
+    return $Call.ByID(2344310645, t);
+}
+
+/**
  * LogClient records a frontend error/note in clipnest.log, so a blank window or
  * a broken binding can be diagnosed from outside the webview.
  */
 export function LogClient(message: string): $CancellablePromise<void> {
     return $Call.ByID(3758327778, message);
+}
+
+/**
+ * Match returns the longest trigger that buf ends with (engine-side matching).
+ */
+export function Match(buf: string): $CancellablePromise<[expand$0.Trigger, number, boolean]> {
+    return $Call.ByID(472413710, buf);
 }
 
 /**
@@ -229,6 +275,13 @@ export function OpenItem(id: string): $CancellablePromise<void> {
  */
 export function OpenReleasePage(): $CancellablePromise<void> {
     return $Call.ByID(708832825);
+}
+
+/**
+ * PasteImage inserts an image trigger (images have no text form).
+ */
+export function PasteImage(t: expand$0.Trigger): $CancellablePromise<void> {
+    return $Call.ByID(1510693501, t);
 }
 
 /**
@@ -292,6 +345,14 @@ export function RefreshItem(id: string): $CancellablePromise<$models.Item> {
 }
 
 /**
+ * Render substitutes template variables for text-like triggers and reports the
+ * {{cursor}} offset.
+ */
+export function Render(t: expand$0.Trigger): $CancellablePromise<[string, number]> {
+    return $Call.ByID(2172096837, t);
+}
+
+/**
  * SaveItemAsSnippet turns a clipboard-history entry into a snippet ("存为片段"),
  * so something you just copied can become a reusable phrase with a trigger.
  */
@@ -327,6 +388,14 @@ export function SetAutoStart(enabled: boolean): $CancellablePromise<$models.Sett
  */
 export function SetCapture(enabled: boolean): $CancellablePromise<$models.Settings> {
     return $Call.ByID(1998003171, enabled);
+}
+
+/**
+ * SetOwnWindowCheck lets the app tell the engine which windows are ours, so
+ * triggers never fire inside ClipNest's own inputs.
+ */
+export function SetOwnWindowCheck(fn: any): $CancellablePromise<void> {
+    return $Call.ByID(2318530103, fn);
 }
 
 /**
@@ -383,4 +452,12 @@ export function TestSnippet(id: string): $CancellablePromise<string> {
  */
 export function TestSync(): $CancellablePromise<string> {
     return $Call.ByID(292331458);
+}
+
+/**
+ * TriggerPreview validates a trigger against the current settings and returns a
+ * warning for the editor ("" when the trigger is fine).
+ */
+export function TriggerPreview(trigger: string): $CancellablePromise<string> {
+    return $Call.ByID(1493429405, trigger);
 }

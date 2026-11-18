@@ -6,160 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"sync"
-	"unicode"
 )
-
-// Trigger index: snippets that expand inline, loaded into memory so the keyboard
-// hook never touches SQLite (it runs on every keystroke).
-
-type triggerEntry struct {
-	ID    string
-	Kind  SnippetKind
-	Title string
-	Body  string
-}
-
-var (
-	triggerMu    sync.RWMutex
-	triggerIndex map[string]triggerEntry
-)
-
-// refreshTriggerIndex reloads the in-memory trigger table.
-func (s *ClipService) refreshTriggerIndex() {
-	suffix := strings.TrimSpace(s.store.Settings().ExpandSuffix)
-	if suffix == "" {
-		suffix = "-"
-	}
-	next := make(map[string]triggerEntry, 32)
-	for _, sp := range s.store.AllSnippets() {
-		raw := NormalizeTrigger(sp.Trigger)
-		if raw == "" {
-			continue
-		}
-		entry := triggerEntry{ID: sp.ID, Kind: sp.Kind, Title: sp.Title, Body: sp.Body}
-		next[raw] = entry
-		// The hook matches "<缩写><后缀>" and looks up the abbreviation part, so
-		// "addr-" must also be reachable as "addr". Strip the configured suffix,
-		// and (belt and braces) any trailing punctuation the user typed in.
-		if trimmed := strings.TrimSuffix(raw, strings.ToLower(suffix)); trimmed != "" && trimmed != raw {
-			next[trimmed] = entry
-		}
-		if trimmed := strings.TrimRightFunc(raw, func(r rune) bool {
-			return !unicode.IsLetter(r) && !unicode.IsDigit(r)
-		}); trimmed != "" && trimmed != raw {
-			next[trimmed] = entry
-		}
-	}
-	triggerMu.Lock()
-	triggerIndex = next
-	triggerMu.Unlock()
-}
-
-// Inline expansion modes: what a trigger does when it fires.
-const (
-	// inlineType types the snippet text at the caret (no clipboard involved).
-	inlineType = "type"
-	// inlineImage pastes the snippet image; an image cannot be typed.
-	inlineImage = "image"
-	// inlineExecute runs the snippet action (program): nothing to type afterwards.
-	inlineExecute = "execute"
-	// inlineRun runs a command and types its output at the caret — the output is
-	// the point, a command that runs silently is useless while writing.
-	inlineRun = "run"
-)
-
-// inlineMode says how a snippet kind behaves when its trigger fires. Every kind
-// is usable as a trigger: the ones that carry no text simply run their action
-// instead of silently doing nothing.
-func inlineMode(kind SnippetKind) string {
-	switch kind {
-	case SnippetText, SnippetPassword, SnippetURL, SnippetFile:
-		return inlineType
-	case SnippetImage:
-		return inlineImage
-	case SnippetCommand:
-		return inlineRun
-	case SnippetApp:
-		return inlineExecute
-	}
-	return inlineType
-}
-
-// inlineText is the text typed for a "type" snippet ("" for other modes).
-func inlineText(e triggerEntry) string {
-	if inlineMode(e.Kind) != inlineType {
-		return ""
-	}
-	if e.Kind == SnippetFile {
-		return strings.Join(splitPaths(e.Body), "\n")
-	}
-	return e.Body
-}
-
-// lookupTrigger is called by the expander for every keystroke. Every kind comes
-// back: a command or app snippet has no text to type, but its trigger must still
-// run the action rather than silently ignoring the abbreviation.
-func lookupTrigger(key string) (triggerEntry, bool) {
-	triggerMu.RLock()
-	defer triggerMu.RUnlock()
-	e, ok := triggerIndex[NormalizeTrigger(key)]
-	return e, ok
-}
-
-// snippetActionHooks lets the platform expander execute actions and paste images
-// without owning a *ClipService.
-var (
-	snippetHookMu         sync.RWMutex
-	runSnippetByIDHook    func(id string) (string, error)
-	pasteSnippetImageHook func(id string) error
-	commandOutputHook     func(id string) (string, error)
-)
-
-// SetSnippetActionHooks wires the service into the expander. commandOutput runs a
-// command snippet and returns its output, which the expander types at the caret.
-func SetSnippetActionHooks(
-	run func(id string) (string, error),
-	pasteImage func(id string) error,
-	commandOutput func(id string) (string, error),
-) {
-	snippetHookMu.Lock()
-	runSnippetByIDHook = run
-	pasteSnippetImageHook = pasteImage
-	commandOutputHook = commandOutput
-	snippetHookMu.Unlock()
-}
-
-func commandOutputForID(id string) (string, error) {
-	snippetHookMu.RLock()
-	fn := commandOutputHook
-	snippetHookMu.RUnlock()
-	if fn == nil {
-		return "", errors.New("命令执行器还没准备好")
-	}
-	return fn(id)
-}
-
-func runSnippetByID(id string) (string, error) {
-	snippetHookMu.RLock()
-	fn := runSnippetByIDHook
-	snippetHookMu.RUnlock()
-	if fn == nil {
-		return "", errors.New("片段动作还没准备好")
-	}
-	return fn(id)
-}
-
-func pasteSnippetImage(id string) error {
-	snippetHookMu.RLock()
-	fn := pasteSnippetImageHook
-	snippetHookMu.RUnlock()
-	if fn == nil {
-		return errors.New("片段图片刚准备好")
-	}
-	return fn(id)
-}
-
 
 func init() {
 	// {{clipboard}} 读取当前剪贴板文本
@@ -218,7 +65,7 @@ func (s *ClipService) SaveItemAsSnippet(itemID string) (Snippet, error) {
 			_ = s.store.SaveSnippetBlob(saved.ID, ".png", payload)
 		}
 	}
-	s.refreshTriggerIndex()
+	s.refreshTriggers()
 	Logf(s.store.Dir(), "snippet from history: item=%s -> snippet=%s (%s)", it.ID, saved.ID, saved.Kind)
 	out, ok := s.store.GetSnippet(saved.ID)
 	if !ok {
@@ -268,6 +115,21 @@ func (s *ClipService) runSnippet(sp Snippet, paste bool, target uintptr) (string
 			return "已复制密码", nil
 		}
 		return "已复制", nil
+
+	case SnippetHTML:
+		// Rich text can only travel through the clipboard (CF_HTML + plain text).
+		plain := strings.TrimSpace(stripHTML(sp.Body))
+		if err := WriteHTMLToClipboard(sp.Body, plain); err != nil {
+			return "", err
+		}
+		if paste && target != 0 {
+			go s.pasteAndLog(target, "snippet-html")
+			return "已粘贴富文本", nil
+		}
+		if target != 0 {
+			go ActivateWindow(target)
+		}
+		return "已复制富文本", nil
 
 	case SnippetImage:
 		payload, err := s.store.SnippetBlob(sp.ID)
@@ -529,4 +391,26 @@ func (s *ClipService) GrabClipboardImage() (string, error) {
 		return "", nil
 	}
 	return encodeBase64(cap.PNG), nil
+}
+
+// stripHTML makes a crude plain-text fallback for the HTML clipboard format.
+func stripHTML(s string) string {
+	var b strings.Builder
+	depth := 0
+	for _, r := range s {
+		switch r {
+		case '<':
+			depth++
+			continue
+		case '>':
+			if depth > 0 {
+				depth--
+			}
+			continue
+		}
+		if depth == 0 {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }

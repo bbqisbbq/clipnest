@@ -420,15 +420,31 @@ export default function SettingsView(props: Props) {
             >
               <Switch checked={draft.expandEnabled} onChange={(v) => patch({ expandEnabled: v })} />
             </Row>
-            <Row label="触发后缀" tip="缩写后面补这个字符即展开，默认 -。改完后需要点保存。">
-              <input
-                className="input is-trigger"
-                value={draft.expandSuffix}
-                placeholder="-"
-                onChange={(e) => patch({ expandSuffix: e.target.value })}
-              />
-            </Row>
+              <Row label="触发字符" tip="终止符：缩写后面打这些字符中的任意一个就展开（空格、回车、Tab、逗号、句号等）。默认包含空格，所以打完 addr 按空格即可。">
+                <input
+                  className="input is-trigger"
+                  value={draft.expandEndChars}
+                  placeholder="<space> \\t,.;:!?)]}"
+                  onChange={(e) => patch({ expandEndChars: e.target.value })}
+                />
+              </Row>
           </Section>
+
+            <Section title="外观" desc="深色是默认；浅色模式下所有颜色 token 都会换一套，包括下拉框选项。">
+              <Row label="主题" tip="跟随系统会随 Windows 的深色/浅色设置自动切换。">
+                <div className="seg-control">
+                  {(["system", "dark", "light"] as const).map((choice) => (
+                    <button
+                      key={choice}
+                      className={`seg-item ${(draft.theme ?? "system") === choice ? "is-on" : ""}`}
+                      onClick={() => patch({ theme: choice })}
+                    >
+                      {choice === "system" ? "跟随系统" : choice === "dark" ? "深色" : "浅色"}
+                    </button>
+                  ))}
+                </div>
+              </Row>
+            </Section>
 
           <Section title="更新" desc="从 GitHub Releases 检查新版本，下载后静默安装并重启。">
             <Row label="自动检查更新" tip="启动 8 秒后检查一次 GitHub 上的最新发布。发现新版本会在窗口顶部提示。">

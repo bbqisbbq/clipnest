@@ -96,7 +96,11 @@ CREATE TABLE IF NOT EXISTS snippets (
   created_at   TEXT NOT NULL,
   updated_at   TEXT NOT NULL,
   use_count    INTEGER NOT NULL DEFAULT 0,
-  pinned       INTEGER NOT NULL DEFAULT 0
+  pinned       INTEGER NOT NULL DEFAULT 0,
+  case_sensitive INTEGER NOT NULL DEFAULT 0,
+  keep_trigger   INTEGER NOT NULL DEFAULT 0,
+  apps           TEXT NOT NULL DEFAULT '',
+  exclude_apps   TEXT NOT NULL DEFAULT ''
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_snippets_hash ON snippets(hash);
 CREATE INDEX IF NOT EXISTS idx_snippets_trigger ON snippets(trigger_key);
@@ -135,6 +139,15 @@ func Open(dir string) (*Store, error) {
 	// Older databases predate the snippet tombstones: add the scope column in
 	// place. SQLite has no "ADD COLUMN IF NOT EXISTS", so the error is expected.
 	_, _ = db.Exec(`ALTER TABLE tombstones ADD COLUMN scope TEXT NOT NULL DEFAULT 'item'`)
+	// 片段触发选项（0.9.x 起）：老库补齐列
+	for _, stmt := range []string{
+		`ALTER TABLE snippets ADD COLUMN case_sensitive INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE snippets ADD COLUMN keep_trigger INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE snippets ADD COLUMN apps TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE snippets ADD COLUMN exclude_apps TEXT NOT NULL DEFAULT ''`,
+	} {
+		_, _ = db.Exec(stmt)
+	}
 
 	logDirValue.Store(dir)
 	s := &Store{

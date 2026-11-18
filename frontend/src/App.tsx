@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Events } from "@wailsio/runtime";
+import { applyTheme, watchSystemTheme, type ThemeChoice } from "./lib/theme";
 import { ClipService, EventNames, newFilter, type AppInfo, type Item, type Settings, type Snippet, type Stats, type SyncStatus, type UpdateInfo } from "./lib/api";
 import TitleBar from "./components/TitleBar";
 import Sidebar from "./components/Sidebar";
@@ -138,6 +139,14 @@ export default function App() {
   useEffect(() => {
     if (view === "snippets") void loadSnippets();
   }, [view, loadSnippets]);
+
+  // 主题：设置里选「跟随系统 / 深色 / 浅色」，最终结果写到 <html data-theme>
+  const themeChoice = (settings?.theme ?? "system") as ThemeChoice;
+  useEffect(() => {
+    applyTheme(themeChoice);
+    localStorage.setItem("clipnest.theme", themeChoice);
+    return watchSystemTheme(() => themeChoice);
+  }, [themeChoice]);
 
   // 把一条剪贴板历史塞进片段编辑器（可改标题/类型/正文再保存）
   const editAsSnippet = useCallback(

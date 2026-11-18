@@ -54,6 +54,10 @@ type Settings struct {
 	ExpandEnabled bool `json:"expandEnabled"`
 	// ExpandSuffix is the character(s) that complete a trigger, e.g. "-".
 	ExpandSuffix string `json:"expandSuffix"`
+	// ExpandEndChars are the characters that finish an abbreviation: typing any of
+	// them (space, tab, punctuation) expands. This is what makes "addr␣" work
+	// without remembering a special suffix.
+	ExpandEndChars string `json:"expandEndChars"`
 
 	// UpdateCheck polls GitHub for a newer release shortly after startup.
 	UpdateCheck bool `json:"updateCheck"`
@@ -112,6 +116,7 @@ func DefaultSettings() Settings {
 		SnippetsInPicker: true,
 		ExpandEnabled:    false,
 		ExpandSuffix:     "-",
+		ExpandEndChars:   DefaultEndChars,
 		UpdateCheck:      true,
 	}
 }

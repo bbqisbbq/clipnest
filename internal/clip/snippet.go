@@ -27,6 +27,7 @@ const (
 	SnippetURL      SnippetKind = "url"      // 网址
 	SnippetApp      SnippetKind = "app"      // 启动程序（可带参数）
 	SnippetCommand  SnippetKind = "command"  // 执行命令
+	SnippetHTML     SnippetKind = "html"     // 富文本（HTML，走剪贴板）
 )
 
 // Snippet is one reusable entry.
@@ -46,6 +47,15 @@ type Snippet struct {
 	// ImageFile mirrors the item convention ("<id>.png") so the webview can ask
 	// for a data URL without knowing about the blob table.
 	ImageFile string `json:"imageFile,omitempty"`
+
+	// ---- trigger behaviour ----
+	// CaseSensitive makes "Addr" and "addr" different abbreviations.
+	CaseSensitive bool `json:"caseSensitive"`
+	// KeepTrigger inserts the phrase after the abbreviation instead of replacing it.
+	KeepTrigger bool `json:"keepTrigger"`
+	// Apps / ExcludeApps limit where the trigger fires (process image names).
+	Apps        []string `json:"apps,omitempty"`
+	ExcludeApps []string `json:"excludeApps,omitempty"`
 }
 
 // snippetHash keys a snippet by its meaning, so the same phrase saved on two
@@ -68,7 +78,8 @@ func NormalizeTrigger(t string) string {
 // same row: the store uses a single connection, so querying it per row while the
 // result set is open would deadlock.
 const snippetColumns = `s.id, s.kind, s.title, s.trigger_key, s.group_name, s.body, s.hash,
-	s.size, s.created_at, s.updated_at, s.use_count, s.pinned, COALESCE(b.ext, '')`
+	s.size, s.created_at, s.updated_at, s.use_count, s.pinned, COALESCE(b.ext, ''),
+	s.case_sensitive, s.keep_trigger, s.apps, s.exclude_apps`
 
 const selectSnippets = `SELECT ` + snippetColumns +
 	` FROM snippets s LEFT JOIN snippet_blobs b ON b.snippet_id = s.id`
@@ -80,15 +91,24 @@ func scanSnippet(sc scannable) (Snippet, error) {
 		createdAt, updatedAt string
 		pinned               int
 		blobExt              string
+		caseSensitive        int
+		keepTrigger          int
+		apps                 string
+		excludeApps          string
 	)
 	if err := sc.Scan(&sp.ID, &kind, &sp.Title, &sp.Trigger, &sp.Group, &sp.Body, &sp.Hash,
-		&sp.Size, &createdAt, &updatedAt, &sp.UseCount, &pinned, &blobExt); err != nil {
+		&sp.Size, &createdAt, &updatedAt, &sp.UseCount, &pinned, &blobExt,
+		&caseSensitive, &keepTrigger, &apps, &excludeApps); err != nil {
 		return Snippet{}, err
 	}
 	sp.Kind = SnippetKind(kind)
 	sp.CreatedAt = decodeTime(createdAt)
 	sp.UpdatedAt = decodeTime(updatedAt)
 	sp.Pinned = pinned != 0
+	sp.CaseSensitive = caseSensitive != 0
+	sp.KeepTrigger = keepTrigger != 0
+	sp.Apps = splitList(apps)
+	sp.ExcludeApps = splitList(excludeApps)
 	if blobExt != "" {
 		sp.ImageFile = sp.ID + blobExt
 	}
@@ -137,6 +157,7 @@ func (s *Store) SaveSnippet(in Snippet) (Snippet, error) {
 		); err != nil {
 			return Snippet{}, err
 		}
+		s.setSnippetOptions(in.ID, in)
 		out, ok := s.GetSnippet(in.ID)
 		if !ok {
 			return Snippet{}, errors.New("保存后读取失败")
@@ -367,6 +388,7 @@ func (s *Store) UpsertRemoteSnippet(in Snippet) (isNew bool, changed bool) {
 	); err != nil {
 		return false, false
 	}
+	s.setSnippetOptions(sp.ID, sp)
 	return true, true
 }
 
@@ -441,7 +463,7 @@ func (s *ClipService) SaveSnippet(sp Snippet, imageDataB64 string) (Snippet, err
 		}
 		saved.ImageFile = saved.ID + ".png"
 	}
-	s.refreshTriggerIndex()
+	s.refreshTriggers()
 	out, ok := s.store.GetSnippet(saved.ID)
 	if !ok {
 		return Snippet{}, errors.New("片段保存后读取失败")
@@ -453,7 +475,7 @@ func (s *ClipService) SaveSnippet(sp Snippet, imageDataB64 string) (Snippet, err
 func (s *ClipService) DeleteSnippet(id string) bool {
 	ok := s.store.DeleteSnippet(id)
 	if ok {
-		s.refreshTriggerIndex()
+		s.refreshTriggers()
 	}
 	return ok
 }
@@ -525,4 +547,39 @@ func triggerScore(sp Snippet, q string) int {
 		return 2
 	}
 	return 3
+}
+
+// splitList parses a comma-separated process list stored in SQLite.
+func splitList(s string) []string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil
+	}
+	out := make([]string, 0, 4)
+	for _, part := range strings.Split(s, ",") {
+		if t := strings.TrimSpace(part); t != "" {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// joinList renders a process list for storage.
+func joinList(list []string) string {
+	cleaned := make([]string, 0, len(list))
+	for _, p := range list {
+		if t := strings.TrimSpace(p); t != "" {
+			cleaned = append(cleaned, t)
+		}
+	}
+	return strings.Join(cleaned, ",")
+}
+// setSnippetOptions stores the trigger behaviour flags. Kept as a separate write
+// so adding a new option never means touching the big INSERT/UPDATE statements.
+func (s *Store) setSnippetOptions(id string, sp Snippet) {
+	_, _ = s.db.Exec(
+		`UPDATE snippets SET case_sensitive=?, keep_trigger=?, apps=?, exclude_apps=? WHERE id=?`,
+		boolInt(sp.CaseSensitive), boolInt(sp.KeepTrigger),
+		joinList(sp.Apps), joinList(sp.ExcludeApps), id,
+	)
 }

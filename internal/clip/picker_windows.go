@@ -23,6 +23,7 @@ var (
 	procSetForegroundWindow = user32.NewProc("SetForegroundWindow")
 	procBringWindowToTop   = user32.NewProc("BringWindowToTop")
 	procShowWindow         = user32.NewProc("ShowWindow")
+	procIsIconic           = user32.NewProc("IsIconic")
 	procAttachThreadInput  = user32.NewProc("AttachThreadInput")
 	procSetFocus           = user32.NewProc("SetFocus")
 	procGetCurrentThreadID = kernel32.NewProc("GetCurrentThreadId")
@@ -33,6 +34,7 @@ const (
 	monitorDefaultToNearest = 0x00000002
 	swRestore               = 9
 	vkControl               = 0x11
+	vkBack                  = 0x08
 	vkLeft                  = 0x25
 	vkMenu                  = 0x12
 	vkV                     = 0x56
@@ -185,7 +187,12 @@ func ActivateWindow(hwnd uintptr) {
 	if hwnd == 0 {
 		return
 	}
-	procShowWindow.Call(hwnd, swRestore)
+	// Only restore a *minimized* window. Calling SW_RESTORE unconditionally
+	// un-maximizes a maximized window, which is exactly the "粘贴后窗口退出最大
+	// 化" bug: the picker stole focus, we "restored" the target back to normal.
+	if iconic, _, _ := procIsIconic.Call(hwnd); iconic != 0 {
+		procShowWindow.Call(hwnd, swRestore)
+	}
 
 	fg, _, _ := procGetForegroundWindow.Call()
 	if fg == hwnd {
