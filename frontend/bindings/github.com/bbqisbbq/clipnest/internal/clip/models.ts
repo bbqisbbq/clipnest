@@ -146,6 +146,51 @@ export enum Kind {
 };
 
 /**
+ * Memo is one note.
+ */
+export interface Memo {
+    "id": string;
+    "content": string;
+    "tags": string[] | null;
+    "pinned": boolean;
+    "archived": boolean;
+
+    /**
+     * manual | clipboard | snippet | import
+     */
+    "source": string;
+
+    /**
+     * which program it came from
+     */
+    "sourceApp": string;
+    "hash": string;
+    "createdAt": string;
+    "updatedAt": string;
+}
+
+/**
+ * MemoFilter drives the list query.
+ */
+export interface MemoFilter {
+    "query": string;
+    "tag": string;
+    "pinned": boolean;
+    "archived": boolean;
+    "limit": number;
+}
+
+/**
+ * MemoStats summarises the module for the sidebar.
+ */
+export interface MemoStats {
+    "total": number;
+    "pinned": number;
+    "archived": number;
+    "today": number;
+}
+
+/**
  * Settings controls capture behaviour and the UI. It is persisted as JSON next
  * to the item log.
  */
@@ -246,6 +291,17 @@ export interface Settings {
      * without remembering a special suffix.
      */
     "expandEndChars": string;
+
+    /**
+     * ---- appearance ----
+     * ThemePreset selects a palette (see frontend/src/lib/themes.ts).
+     */
+    "themePreset": string;
+
+    /**
+     * ThemeCustomCSS is user-authored CSS applied on top of the preset.
+     */
+    "themeCustomCss": string;
 
     /**
      * UpdateCheck polls GitHub for a newer release shortly after startup.

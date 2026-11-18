@@ -2,6 +2,7 @@ import type { Stats } from "../lib/api";
 import {
   IconAll,
   IconFiles,
+  IconFolder,
   IconImage,
   IconLink,
   IconOther,
@@ -12,6 +13,7 @@ import {
   IconSearch,
   IconSettings,
   IconSnippet,
+  IconMemo,
   IconStar,
   IconSync,
   IconText,
@@ -21,17 +23,21 @@ import {
 // 后面加新功能时只需要在 PRIMARY 里加一项，并在下面给它一段二级列表。
 
 type Props = {
-  view: "history" | "settings" | "snippets";
+  view: "history" | "settings" | "snippets" | "memos";
   kind: string;
   pinnedOnly: boolean;
   snippetGroup: string;
   snippetGroups: string[];
+  memoFilter: { tag: string; pinned: boolean; archived: boolean };
+  memoTags: string[];
+  memoCount: number;
   stats: Stats | null;
   snippetCount: number;
   capturing: boolean;
   syncActive: boolean;
   onSelectHistory: (kind: string, pinnedOnly: boolean) => void;
   onSelectSnippets: (group: string) => void;
+  onSelectMemos: (filter: { tag?: string; pinned?: boolean; archived?: boolean }) => void;
   onOpenSearch: () => void;
   onOpenSettings: () => void;
   onToggleCapture: () => void;
@@ -53,6 +59,7 @@ export default function Sidebar(props: Props) {
   const { view, kind, pinnedOnly, snippetGroup, stats } = props;
   const history = view === "history";
   const snippets = view === "snippets";
+  const memos = view === "memos";
   const count = (k: string) => stats?.byKind?.[k] ?? 0;
 
   return (
@@ -74,6 +81,14 @@ export default function Sidebar(props: Props) {
             <IconSnippet size={15} />
             <span>片段</span>
             <em>{props.snippetCount}</em>
+          </button>
+          <button
+            className={`side-item side-primary ${memos ? "is-active" : ""}`}
+            onClick={() => props.onSelectMemos({})}
+          >
+            <IconMemo size={15} />
+            <span>备忘</span>
+            <em>{props.memoCount}</em>
           </button>
         </div>
 
@@ -113,6 +128,52 @@ export default function Sidebar(props: Props) {
                 </button>
               ))}
             </div>
+          </>
+        ) : null}
+
+        {memos ? (
+          <>
+            <div className="side-label">筛选</div>
+            <div className="side-sub">
+              <button
+                className={`side-item ${!props.memoFilter.pinned && !props.memoFilter.archived && !props.memoFilter.tag ? "is-active" : ""}`}
+                onClick={() => props.onSelectMemos({})}
+              >
+                <IconAll size={15} />
+                <span>全部备忘</span>
+              </button>
+              <button
+                className={`side-item ${props.memoFilter.pinned ? "is-active" : ""}`}
+                onClick={() => props.onSelectMemos({ pinned: true })}
+              >
+                <IconStar size={15} />
+                <span>置顶</span>
+              </button>
+              <button
+                className={`side-item ${props.memoFilter.archived ? "is-active" : ""}`}
+                onClick={() => props.onSelectMemos({ archived: true })}
+              >
+                <IconFolder size={15} />
+                <span>已归档</span>
+              </button>
+            </div>
+
+            {props.memoTags.length > 0 ? (
+              <>
+                <div className="side-label">标签</div>
+                <div className="side-sub">
+                  {props.memoTags.slice(0, 30).map((tag) => (
+                    <button
+                      key={tag}
+                      className={`side-item ${props.memoFilter.tag === tag ? "is-active" : ""}`}
+                      onClick={() => props.onSelectMemos({ tag })}
+                    >
+                      <span>#{tag}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : null}
           </>
         ) : null}
 

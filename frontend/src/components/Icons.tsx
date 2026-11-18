@@ -244,3 +244,21 @@ export const IconSnippet = ({ size = 16, className }: IconProps) => (
     <path d="M10.6 5.4l1.5 1.2-1.5 1.2" />
   </svg>
 );
+// 备忘：一条带折角的便签
+export const IconMemo = ({ size = 16, className }: IconProps) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 16 16"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.4"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className={className}
+  >
+    <path d="M3 2.5h7.5L13 5v8.5H3z" />
+    <path d="M10.5 2.5V5H13" />
+    <path d="M5.2 8h5.6M5.2 10.6h3.8" />
+  </svg>
+);

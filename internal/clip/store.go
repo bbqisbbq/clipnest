@@ -111,6 +111,26 @@ CREATE TABLE IF NOT EXISTS snippet_blobs (
   data       BLOB NOT NULL
 );
 
+-- 备忘（Memos 形态的碎片笔记）：正文是 Markdown，标签从正文 #tag 派生
+CREATE TABLE IF NOT EXISTS memos (
+  id         TEXT PRIMARY KEY,
+  content    TEXT NOT NULL,
+  tags       TEXT NOT NULL DEFAULT '',
+  pinned     INTEGER NOT NULL DEFAULT 0,
+  archived   INTEGER NOT NULL DEFAULT 0,
+  source     TEXT NOT NULL DEFAULT 'manual',
+  source_app TEXT NOT NULL DEFAULT '',
+  hash       TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_memos_updated ON memos(archived, pinned, updated_at DESC);
+
+-- 中文可搜：trigram 分词，支持子串命中（SQLite 内置 FTS5）
+CREATE VIRTUAL TABLE IF NOT EXISTS memos_fts USING fts5(
+  id UNINDEXED, content, tags, tokenize='trigram'
+);
+
 -- Small key/value scratch space (sync fingerprints and other one-off flags).
 CREATE TABLE IF NOT EXISTS meta (
   k TEXT PRIMARY KEY,

@@ -15,6 +15,7 @@ type Props = {
   onRefresh: () => void;
   onSaveAsSnippet: () => void;
   onEditAsSnippet: () => void;
+  onSaveAsMemo: () => void;
 };
 
 export default function DetailPanel(props: Props) {
@@ -158,6 +159,10 @@ export default function DetailPanel(props: Props) {
         <span className="detail-snippet-sep">·</span>
         <button className="link-btn" onClick={props.onSaveAsSnippet} title="直接存成片段（之后到片段页配缩写）">
           存为片段
+        </button>
+        <span className="detail-snippet-sep">·</span>
+        <button className="link-btn" onClick={props.onSaveAsMemo} title="把这条写进备忘（可继续补充内容、加标签）">
+          存为备忘
         </button>
       </div>
       <footer className="detail-actions">

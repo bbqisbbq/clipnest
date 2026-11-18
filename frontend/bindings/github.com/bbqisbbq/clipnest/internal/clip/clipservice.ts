@@ -55,6 +55,13 @@ export function DeleteItem(id: string): $CancellablePromise<void> {
 }
 
 /**
+ * DeleteMemo removes a note.
+ */
+export function DeleteMemo(id: string): $CancellablePromise<boolean> {
+    return $Call.ByID(94505264, id);
+}
+
+/**
  * DeleteSnippet removes one snippet.
  */
 export function DeleteSnippet(id: string): $CancellablePromise<boolean> {
@@ -138,6 +145,27 @@ export function GetItem(id: string): $CancellablePromise<$models.Item> {
  */
 export function GetItems(filter: $models.Filter): $CancellablePromise<$models.Item[] | null> {
     return $Call.ByID(1680529985, filter);
+}
+
+/**
+ * GetMemoStats reports the badges for the sidebar.
+ */
+export function GetMemoStats(): $CancellablePromise<$models.MemoStats> {
+    return $Call.ByID(1130702568);
+}
+
+/**
+ * GetMemoTags lists tags in use.
+ */
+export function GetMemoTags(): $CancellablePromise<string[] | null> {
+    return $Call.ByID(2704337076);
+}
+
+/**
+ * GetMemos lists notes for the manager view.
+ */
+export function GetMemos(filter: $models.MemoFilter): $CancellablePromise<$models.Memo[] | null> {
+    return $Call.ByID(119095950, filter);
 }
 
 /**
@@ -264,6 +292,14 @@ export function Match(buf: string): $CancellablePromise<[expand$0.Trigger, numbe
 }
 
 /**
+ * MemoFromClipboard turns whatever text is on the clipboard right now into a
+ * note. This is the tray "记一笔" entry: no window, no focus stealing.
+ */
+export function MemoFromClipboard(): $CancellablePromise<$models.Memo> {
+    return $Call.ByID(3229683327);
+}
+
+/**
  * OpenDataDir reveals the data directory in Explorer.
  */
 export function OpenDataDir(): $CancellablePromise<void> {
@@ -323,6 +359,13 @@ export function PickerSnippets(query: string, limit: number): $CancellablePromis
 }
 
 /**
+ * QuickMemo creates a note from a single line (the capture popup / tray entry).
+ */
+export function QuickMemo(content: string): $CancellablePromise<$models.Memo> {
+    return $Call.ByID(3490807694, content);
+}
+
+/**
  * Quit exits the application (tray menu "退出" uses the same path).
  */
 export function Quit(): $CancellablePromise<void> {
@@ -361,11 +404,26 @@ export function Render(t: expand$0.Trigger): $CancellablePromise<[string, number
 }
 
 /**
+ * SaveItemAsMemo turns a clipboard entry into a note.
+ */
+export function SaveItemAsMemo(itemID: string): $CancellablePromise<$models.Memo> {
+    return $Call.ByID(327658405, itemID);
+}
+
+/**
  * SaveItemAsSnippet turns a clipboard-history entry into a snippet ("存为片段"),
  * so something you just copied can become a reusable phrase with a trigger.
  */
 export function SaveItemAsSnippet(itemID: string): $CancellablePromise<$models.Snippet> {
     return $Call.ByID(2119030672, itemID);
+}
+
+/**
+ * SaveMemo creates or updates a note. content may be empty when only toggling
+ * flags — the stored content is then reused.
+ */
+export function SaveMemo(m: $models.Memo): $CancellablePromise<$models.Memo> {
+    return $Call.ByID(1225693786, m);
 }
 
 /**
@@ -432,6 +490,13 @@ export function ShowWindow(): $CancellablePromise<void> {
  */
 export function Shutdown(): $CancellablePromise<void> {
     return $Call.ByID(2570765379);
+}
+
+/**
+ * SnippetToMemo appends (or creates) a note from a snippet body.
+ */
+export function SnippetToMemo(snippetID: string, memoID: string): $CancellablePromise<$models.Memo> {
+    return $Call.ByID(2710091653, snippetID, memoID);
 }
 
 /**

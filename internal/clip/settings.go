@@ -59,6 +59,12 @@ type Settings struct {
 	// without remembering a special suffix.
 	ExpandEndChars string `json:"expandEndChars"`
 
+	// ---- appearance ----
+	// ThemePreset selects a palette (see frontend/src/lib/themes.ts).
+	ThemePreset string `json:"themePreset"`
+	// ThemeCustomCSS is user-authored CSS applied on top of the preset.
+	ThemeCustomCSS string `json:"themeCustomCss"`
+
 	// UpdateCheck polls GitHub for a newer release shortly after startup.
 	UpdateCheck bool `json:"updateCheck"`
 	// AutoStart registers the app in HKCU\...\Run.
@@ -117,6 +123,8 @@ func DefaultSettings() Settings {
 		ExpandEnabled:    false,
 		ExpandSuffix:     "-",
 		ExpandEndChars:   DefaultEndChars,
+		ThemePreset:     "default-dark",
+		ThemeCustomCSS:  "",
 		UpdateCheck:      true,
 	}
 }

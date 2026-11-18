@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Events } from "@wailsio/runtime";
-import { applyTheme, watchSystemTheme, type ThemeChoice } from "./lib/theme";
-import { ClipService, EventNames, newFilter, type AppInfo, type Item, type Settings, type Snippet, type Stats, type SyncStatus, type UpdateInfo } from "./lib/api";
+import { applyCustomCSS, applyTheme as applyThemePreset, type ThemeScheme } from "./lib/themes";
+import { ClipService, EventNames, newFilter, type AppInfo, type Item, type Memo, type Settings, type Snippet, type Stats, type SyncStatus, type UpdateInfo } from "./lib/api";
 import TitleBar from "./components/TitleBar";
 import Sidebar from "./components/Sidebar";
 import ItemRow from "./components/ItemRow";
 import DetailPanel from "./components/DetailPanel";
 import SettingsView from "./components/SettingsView";
 import SnippetsView from "./components/SnippetsView";
+import MemosView from "./components/MemosView";
 import { IconSearch } from "./components/Icons";
 
-type View = "history" | "settings" | "snippets";
+type View = "history" | "settings" | "snippets" | "memos";
 type Confirm = { message: string; action: () => void } | null;
 
 export default function App() {
@@ -28,6 +29,13 @@ export default function App() {
   const [snippets, setSnippets] = useState<Snippet[]>([]);
   const [snippetGroups, setSnippetGroups] = useState<string[]>([]);
   const [snippetGroup, setSnippetGroup] = useState("");
+  const [memos, setMemos] = useState<Memo[]>([]);
+  const [memoTags, setMemoTags] = useState<string[]>([]);
+  const [memoFilter, setMemoFilter] = useState<{ tag: string; pinned: boolean; archived: boolean }>({
+    tag: "",
+    pinned: false,
+    archived: false,
+  });
   const [snippetDraft, setSnippetDraft] = useState<
     { snippet: Snippet; imageData: string; seq: number } | null
   >(null);
@@ -140,15 +148,44 @@ export default function App() {
     if (view === "snippets") void loadSnippets();
   }, [view, loadSnippets]);
 
-  // 主题：设置里选「跟随系统 / 深色 / 浅色」，最终结果写到 <html data-theme>
-  const themeChoice = (settings?.theme ?? "system") as ThemeChoice;
+  // 主题：配色预设 + 浅/深 scheme + 用户自定义 CSS（见 lib/themes.ts）
+  const themeScheme = (settings?.theme ?? "system") as ThemeScheme;
+  const themePreset = settings?.themePreset ?? "default-dark";
+  const themeCss = settings?.themeCustomCss ?? "";
   useEffect(() => {
-    applyTheme(themeChoice);
-    localStorage.setItem("clipnest.theme", themeChoice);
-    return watchSystemTheme(() => themeChoice);
-  }, [themeChoice]);
+    applyThemePreset(themeScheme, themePreset);
+    applyCustomCSS(themeCss);
+    localStorage.setItem("clipnest.theme", themeScheme);
+    localStorage.setItem("clipnest.preset", themePreset);
+    const mq = window.matchMedia?.("(prefers-color-scheme: light)");
+    const onChange = () => {
+      if (themeScheme === "system") applyThemePreset(themeScheme, themePreset);
+    };
+    mq?.addEventListener("change", onChange);
+    return () => mq?.removeEventListener("change", onChange);
+  }, [themeScheme, themePreset, themeCss]);
 
   // 把一条剪贴板历史塞进片段编辑器（可改标题/类型/正文再保存）
+  const loadMemos = useCallback(async () => {
+    try {
+      const list = await ClipService.GetMemos({
+        query: "",
+        tag: memoFilter.tag,
+        pinned: memoFilter.pinned,
+        archived: memoFilter.archived,
+        limit: 300,
+      } as never);
+      setMemos(list ?? []);
+      setMemoTags((await ClipService.GetMemoTags()) ?? []);
+    } catch (err) {
+      console.error(err);
+    }
+  }, [memoFilter]);
+
+  useEffect(() => {
+    if (view === "memos") void loadMemos();
+  }, [view, loadMemos]);
+
   const editAsSnippet = useCallback(
     async (item: Item | null) => {
       if (!item) return;
@@ -364,7 +401,7 @@ export default function App() {
   const syncActive = Boolean(settings?.syncEnabled);
 
   return (
-    <div className={`app ${view === "settings" ? "is-settings" : ""} ${view === "snippets" ? "is-snippets" : ""}`}>
+    <div className={`app ${view === "settings" ? "is-settings" : ""} ${view === "snippets" ? "is-snippets" : ""} ${view === "memos" ? "is-memos" : ""}`}>
       <TitleBar capturing={capturing} enabled={settings !== null} onToggleCapture={toggleCapture} />
 
       {updateInfo?.available && updateBanner ? (
@@ -406,6 +443,17 @@ export default function App() {
           onSelectSnippets={(group) => {
             setSnippetGroup(group);
             setView("snippets");
+          }}
+          memoFilter={memoFilter}
+          memoTags={memoTags}
+          memoCount={memos.length}
+          onSelectMemos={(filter) => {
+            setMemoFilter({
+              tag: filter.tag ?? "",
+              pinned: filter.pinned ?? false,
+              archived: filter.archived ?? false,
+            });
+            setView("memos");
           }}
           onOpenSearch={() => {
             setView("history");
@@ -474,6 +522,15 @@ export default function App() {
               }}
               onClose={() => setSelectedId(null)}
               onEditAsSnippet={() => void editAsSnippet(selected)}
+              onSaveAsMemo={() => {
+                if (!selected) return;
+                ClipService.SaveItemAsMemo(selected.id)
+                  .then(() => {
+                    notify("已存为备忘");
+                    void loadMemos();
+                  })
+                  .catch((err) => notify(`保存失败：${String(err)}`));
+              }}
               onSaveAsSnippet={() => {
                 if (!selected) return;
                 ClipService.SaveItemAsSnippet(selected.id)
@@ -494,6 +551,14 @@ export default function App() {
               }}
             />
           </>
+        ) : view === "memos" ? (
+          <MemosView
+            memos={memos}
+            tags={memoTags}
+            filter={memoFilter}
+            onReload={loadMemos}
+            onNotify={notify}
+          />
         ) : view === "snippets" ? (
           <SnippetsView
             snippets={snippets}

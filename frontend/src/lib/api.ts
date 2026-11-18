@@ -14,6 +14,9 @@ export type SyncStatus = Models.SyncStatus;
 export type UpdateInfo = Models.UpdateInfo;
 export type SyncPanel = Models.SyncPanel;
 export type AssetDownload = Models.AssetDownload;
+export type Memo = Models.Memo;
+export type MemoFilter = Models.MemoFilter;
+export type MemoStats = Models.MemoStats;
 export type Snippet = Models.Snippet;
 export type SnippetKind = Models.SnippetKind;
 export type SyncDeviceInfo = Models.SyncDeviceInfo;
@@ -53,6 +56,8 @@ export function emptySettings(): Settings {
     closeToTray: true,
     autoStart: false,
     theme: "system",
+    themePreset: "default-dark",
+    themeCustomCss: "",
     syncEnabled: false,
     syncUrl: "",
     syncUser: "",

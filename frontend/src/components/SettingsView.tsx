@@ -4,6 +4,7 @@ import { ClipService } from "../lib/api";
 import type { AppInfo, Settings, SyncPanel, SyncStatus, UpdateInfo } from "../lib/api";
 import { formatBytes, formatDateTime } from "../lib/format";
 import { IconFolder, IconSync, IconTrash } from "./Icons";
+import { THEME_PRESETS, checkContrast, presetByID } from "../lib/themes";
 import { Tip } from "./Tip";
 
 type Props = {
@@ -91,6 +92,11 @@ function Section({
 }
 
 export default function SettingsView(props: Props) {
+  // 当前预设的对比度自检（WCAG AA 4.5:1）——相当于把 Memos 的单测变成界面提示
+  const contrast = useMemo(
+    () => checkContrast(presetByID(props.settings?.themePreset).tokens),
+    [props.settings?.themePreset],
+  );
   const { settings, appInfo, storageBytes, syncStatus } = props;
   const [draft, setDraft] = useState<Settings | null>(settings);
   const [patternText, setPatternText] = useState("");
@@ -431,8 +437,8 @@ export default function SettingsView(props: Props) {
               </Row>
           </Section>
 
-            <Section title="外观" desc="深色是默认；浅色模式下所有颜色 token 都会换一套，包括下拉框选项。">
-              <Row label="主题" tip="跟随系统会随 Windows 的深色/浅色设置自动切换。">
+            <Section title="外观" desc="配色预设 + 可选的深浅方案 + 你自己的 CSS。三者叠加生效，改完点保存。">
+              <Row label="深浅" tip="跟随系统会随 Windows 的深色/浅色设置自动切换；选了预设时以预设的明暗为准。">
                 <div className="seg-control">
                   {(["system", "dark", "light"] as const).map((choice) => (
                     <button
@@ -445,8 +451,55 @@ export default function SettingsView(props: Props) {
                   ))}
                 </div>
               </Row>
+              <div className="field is-stacked">
+                <span className="field-label">配色预设</span>
+                <div className="preset-grid">
+                  {THEME_PRESETS.map((preset) => (
+                    <button
+                      key={preset.id}
+                      className={`preset-card ${(draft.themePreset ?? "default-dark") === preset.id ? "is-on" : ""}`}
+                      onClick={() => patch({ themePreset: preset.id })}
+                      title={preset.note}
+                    >
+                      <span className="preset-swatch" style={{ background: preset.tokens["--bg"] }}>
+                        <i style={{ background: preset.tokens["--surface-2"] }} />
+                        <i style={{ background: preset.tokens["--text"] }} />
+                        <i style={{ background: preset.tokens["--accent"] }} />
+                      </span>
+                      <span className="preset-name">{preset.name}</span>
+                      <span className="preset-note">{preset.note}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="field is-stacked">
+                <span className="field-label">
+                  自定义 CSS
+                  <button className="link-btn" onClick={() => patch({ themeCustomCss: "" })}>
+                    清空
+                  </button>
+                </span>
+                <textarea
+                  className="input is-area is-mono"
+                  rows={5}
+                  placeholder={":root { --accent: #ff7a59; }\n.side { border-right: 1px solid var(--accent-line); }"}
+                  value={draft.themeCustomCss ?? ""}
+                  onChange={(e) => patch({ themeCustomCss: e.target.value })}
+                />
+                <p className="snip-hint">
+                  只作用于本机。为安全起见会自动去掉 @import 与远程 url()；可用变量见预设里那些 -- 开头的名字。
+                </p>
+              </div>
+              {contrast.length > 0 ? (
+                <div className="contrast-list">
+                  {contrast.map((c) => (
+                    <span key={c.label} className={c.ok ? "contrast-ok" : "contrast-bad"}>
+                      {c.ok ? "✓" : "!"} {c.label} {c.ratio}:1
+                    </span>
+                  ))}
+                </div>
+              ) : null}
             </Section>
-
           <Section title="更新" desc="从 GitHub Releases 检查新版本，下载后静默安装并重启。">
             <Row label="自动检查更新" tip="启动 8 秒后检查一次 GitHub 上的最新发布。发现新版本会在窗口顶部提示。">
               <Switch checked={draft.updateCheck} onChange={(v) => patch({ updateCheck: v })} />

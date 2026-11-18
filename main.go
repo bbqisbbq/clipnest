@@ -278,6 +278,15 @@ func main() {
 			setPauseLabel(pauseItem, updated.Capture)
 		}
 	})
+	// 记一笔：把剪贴板当前文本直接变成备忘，不弹窗、不抢焦点
+	menu.Add("记一笔（剪贴板内容）").OnClick(func(_ *application.Context) {
+		go func() {
+			if _, err := svc.MemoFromClipboard(); err != nil {
+				log.Printf("记一笔失败: %v", err)
+			}
+		}()
+	})
+
 	autoStartItem = menu.AddCheckbox("开机自动启动", svc.IsAutoStartEnabled())
 	autoStartItem.OnClick(func(_ *application.Context) {
 		enabled := !svc.IsAutoStartEnabled()

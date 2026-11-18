@@ -11,13 +11,16 @@ import "@fontsource-variable/noto-sans-sc";
 import "@fontsource-variable/jetbrains-mono";
 import "./styles.css";
 import "./theme-light.css";
-import { applyTheme } from "./lib/theme";
+import { applyTheme } from "./lib/themes";
 
 // The same bundle serves two Wails windows: the manager (default) and the
 // hotkey popup, which main.go loads with ?mode=picker.
 const isPicker = new URLSearchParams(window.location.search).get("mode") === "picker";
 // Apply the theme as early as possible so the first paint is not the wrong colour.
-applyTheme((localStorage.getItem("clipnest.theme") as "system" | "dark" | "light") ?? "system");
+applyTheme(
+  (localStorage.getItem("clipnest.theme") as "system" | "dark" | "light") ?? "system",
+  localStorage.getItem("clipnest.preset") ?? undefined,
+);
 document.body.classList.toggle("is-picker", isPicker);
 
 // Forward frontend failures to the Go log. Without this a render error just
