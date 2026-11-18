@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { marked } from "marked";
-import { highlightMarkdown } from "../lib/liveMarkdown";
+import MarkdownEditor from "./MarkdownEditor";
 import { ClipService, type Memo } from "../lib/api";
 
 // 「备忘」= Memos 形态的碎片笔记，但完全本地：没有用户、权限、分享、评论。
-// 布局学 Memos 的时间线：单列、按天分组、卡片留白、hover 才出操作。
+// 布局：上面是时间线（可滚动），下面是固定在底部的输入框（像聊天输入）。
 
 type Props = {
   memos: Memo[];
@@ -13,21 +13,6 @@ type Props = {
   onReload: () => Promise<void>;
   onNotify: (message: string) => void;
 };
-
-// overlay 自检：两层的排版度量必须一致，否则光标与字形对不上（历史上就栽在这）。
-function checkOverlayMetrics(front: HTMLElement | null, back: HTMLElement | null) {
-  if (!front || !back) return;
-  const pick = (el: HTMLElement) => {
-    const s = getComputedStyle(el);
-    return [
-      s.fontFamily, s.fontSize, s.fontWeight, s.fontStyle, s.lineHeight,
-      s.letterSpacing, s.paddingTop, s.paddingLeft, s.borderLeftWidth, s.whiteSpace,
-    ].join("|");
-  };
-  if (pick(front) !== pick(back)) {
-    console.error("memo overlay metrics differ: front=" + pick(front) + " back=" + pick(back));
-  }
-}
 
 // toSavePayload 去掉空时间戳：绑定层会把 "" 当成 RFC3339 解析并报错。
 function toSavePayload(m: Memo): Memo {
@@ -52,6 +37,13 @@ const EMPTY: Memo = {
   updatedAt: "",
 };
 
+const COMPOSER_MIN = 96;
+const COMPOSER_DEFAULT = 132;
+
+function maxComposer(): number {
+  return Math.max(COMPOSER_MIN + 40, Math.round(window.innerHeight * 0.5));
+}
+
 function dayLabel(iso: string): string {
   if (!iso) return "";
   const d = new Date(iso);
@@ -72,41 +64,43 @@ function timeLabel(iso: string): string {
 }
 
 export default function MemosView(props: Props) {
-  // 编辑器面板宽度：可拖动分隔条调整，记在 localStorage 里
-  const [editorWidth, setEditorWidth] = useState(() => {
-    const saved = Number(localStorage.getItem("clipnest.memoEditorWidth"));
-    return Number.isFinite(saved) && saved >= 280 ? saved : 380;
-  });
-
-  const startResize = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    const startX = e.clientX;
-    const startWidth = editorWidth;
-    const onMove = (ev: PointerEvent) => {
-      const next = Math.min(760, Math.max(280, startWidth - (ev.clientX - startX)));
-      setEditorWidth(next);
-    };
-    const onUp = () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      document.body.classList.remove("is-col-resizing");
-    };
-    document.body.classList.add("is-col-resizing");
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-  }, [editorWidth]);
-
-  useEffect(() => {
-    localStorage.setItem("clipnest.memoEditorWidth", String(editorWidth));
-  }, [editorWidth]);
-
   const [query, setQuery] = useState("");
   const [draft, setDraft] = useState<Memo>(EMPTY);
   const [preview, setPreview] = useState(false);
-  const backRef = useRef<HTMLDivElement>(null);
-  const frontRef = useRef<HTMLTextAreaElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const timelineRef = useRef<HTMLDivElement>(null);
+
+  // 输入区高度：默认 132px，可拖顶部分隔条调整，按内容自动长高（封顶视口一半）
+  const [composerHeight, setComposerHeight] = useState(() => {
+    const saved = Number(localStorage.getItem("clipnest.memoComposerHeight"));
+    return Number.isFinite(saved) && saved >= COMPOSER_MIN ? saved : COMPOSER_DEFAULT;
+  });
+
+  useEffect(() => {
+    localStorage.setItem("clipnest.memoComposerHeight", String(composerHeight));
+  }, [composerHeight]);
+
+  const startComposerResize = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      const startY = e.clientY;
+      const startHeight = composerHeight;
+      const onMove = (ev: PointerEvent) => {
+        const next = Math.min(maxComposer(), Math.max(COMPOSER_MIN, startHeight - (ev.clientY - startY)));
+        setComposerHeight(next);
+      };
+      const onUp = () => {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        document.body.classList.remove("is-row-resizing");
+      };
+      document.body.classList.add("is-row-resizing");
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    },
+    [composerHeight],
+  );
 
   // 搜索走服务端（FTS5 trigram），所以输入后重新拉一次
   useEffect(() => {
@@ -136,9 +130,7 @@ export default function MemosView(props: Props) {
     return out;
   }, [visible]);
 
-  useEffect(() => {
-    checkOverlayMetrics(frontRef.current, backRef.current);
-  }, [preview, draft.id]);
+  // CodeMirror 自己滚动，输入区高度只由拖拽决定（默认 132px）
 
   const previewHtml = useMemo(() => {
     const raw = marked.parse(draft.content ?? "", { async: false }) as string;
@@ -161,6 +153,8 @@ export default function MemosView(props: Props) {
       setDraft({ ...saved });
       await props.onReload();
       props.onNotify(draft.id ? "已更新备忘" : "已记下");
+      // 存完滚回顶部，新条目就在眼前
+      if (timelineRef.current) timelineRef.current.scrollTop = 0;
     } catch (err) {
       setError(String(err));
     } finally {
@@ -217,10 +211,10 @@ export default function MemosView(props: Props) {
           </span>
         </header>
 
-        <div className="memo-timeline">
+        <div className="memo-timeline" ref={timelineRef}>
           {grouped.length === 0 ? (
             <p className="snip-empty">
-              还没有备忘。右边写一句，按 Ctrl+Enter 保存；正文里打 <code>#标签</code> 就能归类。
+              还没有备忘。在下面写一句，按 Ctrl+Enter 保存；正文里打 <code>#标签</code> 就能归类。
             </p>
           ) : (
             grouped.map((group) => (
@@ -294,28 +288,34 @@ export default function MemosView(props: Props) {
         </div>
       </div>
 
+      {/* 固定在底部的输入区（像聊天输入框） */}
       <div
-        className="memo-splitter"
-        role="separator"
-        aria-orientation="vertical"
-        aria-label="拖动调整编辑器宽度"
-        onPointerDown={startResize}
-        onDoubleClick={() => setEditorWidth(380)}
-        title="拖动调整宽度，双击复位"
-      />
+        className="memo-composer"
+        style={{ height: `${composerHeight}px` }}
+      >
+        <div
+          className="memo-composer-resizer"
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label="拖动调整输入区高度"
+          onPointerDown={startComposerResize}
+          onDoubleClick={() => setComposerHeight(COMPOSER_DEFAULT)}
+          title="拖动调整高度，双击复位"
+        />
 
-      <div className="memo-editor" style={{ width: `${editorWidth}px` }}>
-        <div className="snip-editor-head">
-          <h3>{draft.id ? "编辑备忘" : "新备忘"}</h3>
+        <div className="memo-composer-bar">
+          <span className="memo-composer-title">{draft.id ? "编辑备忘" : "新备忘"}</span>
+          <span className="memo-composer-tags">
+            {(draft.tags ?? []).length > 0
+              ? (draft.tags ?? []).map((t) => `#${t}`).join(" ")
+              : ""}
+          </span>
           <div className="snip-editor-actions">
             <button className="link-btn" onClick={() => setPreview((v) => !v)}>
               {preview ? "编辑" : "预览"}
             </button>
-            <button className="btn btn-primary btn-sm" onClick={save} disabled={busy}>
-              {busy ? "保存中…" : "保存"}
-            </button>
             <button
-              className="btn btn-ghost btn-sm"
+              className="link-btn"
               onClick={() => {
                 setDraft(EMPTY);
                 setPreview(false);
@@ -324,44 +324,23 @@ export default function MemosView(props: Props) {
             >
               清空
             </button>
+            <button className="btn btn-primary btn-sm" onClick={save} disabled={busy}>
+              {busy ? "保存中…" : "保存"}
+            </button>
           </div>
         </div>
 
+        {error ? <p className="snip-error">{error}</p> : null}
         {preview ? (
           <div className="snip-preview memo-preview" dangerouslySetInnerHTML={{ __html: previewHtml }} />
         ) : (
-          <div className="md-live">
-            <div
-              className="input is-area memo-input md-live-back"
-              ref={backRef}
-              aria-hidden="true"
-              dangerouslySetInnerHTML={{ __html: highlightMarkdown(draft.content) }}
-            />
-            <textarea
-              className="input is-area memo-input md-live-front"
-              placeholder={"随手记点什么…\n\n支持 Markdown，标签写成 #工作 #灵感"}
-              value={draft.content}
-              onChange={(e) => setDraft({ ...draft, content: e.target.value })}
-              onScroll={(e) => {
-                if (backRef.current) backRef.current.scrollTop = e.currentTarget.scrollTop;
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-                  e.preventDefault();
-                  void save();
-                }
-              }}
-            />
-          </div>
+          <MarkdownEditor
+            value={draft.content}
+            onChange={(next) => setDraft({ ...draft, content: next })}
+            onSave={() => void save()}
+            placeholder={"随手记点什么…（Enter 换行，Ctrl+Enter 保存）"}
+          />
         )}
-
-        <div className="memo-editor-foot">
-          <span className="snip-hint">
-            {(draft.tags ?? []).length > 0 ? (draft.tags ?? []).map((t) => `#${t}`).join(" ") : "还没标签"}
-          </span>
-          <span className="snip-hint">Ctrl+Enter 保存</span>
-        </div>
-        {error ? <p className="snip-error">{error}</p> : null}
       </div>
     </div>
   );

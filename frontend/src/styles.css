@@ -2144,59 +2144,7 @@ textarea:focus-visible {
 .contrast-bad { color: var(--danger); }
 
 .is-mono { font-family: var(--font-mono); font-size: 12px; }
-/* 实时 Markdown 高亮（overlay：底层彩色副本 + 上层透明 textarea） */
-.md-live { position: relative; flex: 1; min-height: 220px; display: flex; }
-/* overlay 两层：字体/行高/内边距/边框/圆角 MUST 完全一致。
-   做法是让两层共用同一套 class（input is-area memo-input），这里只负责
-   定位、透明、滚动条占位——绝不在这里声明 font-* / padding / border，
-   否则任何一处 `.input.is-area`（0,2,0）都能压过（0,1,0）造成错位。 */
-.md-live-back,
-.md-live-front {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-  tab-size: 4;
-  box-sizing: border-box;
-  scrollbar-gutter: stable;
-}
-.md-live-back {
-  position: absolute;
-  inset: 0;
-  width: 100%;          /* .input 的 width:200px 会赢，必须显式盖掉 */
-  overflow: hidden;
-  background: var(--surface);
-  color: var(--text);
-  pointer-events: none;
-  resize: none;
-}
-.md-live-back i { font-style: normal; }
-.md-live-front {
-  position: relative;
-  flex: 1;
-  min-height: 0;
-  background: transparent !important;
-  color: transparent;
-  caret-color: var(--text);
-  resize: none !important;   /* 拉伸交给容器 .md-live：.input.is-area 会把它改成 vertical */
-  outline: none;
-  overflow-y: auto;
-}
-.md-live-front::placeholder { color: var(--text-3); }
-.md-live-front::selection { background: var(--accent-tint); }
 
-/* 注意：这里只能用颜色/背景/下划线，禁止 padding / font-weight / font-style /
-   letter-spacing —— 那会改变字宽，让彩色副本与 textarea 错位、光标跑偏。 */
-.md-line { min-height: 0; }   /* 行高交给 line-height，别用 em 另算 */
-.md-line i { font-style: normal; }         /* 用 <i> 只是为了少写标签，别真斜体 */
-.md-h { color: var(--accent); }
-.md-quote { color: var(--text-2); }
-.md-mark { color: var(--text-3); }
-.md-tag { color: var(--accent); background: var(--accent-tint); border-radius: 3px; }
-.md-code { color: var(--accent-2); background: var(--accent-tint); border-radius: 3px; }
-.md-strong { color: var(--accent-2); }
-.md-em { color: var(--text-2); }
-.md-link { color: var(--accent); text-decoration: underline; }
-.md-url { color: var(--text-3); text-decoration: underline; }
 
 /* 快速输入窗 */
 body.is-capture { background: var(--surface); }
@@ -2265,11 +2213,17 @@ body.is-capture { background: var(--surface); }
 body.is-col-resizing { cursor: col-resize; user-select: none; }
 body.is-col-resizing .memo-splitter { background: var(--accent-tint); }
 
-/* 编辑器高度：拖右下角竖向拉伸（改容器而不是 textarea，
-   这样底层彩色副本会跟着一起变，不会再次错位） */
-.md-live {
-  resize: vertical;
+/* 底部输入区的预览块 */
+.memo-composer .memo-preview { flex: 1; min-height: 0; overflow-y: auto; }
+/* Markdown 编辑器（CodeMirror 6）：容器只负责占位，内部样式由组件注入 */
+.md-editor {
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
-  min-height: 140px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
 }
-.md-live-front { height: 100%; }
+.md-editor .cm-editor { height: 100%; }
+.md-editor .cm-scroller { padding: 6px 10px; }
+.md-editor:focus-within { border-color: var(--accent-line); }
