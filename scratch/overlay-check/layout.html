@@ -1,36 +1,34 @@
 <!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8">
 <link rel="stylesheet" href="styles.css">
-<style>body{margin:0;height:700px} .app{height:100%} .workspace{display:grid;grid-template-columns:218px minmax(0,1fr);height:100%}</style>
+<style>html,body{margin:0;height:100%} .app{height:100%;display:flex;flex-direction:column}
+.workspace{display:grid;grid-template-columns:218px minmax(0,1fr);flex:1;min-height:0}</style>
 </head><body class="app is-memos"><div class="workspace"><div></div>
 <div class="memos" style="height:100%">
-  <div class="memo-main"><div class="memo-head"><input class="input" value="x"></div><div class="memo-timeline"></div></div>
-  <div class="memo-splitter" id="sp"></div>
-  <div class="memo-editor" id="ed" style="width:380px">
-    <div class="md-live" id="live">
-      <div id="back" class="input is-area memo-input md-live-back"><div class="md-line">hello #tag</div></div>
-      <textarea id="front" class="input is-area memo-input md-live-front">hello #tag</textarea>
-    </div>
-    <div class="memo-editor-foot"><span class="snip-hint">#tag</span></div>
+  <div class="memo-main">
+    <div class="memo-head"><input class="input" value="x"><span class="memo-count">全部 · 2 条</span></div>
+    <div class="memo-timeline"><div class="memo-day"><div class="memo-day-label">今天</div>
+      <article class="memo-card"><div class="memo-body">发大水 #test</div></article></div></div>
+  </div>
+  <div class="memo-composer" id="composer" style="height:132px">
+    <div class="memo-composer-resizer" id="rz"></div>
+    <div class="memo-composer-bar"><span class="memo-composer-title">新备忘</span>
+      <div class="snip-editor-actions"><button class="btn btn-primary btn-sm">保存</button></div></div>
+    <div class="md-editor" id="ed" style="min-height:40px"></div>
   </div>
 </div></div>
-<pre id="out">pending</pre>
+<pre id="out" style="position:fixed;left:0;bottom:0;margin:0;z-index:9">pending</pre>
 <script>
-const sp = document.getElementById("sp"), ed = document.getElementById("ed"), live = document.getElementById("live");
-const cs = (el, p) => getComputedStyle(el)[p];
-const front = document.getElementById("front"), back = document.getElementById("back");
-const props = ["fontSize","lineHeight","fontFamily","letterSpacing","paddingLeft","paddingTop","width"];
-const diff = {};
-for (const p of props) if (cs(front,p) !== cs(back,p)) diff[p] = [cs(front,p), cs(back,p)];
-// 模拟往右拖 60px：编辑器应变窄 60
-ed.style.width = "320px";
-const after = { editorW: Math.round(ed.getBoundingClientRect().width), frontW: Math.round(front.getBoundingClientRect().width), backW: Math.round(back.getBoundingClientRect().width) };
+const r = (id) => { const b = document.getElementById(id).getBoundingClientRect(); return { x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width), h: Math.round(b.height) }; };
+const composer = document.getElementById("composer");
+const timeline = document.querySelector(".memo-timeline");
+const cr = r("composer"), tr = r("composer"), tl = (() => { const b = timeline.getBoundingClientRect(); return { x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width), h: Math.round(b.height) }; })();
 document.getElementById("out").textContent = JSON.stringify({
-  splitterCursor: cs(sp,"cursor"),
-  splitterWidth: Math.round(sp.getBoundingClientRect().width),
-  editableResize: cs(live,"resize"),
-  textareaResize: cs(front,"resize"),
-  metricDiff: diff,
-  afterDrag: after,
+  viewport: { w: window.innerWidth, h: window.innerHeight },
+  composer: cr,
+  timeline: tl,
+  composerAtBottom: Math.abs((cr.y + cr.h) - window.innerHeight) < 3,
+  composerFullWidth: Math.abs(cr.w - (window.innerWidth - 218)) < 3,
+  order: cr.y > tl.y ? "时间线在上、输入区在下 ✅" : "顺序不对 ❌",
 }, null, 2);
 </script></body></html>

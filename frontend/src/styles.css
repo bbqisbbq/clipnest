@@ -2044,6 +2044,7 @@ textarea:focus-visible {
 
 .memos {
   display: flex;
+  flex-direction: column; /* 上：时间线（flex:1）；下：固定输入区 */
   min-height: 0;
   overflow: hidden;
   border-left: 1px solid var(--border-soft);
