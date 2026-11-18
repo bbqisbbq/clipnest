@@ -72,6 +72,34 @@ function timeLabel(iso: string): string {
 }
 
 export default function MemosView(props: Props) {
+  // 编辑器面板宽度：可拖动分隔条调整，记在 localStorage 里
+  const [editorWidth, setEditorWidth] = useState(() => {
+    const saved = Number(localStorage.getItem("clipnest.memoEditorWidth"));
+    return Number.isFinite(saved) && saved >= 280 ? saved : 380;
+  });
+
+  const startResize = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = editorWidth;
+    const onMove = (ev: PointerEvent) => {
+      const next = Math.min(760, Math.max(280, startWidth - (ev.clientX - startX)));
+      setEditorWidth(next);
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      document.body.classList.remove("is-col-resizing");
+    };
+    document.body.classList.add("is-col-resizing");
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }, [editorWidth]);
+
+  useEffect(() => {
+    localStorage.setItem("clipnest.memoEditorWidth", String(editorWidth));
+  }, [editorWidth]);
+
   const [query, setQuery] = useState("");
   const [draft, setDraft] = useState<Memo>(EMPTY);
   const [preview, setPreview] = useState(false);
@@ -266,7 +294,17 @@ export default function MemosView(props: Props) {
         </div>
       </div>
 
-      <div className="memo-editor">
+      <div
+        className="memo-splitter"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="拖动调整编辑器宽度"
+        onPointerDown={startResize}
+        onDoubleClick={() => setEditorWidth(380)}
+        title="拖动调整宽度，双击复位"
+      />
+
+      <div className="memo-editor" style={{ width: `${editorWidth}px` }}>
         <div className="snip-editor-head">
           <h3>{draft.id ? "编辑备忘" : "新备忘"}</h3>
           <div className="snip-editor-actions">

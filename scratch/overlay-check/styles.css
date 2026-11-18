@@ -2043,14 +2043,13 @@ textarea:focus-visible {
 .app.is-memos .workspace { grid-template-columns: 218px minmax(0, 1fr); }
 
 .memos {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
+  display: flex;
   min-height: 0;
   overflow: hidden;
   border-left: 1px solid var(--border-soft);
 }
 
-.memo-main { display: flex; flex-direction: column; min-height: 0; }
+.memo-main { display: flex; flex-direction: column; min-height: 0; flex: 1; min-width: 0; }
 .memo-head {
   display: flex; align-items: center; gap: 12px;
   padding: 10px 14px; border-bottom: 1px solid var(--border-soft);
@@ -2174,11 +2173,11 @@ textarea:focus-visible {
 .md-live-front {
   position: relative;
   flex: 1;
-  min-height: 220px;
+  min-height: 0;
   background: transparent !important;
   color: transparent;
   caret-color: var(--text);
-  resize: none;
+  resize: none !important;   /* 拉伸交给容器 .md-live：.input.is-area 会把它改成 vertical */
   outline: none;
   overflow-y: auto;
 }
@@ -2240,3 +2239,37 @@ body.is-capture { background: var(--surface); }
 }
 .settings-bar .is-saved { color: var(--ok); }
 .settings-bar .is-dirty { color: var(--warn); }
+
+/* 左右分栏：可拖动的分隔条 */
+.memo-splitter {
+  flex: none;
+  width: 6px;
+  cursor: col-resize;
+  background: transparent;
+  border-left: 1px solid var(--border-soft);
+  transition: background .12s var(--ease);
+  position: relative;
+}
+.memo-splitter:hover { background: var(--accent-tint); }
+.memo-splitter::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  width: 2px;
+  height: 26px;
+  margin-top: -13px;
+  border-radius: 1px;
+  background: var(--border-strong);
+}
+body.is-col-resizing { cursor: col-resize; user-select: none; }
+body.is-col-resizing .memo-splitter { background: var(--accent-tint); }
+
+/* 编辑器高度：拖右下角竖向拉伸（改容器而不是 textarea，
+   这样底层彩色副本会跟着一起变，不会再次错位） */
+.md-live {
+  resize: vertical;
+  overflow: hidden;
+  min-height: 140px;
+}
+.md-live-front { height: 100%; }
