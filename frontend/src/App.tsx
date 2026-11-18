@@ -1,22 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { THEME_PRESETS, applyCustomCSS, applyTheme as applyThemePreset } from "./lib/themes";
-import {
-  ClipService,
-  type AppInfo,
-  type EntryFilter,
-  type EntryStats,
-  type Settings,
-  type Stats,
-  type SyncStatus,
-  type UpdateInfo,
-} from "./lib/api";
+import { useCallback, useState } from "react";
+import { useToast } from "./hooks/useToast";
+import { useTheme } from "./hooks/useTheme";
+import { useAppData } from "./hooks/useAppData";
+import { ClipService, type EntryFilter, type UpdateInfo } from "./lib/api";
 import TitleBar from "./components/TitleBar";
 import Sidebar from "./components/Sidebar";
 import EntriesView from "./components/EntriesView";
 import SettingsView from "./components/SettingsView";
 
-// App 只做三件事：装载全局状态（设置/主题/统计）、切换视图、转发通知。
-// 具体内容全部在 EntriesView / SettingsView / Sidebar 里，避免这里再长出业务逻辑。
+// App 只做三件事：装全局状态（hooks 里）、切换视图、转发通知。
+// 具体内容全部在 EntriesView / SettingsView / Sidebar，这里不写业务逻辑。
 
 type View = "entries" | "settings";
 type Confirm = { message: string; action: () => void } | null;
@@ -36,101 +29,29 @@ function todayKey(): string {
 }
 
 export default function App() {
-  const [view, setView] = useState<View>("entries");
-  const [settings, setSettings] = useState<Settings | null>(null);
-  const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
-  const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
-  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
-  const [stats, setStats] = useState<Stats | null>(null);
+  const { toast, notify } = useToast();
+  const data = useAppData(notify);
+  const { settings, appInfo, syncStatus, stats, filters, entryStats } = data;
 
-  const [filters, setFilters] = useState<EntryFilter[]>([]);
+  useTheme(settings);
+
+  const [view, setView] = useState<View>("entries");
   const [activeFilterId, setActiveFilterId] = useState("all");
   const [selectedDay, setSelectedDay] = useState(todayKey);
-  const [entryStats, setEntryStats] = useState<EntryStats | null>(null);
-
-  const [toast, setToast] = useState("");
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [confirm, setConfirm] = useState<Confirm>(null);
-  const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-
-  const notify = useCallback((message: string) => {
-    setToast(message);
-    if (toastTimer.current) clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(""), 2600);
-  }, []);
-
-  // ---- 主题 --------------------------------------------------------------
-  const themeScheme = (settings?.theme ?? "system") as "system" | "light" | "dark";
-  const themePreset = settings?.themePreset ?? "default-dark";
-  const themeCss = settings?.themeCustomCss ?? "";
-
-  useEffect(() => {
-    applyThemePreset(themeScheme, themePreset);
-    applyCustomCSS(themeCss);
-    localStorage.setItem("clipnest.theme", themeScheme);
-    localStorage.setItem("clipnest.preset", themePreset);
-    // 原生窗口边框/标题区也跟着换，否则浅色主题下会残留系统深色边
-    const preset = THEME_PRESETS.find((p) => p.id === themePreset) ?? THEME_PRESETS[0];
-    void ClipService.SetWindowChrome(preset.scheme === "dark", preset.tokens["--bg"] ?? "").catch(() => {});
-    const mq = window.matchMedia?.("(prefers-color-scheme: light)");
-    const onChange = () => {
-      if (themeScheme === "system") applyThemePreset(themeScheme, themePreset);
-    };
-    mq?.addEventListener("change", onChange);
-    return () => mq?.removeEventListener("change", onChange);
-  }, [themeScheme, themePreset, themeCss]);
-
-  // ---- 数据 --------------------------------------------------------------
-  const refreshMeta = useCallback(async () => {
-    try {
-      const [f, st, s] = await Promise.all([
-        ClipService.GetFilters(),
-        ClipService.GetEntryStats(),
-        ClipService.GetStats(),
-      ]);
-      setFilters(f ?? []);
-      setEntryStats(st);
-      setStats(s);
-    } catch (err) {
-      console.error(err);
-    }
-  }, []);
-
-  useEffect(() => {
-    void (async () => {
-      try {
-        setSettings(await ClipService.GetSettings());
-        setAppInfo(await ClipService.GetAppInfo());
-        setSyncStatus(await ClipService.GetSyncStatus());
-      } catch (err) {
-        console.error(err);
-      }
-      await refreshMeta();
-    })();
-  }, [refreshMeta]);
 
   const activeFilter = filters.find((f) => f.id === activeFilterId) ?? filters[0] ?? DEFAULT_FILTER;
-
-  const saveSettings = useCallback(
-    async (next: Settings) => {
-      try {
-        setSettings(await ClipService.SaveSettings(next));
-        setSyncStatus(await ClipService.GetSyncStatus());
-        notify("设置已保存");
-      } catch (err) {
-        notify(`保存失败：${String(err)}`);
-      }
-    },
-    [notify],
-  );
+  const capturing = settings?.capture ?? true;
 
   const toggleCapture = useCallback(async () => {
     try {
-      const st = settings ?? (await ClipService.GetSettings());
-      setSettings(await ClipService.SetCapture(!st.capture));
+      const current = settings ?? (await ClipService.GetSettings());
+      data.setSettings(await ClipService.SetCapture(!current.capture));
     } catch (err) {
       notify(`切换失败：${String(err)}`);
     }
-  }, [settings, notify]);
+  }, [settings, data, notify]);
 
   const clearHistory = useCallback(() => {
     setConfirm({
@@ -138,29 +59,39 @@ export default function App() {
       action: async () => {
         try {
           const n = await ClipService.DeleteAll();
-          await refreshMeta();
+          await data.refreshMeta();
           notify(`已清空 ${n} 条`);
         } catch (err) {
           notify(`清空失败：${String(err)}`);
         }
       },
     });
-  }, [refreshMeta, notify]);
+  }, [data, notify]);
+
+  const editFilter = useCallback(
+    (f: EntryFilter) => {
+      const name = window.prompt("筛选器名称：", f.name);
+      if (name === null) return;
+      const icon = window.prompt(
+        "图标（all/pin/snippet/memo/star/folder/files/image/text/link/search）：",
+        f.icon || "memo",
+      );
+      void ClipService.SaveFilter({ ...f, name: name.trim() || f.name, icon: (icon || f.icon).trim() })
+        .then(() => void data.refreshMeta())
+        .catch((err) => notify(`保存筛选器失败：${String(err)}`));
+    },
+    [data, notify],
+  );
 
   const runSync = useCallback(async () => {
     try {
-      setSyncStatus(await ClipService.SyncNow());
-      await refreshMeta();
+      await ClipService.SyncNow();
+      await data.refreshAll();
       notify("同步完成");
     } catch (err) {
       notify(`同步失败：${String(err)}`);
     }
-  }, [refreshMeta, notify]);
-
-  const testSync = useCallback(async () => {
-    const r = await ClipService.TestSync();
-    return typeof r === "string" ? r : JSON.stringify(r);
-  }, []);
+  }, [data, notify]);
 
   const checkUpdate = useCallback(async () => {
     const info = await ClipService.CheckUpdate();
@@ -168,11 +99,10 @@ export default function App() {
     return info;
   }, []);
 
-  const installUpdate = useCallback(() => {
-    void ClipService.InstallUpdate();
+  const testSync = useCallback(async () => {
+    const r = await ClipService.TestSync();
+    return typeof r === "string" ? r : JSON.stringify(r);
   }, []);
-
-  const capturing = settings?.capture ?? true;
 
   return (
     <div className="app is-entries">
@@ -191,21 +121,11 @@ export default function App() {
               setView("entries");
             },
             selectedDay,
-            onPickDay: (day) => {
-              setSelectedDay(day);
+            onPickDay: (d) => {
+              setSelectedDay(d);
               setView("entries");
             },
-            onEditFilter: (f) => {
-              const name = window.prompt("筛选器名称：", f.name);
-              if (name === null) return;
-              const icon = window.prompt(
-                "图标（all/pin/snippet/memo/star/folder/files/image/text/link/search）：",
-                f.icon || "memo",
-              );
-              void ClipService.SaveFilter({ ...f, name: name.trim() || f.name, icon: (icon || f.icon).trim() })
-                .then(() => void refreshMeta())
-                .catch((err) => notify(`保存筛选器失败：${String(err)}`));
-            },
+            onEditFilter: editFilter,
             entryStats,
           }}
           onOpenSettings={() => setView("settings")}
@@ -217,7 +137,7 @@ export default function App() {
             filter={activeFilter}
             day={selectedDay}
             onNotify={notify}
-            onChanged={() => void refreshMeta()}
+            onChanged={() => void data.refreshMeta()}
           />
         ) : (
           <SettingsView
@@ -225,13 +145,13 @@ export default function App() {
             appInfo={appInfo}
             storageBytes={stats?.storageBytes ?? 0}
             syncStatus={syncStatus}
-            onSave={(next) => void saveSettings(next)}
+            onSave={(next) => void data.saveSettings(next)}
             onClearHistory={clearHistory}
             onOpenDataDir={() => void ClipService.OpenDataDir()}
             onQuit={() => void ClipService.Quit()}
             updateInfo={updateInfo}
             onCheckUpdate={checkUpdate}
-            onInstallUpdate={installUpdate}
+            onInstallUpdate={() => void ClipService.InstallUpdate()}
             onOpenRelease={() => void ClipService.OpenReleasePage()}
             onTestSync={testSync}
             onSyncNow={() => void runSync()}
