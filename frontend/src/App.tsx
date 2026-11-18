@@ -18,11 +18,10 @@ import { IconSearch } from "./components/Icons";
 type View = "history" | "settings" | "entries";
 
 // 一级菜单的默认形状；用户可改顺序、名称与图标（存在 settings 里）
-const DEFAULT_NAV: NavEntry[] = [
-  { id: "history", label: "剪贴板", icon: "pin" },
-  { id: "snippets", label: "片段", icon: "snippet" },
-  { id: "memos", label: "备忘", icon: "memo" },
-];
+// 做减法：剪贴板 / 片段 / 备忘 不再是三个并列入口，统一由「内容」筛选器承载
+// （见 docs/UNIFIED-ENTRY.md）。保留空数组是为了兼容老配置里的 navOrder——
+// 老用户升级后不会再看到残留的三个入口。
+const DEFAULT_NAV: NavEntry[] = [];
 type Confirm = { message: string; action: () => void } | null;
 
 export default function App() {
@@ -247,9 +246,10 @@ export default function App() {
   // 只刷新侧栏需要的计数与标签；列表本身由 EntriesView 分页拉取
   const loadMemoMeta = useCallback(async () => {
     try {
-      const stats = await ClipService.GetMemoStats();
-      setMemoCount(stats?.total ?? 0);
-      setMemoTags((await ClipService.GetMemoTags()) ?? []);
+      const stats = await ClipService.GetEntryStats();
+      setMemoCount(stats?.manual ?? 0);
+      setEntryStats(stats);
+      setMemoTags((await ClipService.GetEntryTags()) ?? []);
     } catch (err) {
       console.error(err);
     }

@@ -122,6 +122,7 @@ func (s *ClipService) Start() error {
 	s.store.RepairEntryImages()
 	s.store.ClearEntryExpiry()
 	s.store.BackfillEntryActions()
+	s.store.ResyncLegacyMemos()
 	s.refreshTriggers()
 	s.applyExpander(s.store.Settings())
 	// Whatever is already on the clipboard when the app starts is also part of

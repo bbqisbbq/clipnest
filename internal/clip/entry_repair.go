@@ -158,3 +158,68 @@ func (s *Store) hasColumn(table, column string) bool {
 	}
 	return false
 }
+
+const entriesMemoResyncKey = "entries.memoResync"
+
+// ResyncLegacyMemos copies any rows still sitting in the legacy memos table into
+// entries. The one-shot MigrateToEntries ran before some memos were written by
+// the old view, so those would otherwise be invisible. Idempotent per hash.
+func (s *Store) ResyncLegacyMemos() int {
+	if s.Meta(entriesMemoResyncKey) != "" {
+		return 0
+	}
+	rows, err := s.db.Query(`SELECT id, content, pinned, archived, source, source_app, hash,
+		created_at, updated_at FROM memos`)
+	if err != nil {
+		_ = s.SetMeta(entriesMemoResyncKey, "1")
+		return 0
+	}
+	type legacy struct {
+		id, content, source, sourceApp, hash, createdAt, updatedAt string
+		pinned, archived                                           int
+	}
+	var list []legacy
+	for rows.Next() {
+		var l legacy
+		if rows.Scan(&l.id, &l.content, &l.pinned, &l.archived, &l.source, &l.sourceApp,
+			&l.hash, &l.createdAt, &l.updatedAt) == nil {
+			list = append(list, l)
+		}
+	}
+	rows.Close()
+
+	added := 0
+	for _, l := range list {
+		if strings.TrimSpace(l.content) == "" {
+			continue
+		}
+		// 已经在 entries 里就跳过（按 id 或 hash 判重）
+		if _, ok := s.GetEntry(l.id); ok {
+			continue
+		}
+		if _, ok := s.findEntryByHash(l.hash); ok && l.hash != "" {
+			continue
+		}
+		if _, err := s.SaveEntry(Entry{
+			ID:        l.id,
+			Content:   l.content,
+			Kind:      KindText,
+			Source:    SourceManual,
+			Pinned:    l.pinned != 0,
+			Archived:  l.archived != 0,
+			Hash:      l.hash,
+			SourceApp: l.sourceApp,
+			CreatedAt: decodeTime(l.createdAt),
+			UpdatedAt: decodeTime(l.updatedAt),
+		}); err != nil {
+			Logf(s.dir, "resync memo %s: %v", l.id, err)
+			continue
+		}
+		added++
+	}
+	_ = s.SetMeta(entriesMemoResyncKey, "1")
+	if added > 0 {
+		Logf(s.dir, "resynced %d legacy memos into entries", added)
+	}
+	return added
+}
