@@ -14,21 +14,31 @@ func main() {
 	conn, _ := sql.Open("sqlite", "file:"+db+"?mode=ro&_pragma=busy_timeout(3000)")
 	defer conn.Close()
 
-	fmt.Println("=== 墓碑（能证明是不是通过应用删除的）===")
-	rows, err := conn.Query(`SELECT scope, hash, deleted_at FROM tombstones ORDER BY deleted_at DESC LIMIT 12`)
-	if err != nil {
-		fmt.Println(err)
-		return
+	// 模拟各内置筛选器的 SQL
+	checks := []struct{ name, where string }{
+		{"全部内容", "archived=0"},
+		{"我写的", "archived=0 AND source='manual'"},
+		{"剪贴板", "archived=0 AND auto_tags LIKE '%,剪贴板,%'"},
+		{"片段", "archived=0 AND trigger_key<>''"},
+		{"图片", "archived=0 AND kind='image'"},
+		{"今天", "archived=0 AND created_at >= date('now','localtime','start of day')"},
 	}
-	n := 0
+	for _, c := range checks {
+		var n int
+		if err := conn.QueryRow(`SELECT COUNT(*) FROM entries WHERE ` + c.where).Scan(&n); err != nil {
+			fmt.Printf("  %-10s 查询失败: %v\n", c.name, err)
+			continue
+		}
+		fmt.Printf("  %-10s %d 条\n", c.name, n)
+	}
+
+	fmt.Println("=== 日历：按天计数（最近 5 天）===")
+	rows, _ := conn.Query(`SELECT substr(created_at,1,10) d, COUNT(*) FROM entries GROUP BY d ORDER BY d DESC LIMIT 5`)
 	for rows.Next() {
-		var scope, hash, at string
-		rows.Scan(&scope, &hash, &at)
-		fmt.Printf("  %-8s %s  %s\n", scope, hash, at)
-		n++
+		var d string
+		var n int
+		rows.Scan(&d, &n)
+		fmt.Printf("  %s  %d 条\n", d, n)
 	}
 	rows.Close()
-	fmt.Println("墓碑数:", n)
-
-	fmt.Println("=== 日志里最近的删除/清空动作 ===")
 }

@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from "react";
-import type { Stats } from "../lib/api";
+import type { EntryFilter, Stats } from "../lib/api";
+import Calendar from "./Calendar";
 import {
   IconAll,
   IconFiles,
@@ -25,8 +26,19 @@ import {
 
 export type NavEntry = { id: string; label: string; icon: string };
 
+// 内容筛选器（保存下来的 EntryQuery）
+type FilterProps = {
+  filters: EntryFilter[];
+  activeFilterId: string;
+  onSelectFilter: (f: EntryFilter) => void;
+  selectedDay: string;
+  onPickDay: (day: string) => void;
+  onEditFilter: (f: EntryFilter) => void;
+  entryStats: { manual: number; clipboard: number; snippets: number; total: number; pinned: number; archived: number; today: number } | null;
+};
+
 type Props = {
-  view: "history" | "settings" | "snippets" | "memos";
+  view: "history" | "settings" | "snippets" | "memos" | "entries";
   kind: string;
   pinnedOnly: boolean;
   snippetGroup: string;
@@ -42,6 +54,7 @@ type Props = {
   onSelectSnippets: (group: string) => void;
   onSelectMemos: (filter: { tag?: string; pinned?: boolean; archived?: boolean }) => void;
   nav: NavEntry[];
+  filterProps: FilterProps;
   onNavChange: (next: NavEntry[]) => void;
   onOpenSearch: () => void;
   onOpenSettings: () => void;
@@ -141,6 +154,7 @@ export default function Sidebar(props: Props) {
   return (
     <aside className="side">
       <div className="side-scroll">
+        {props.nav.length > 0 ? (
         <div className="side-group" ref={navRef}>
           {props.nav.map((entry) => {
             const active =
@@ -228,6 +242,47 @@ export default function Sidebar(props: Props) {
             );
           })}
         </div>
+        ) : null}
+
+        {/* 统一内容的入口：筛选器 + 日历 */}
+        <div className="side-label">内容</div>
+        <div className="side-sub">
+          {props.filterProps.filters.map((f) => {
+            const n =
+              f.id === "mine"
+                ? props.filterProps.entryStats?.manual
+                : f.id === "clipboard"
+                  ? props.filterProps.entryStats?.clipboard
+                  : f.id === "snippets"
+                    ? props.filterProps.entryStats?.snippets
+                    : f.id === "all"
+                      ? props.filterProps.entryStats?.total
+                      : f.id === "pinned"
+                        ? props.filterProps.entryStats?.pinned
+                        : f.id === "archived"
+                          ? props.filterProps.entryStats?.archived
+                          : null;
+            return (
+              <button
+                key={f.id}
+                className={`side-item ${props.filterProps.activeFilterId === f.id ? "is-active" : ""}`}
+                onClick={() => props.filterProps.onSelectFilter(f)}
+                onDoubleClick={() => props.filterProps.onEditFilter(f)}
+                title="双击可改名 / 换图标"
+              >
+                {renderNavIcon(f.icon || "memo", 14)}
+                <span>{f.name}</span>
+                {n !== null && n !== undefined ? <em>{n}</em> : null}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="side-label">日历</div>
+        <Calendar
+          selectedDay={props.filterProps.selectedDay}
+          onPickDay={props.filterProps.onPickDay}
+        />
 
         {history ? (
           <>

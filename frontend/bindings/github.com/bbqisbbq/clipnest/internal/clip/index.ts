@@ -8,12 +8,18 @@ export {
 
 export {
     Kind,
-    SnippetKind
+    SnippetKind,
+    Source
 } from "./models.js";
 
 export type {
     AppInfo,
     AssetDownload,
+    DayCount,
+    Entry,
+    EntryFilter,
+    EntryQuery,
+    EntryStats,
     FileRef,
     Filter,
     ImportResult,

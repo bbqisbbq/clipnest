@@ -1,0 +1,63 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<link rel="stylesheet" href="styles.css">
+<style>html,body{margin:0;height:100%}.app{height:100%;display:flex;flex-direction:column}
+.workspace{display:grid;grid-template-columns:236px minmax(0,1fr);flex:1;min-height:0}
+.side{display:flex;flex-direction:column;overflow:hidden}.side-scroll{overflow-y:auto;flex:1}</style></head>
+<body class="app is-entries"><div class="workspace">
+<aside class="side"><div class="side-scroll">
+  <div class="side-label">内容</div>
+  <div class="side-sub">
+    <button class="side-item is-active"><span>全部内容</span><em>36</em></button>
+    <button class="side-item"><span>我写的</span><em>0</em></button>
+    <button class="side-item"><span>剪贴板</span><em>36</em></button>
+    <button class="side-item"><span>片段</span><em>0</em></button>
+  </div>
+  <div class="side-label">日历</div>
+  <div class="cal" id="cal">
+    <div class="cal-head"><button class="cal-nav">‹</button><span class="cal-title">2026 年 11 月</span><button class="cal-nav">›</button></div>
+    <div class="cal-grid cal-weekdays"><span class="cal-weekday">一</span><span class="cal-weekday">二</span><span class="cal-weekday">三</span><span class="cal-weekday">四</span><span class="cal-weekday">五</span><span class="cal-weekday">六</span><span class="cal-weekday">日</span></div>
+    <div class="cal-grid" id="grid"></div>
+  </div>
+</div></aside>
+<div class="entries">
+  <div class="entries-main">
+    <div class="memo-head"><input class="input" value="x"><span class="memo-count">全部内容 · 36 条</span></div>
+    <div class="memo-timeline">
+      <div class="memo-day"><div class="memo-day-label">今天</div>
+        <article class="memo-card entry-card is-collected"><div class="memo-body">甲硝唑</div>
+          <footer class="memo-meta"><span>14:31</span><span class="entry-autotag">剪贴板</span>
+          <span class="memo-src">来自 chrome.exe</span></footer></article>
+        <article class="memo-card entry-card"><div class="memo-body">手写的一条 <span class="memo-tag">#工作</span></div>
+          <footer class="memo-meta"><span>14:32</span><span class="entry-trigger">addr-</span></footer></article>
+      </div>
+    </div>
+  </div>
+  <div class="memo-composer" style="height:184px">
+    <div class="memo-composer-resizer"></div>
+    <div class="composer-box"><div class="md-editor" style="min-height:60px"></div>
+      <div class="composer-actions"><span class="composer-tags"><span class="composer-hint">写 #标签 就能归类</span></span>
+      <div class="composer-btns"><button class="btn btn-primary btn-sm">保存</button></div></div></div>
+  </div>
+</div></div>
+<pre id="out" style="position:fixed;left:0;bottom:0;margin:0;font-size:10px;z-index:9">pending</pre>
+<script>
+const grid=document.getElementById("grid");
+const counts={3:1,5:7,11:2,12:1,18:40};
+for(let d=1;d<=30;d++){
+  const b=document.createElement("button");
+  const n=counts[d]||0;
+  b.className="cal-cell"+(d===18?" is-active":"")+(d===18?" has-4":"")+(n?"":"");
+  b.innerHTML='<span class="cal-day">'+d+'</span>'+(n?'<span class="cal-dot" style="opacity:'+(0.35+0.65*n/40)+'"></span>':'');
+  grid.appendChild(b);
+}
+const R=(s)=>{const e=document.querySelector(s);if(!e)return null;const b=e.getBoundingClientRect();return{w:Math.round(b.width),h:Math.round(b.height),x:Math.round(b.x),y:Math.round(b.y),bottom:Math.round(b.bottom)};};
+const cal=R("#cal"), comp=R(".memo-composer"), side=R(".side"), card=R(".entry-card");
+document.getElementById("out").textContent=JSON.stringify({
+ vp:{w:innerWidth,h:innerHeight}, side, calendar:cal, composer:comp, card,
+ calendarFits: cal.w>150 && cal.h>120,
+ cells: document.querySelectorAll(".cal-cell").length,
+ dots: document.querySelectorAll(".cal-dot").length,
+ composerAtBottom: Math.abs(comp.bottom-innerHeight)<3,
+ sideNotOverflow: side.w<=240
+},null,2);
+</script></body></html>

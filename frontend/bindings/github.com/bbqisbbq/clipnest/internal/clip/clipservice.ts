@@ -62,6 +62,20 @@ export function CopyItem(id: string): $CancellablePromise<void> {
 }
 
 /**
+ * DeleteEntry removes an entry and records a tombstone so peers drop theirs.
+ */
+export function DeleteEntry(id: string): $CancellablePromise<boolean> {
+    return $Call.ByID(966560778, id);
+}
+
+/**
+ * DeleteFilter removes a user filter. Builtins fall back to their defaults.
+ */
+export function DeleteFilter(id: string): $CancellablePromise<boolean> {
+    return $Call.ByID(3724380380, id);
+}
+
+/**
  * DeleteItem removes one entry.
  */
 export function DeleteItem(id: string): $CancellablePromise<void> {
@@ -88,6 +102,13 @@ export function DeleteSnippet(id: string): $CancellablePromise<boolean> {
  */
 export function DeleteWhere(filter: $models.Filter): $CancellablePromise<number> {
     return $Call.ByID(2544233545, filter);
+}
+
+/**
+ * DemoteFromSnippet removes the trigger but keeps the content and the tag.
+ */
+export function DemoteFromSnippet(id: string): $CancellablePromise<$models.Entry> {
+    return $Call.ByID(239629186, id);
 }
 
 /**
@@ -162,6 +183,42 @@ export function GetAppInfo(): $CancellablePromise<$models.AppInfo> {
  */
 export function GetDownloadStats(): $CancellablePromise<$models.AssetDownload[] | null> {
     return $Call.ByID(2125658118);
+}
+
+/**
+ * GetEntries is the single list call for the whole app.
+ */
+export function GetEntries(q: $models.EntryQuery): $CancellablePromise<$models.Entry[] | null> {
+    return $Call.ByID(2182809333, q);
+}
+
+/**
+ * GetEntryCalendar returns per-day counts for a month ("YYYY-MM"), so the
+ * calendar can show which days actually have content.
+ */
+export function GetEntryCalendar(month: string): $CancellablePromise<$models.DayCount[] | null> {
+    return $Call.ByID(3982370531, month);
+}
+
+/**
+ * GetEntryStats reports the counts shown next to each filter.
+ */
+export function GetEntryStats(): $CancellablePromise<$models.EntryStats> {
+    return $Call.ByID(1775819320);
+}
+
+/**
+ * GetEntryTags lists tags in use (content tags + system tags).
+ */
+export function GetEntryTags(): $CancellablePromise<string[] | null> {
+    return $Call.ByID(418288868);
+}
+
+/**
+ * GetFilters returns builtins (with user overrides applied) plus user filters.
+ */
+export function GetFilters(): $CancellablePromise<$models.EntryFilter[] | null> {
+    return $Call.ByID(3084070574);
 }
 
 /**
@@ -443,6 +500,20 @@ export function PickerSnippets(query: string, limit: number): $CancellablePromis
 }
 
 /**
+ * PromoteToManual keeps a collected entry from expiring (it becomes "mine").
+ */
+export function PromoteToManual(id: string): $CancellablePromise<$models.Entry> {
+    return $Call.ByID(4242788608, id);
+}
+
+/**
+ * PromoteToSnippet turns any entry into an abbreviation-triggered snippet.
+ */
+export function PromoteToSnippet(id: string, trigger: string): $CancellablePromise<$models.Entry> {
+    return $Call.ByID(4139016423, id, trigger);
+}
+
+/**
  * QuickMemo creates a note from a single line (the capture popup / tray entry).
  */
 export function QuickMemo(content: string): $CancellablePromise<$models.Memo> {
@@ -485,6 +556,21 @@ export function RefreshItem(id: string): $CancellablePromise<$models.Item> {
  */
 export function Render(t: expand$0.Trigger): $CancellablePromise<[string, number]> {
     return $Call.ByID(2172096837, t);
+}
+
+/**
+ * SaveEntry creates or updates an entry. Empty content is allowed when only
+ * flags change — the stored content is reused.
+ */
+export function SaveEntry(e: $models.Entry): $CancellablePromise<$models.Entry> {
+    return $Call.ByID(1420091460, e);
+}
+
+/**
+ * SaveFilter stores a new filter, or an override for a builtin one.
+ */
+export function SaveFilter(f: $models.EntryFilter): $CancellablePromise<$models.EntryFilter> {
+    return $Call.ByID(2151785410, f);
 }
 
 /**

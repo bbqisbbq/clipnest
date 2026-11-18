@@ -33,6 +33,155 @@ export interface AssetDownload {
 }
 
 /**
+ * DayCount is one cell of the calendar heatmap.
+ */
+export interface DayCount {
+    /**
+     * YYYY-MM-DD（本地时区）
+     */
+    "day": string;
+    "count": number;
+}
+
+/**
+ * Entry is the single content type of the app.
+ */
+export interface Entry {
+    "id": string;
+    "content": string;
+    "kind": Kind;
+    "source": Source;
+
+    /**
+     * 从正文 #tag 派生
+     */
+    "tags": string[] | null;
+
+    /**
+     * 系统标签（剪贴板 / 片段）
+     */
+    "autoTags": string[] | null;
+    "pinned": boolean;
+    "archived": boolean;
+
+    /**
+     * 采集相关
+     */
+    "hash"?: string;
+    "seenCount"?: number;
+    "copyCount"?: number;
+    "sourceApp"?: string;
+    "width"?: number;
+    "height"?: number;
+    "html"?: string;
+    "rtf"?: string;
+    "formatName"?: string;
+    "formatId"?: number;
+    "files"?: FileRef[] | null;
+
+    /**
+     * 片段相关（TriggerKey 非空 = 这条参与缩写展开）
+     */
+    "triggerKey"?: string;
+    "caseSensitive"?: boolean;
+    "keepTrigger"?: boolean;
+    "apps"?: string[] | null;
+    "excludeApps"?: string[] | null;
+    "groupName"?: string;
+    "useCount"?: number;
+
+    /**
+     * 生命周期：nil = 永久（手写）；采集条目默认 +30 天
+     */
+    "expiresAt"?: string | null;
+    "createdAt": string;
+    "updatedAt": string;
+}
+
+/**
+ * EntryFilter is a saved query: the sidebar entry the user clicks.
+ */
+export interface EntryFilter {
+    "id": string;
+    "name": string;
+    "icon": string;
+    "query": EntryQuery;
+    "sortOrder": number;
+
+    /**
+     * 内置的不许删，只能改名换图标
+     */
+    "builtin": boolean;
+}
+
+/**
+ * EntryQuery is the single filter language for the whole app: the sidebar's
+ * saved filters, the calendar's day selection and the search box all compile
+ * down to this.
+ */
+export interface EntryQuery {
+    "text": string;
+    "tag": string;
+
+    /**
+     * manual | clipboard | import
+     */
+    "source": string;
+
+    /**
+     * 剪贴板 | 片段
+     */
+    "autoTag": string;
+    "kind": string;
+
+    /**
+     * 只看有缩写的
+     */
+    "snippets": boolean;
+    "pinned": boolean;
+    "archived": boolean;
+
+    /**
+     * YYYY-MM-DD：日历点某天
+     */
+    "day": string;
+
+    /**
+     * RFC3339（含）
+     */
+    "from": string;
+
+    /**
+     * RFC3339（不含）
+     */
+    "to": string;
+    "limit": number;
+
+    /**
+     * 游标：created_at < 此值
+     */
+    "before": string;
+
+    /**
+     * true = 取最新 N 条
+     */
+    "tail": boolean;
+}
+
+/**
+ * EntryStats summarises counts for the sidebar / filters.
+ */
+export interface EntryStats {
+    "total": number;
+    "manual": number;
+    "clipboard": number;
+    "snippets": number;
+    "pinned": number;
+    "archived": number;
+    "today": number;
+}
+
+/**
  * FileRef is one entry of a captured file list. ClipNest deliberately stores a
  * reference (path + metadata) instead of a copy: see docs/FILE-STRATEGY.md.
  */
@@ -503,6 +652,31 @@ export enum SnippetKind {
      * 富文本（HTML，走剪贴板）
      */
     SnippetHTML = "html",
+};
+
+/**
+ * Source says how an entry got here.
+ */
+export enum Source {
+    /**
+     * The Go zero value for the underlying type of the enum.
+     */
+    $zero = "",
+
+    /**
+     * 用户手写
+     */
+    SourceManual = "manual",
+
+    /**
+     * 自动采集
+     */
+    SourceClipboard = "clipboard",
+
+    /**
+     * 从外部导入
+     */
+    SourceImport = "import",
 };
 
 /**

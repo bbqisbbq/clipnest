@@ -6,7 +6,7 @@ import {
   applyTheme as applyThemePreset,
   type ThemeScheme,
 } from "./lib/themes";
-import { ClipService, EventNames, newFilter, type AppInfo, type Item, type Settings, type Snippet, type Stats, type SyncStatus, type UpdateInfo } from "./lib/api";
+import { ClipService, EventNames, newFilter, type AppInfo, type EntryFilter, type EntryStats, type Item, type Settings, type Snippet, type Stats, type SyncStatus, type UpdateInfo } from "./lib/api";
 import TitleBar from "./components/TitleBar";
 import Sidebar, { type NavEntry } from "./components/Sidebar";
 import ItemRow from "./components/ItemRow";
@@ -14,9 +14,10 @@ import DetailPanel from "./components/DetailPanel";
 import SettingsView from "./components/SettingsView";
 import SnippetsView from "./components/SnippetsView";
 import MemosView from "./components/MemosView";
+import EntriesView from "./components/EntriesView";
 import { IconSearch } from "./components/Icons";
 
-type View = "history" | "settings" | "snippets" | "memos";
+type View = "history" | "settings" | "snippets" | "memos" | "entries";
 
 // 一级菜单的默认形状；用户可改顺序、名称与图标（存在 settings 里）
 const DEFAULT_NAV: NavEntry[] = [
@@ -27,7 +28,7 @@ const DEFAULT_NAV: NavEntry[] = [
 type Confirm = { message: string; action: () => void } | null;
 
 export default function App() {
-  const [view, setView] = useState<View>("history");
+  const [view, setView] = useState<View>("entries");
   const [kind, setKind] = useState("");
   const [pinnedOnly, setPinnedOnly] = useState(false);
   const [query, setQuery] = useState("");
@@ -42,6 +43,11 @@ export default function App() {
   const [snippetGroups, setSnippetGroups] = useState<string[]>([]);
   const [snippetGroup, setSnippetGroup] = useState("");
   const [memoCount, setMemoCount] = useState(0);
+  // 统一内容视图：筛选器 + 日历
+  const [filters, setFilters] = useState<EntryFilter[]>([]);
+  const [activeFilterId, setActiveFilterId] = useState("all");
+  const [selectedDay, setSelectedDay] = useState("");
+  const [entryStats, setEntryStats] = useState<EntryStats | null>(null);
   const [memoTags, setMemoTags] = useState<string[]>([]);
   const [memoFilter, setMemoFilter] = useState<{ tag: string; pinned: boolean; archived: boolean }>({
     tag: "",
@@ -220,6 +226,25 @@ export default function App() {
         .catch((err) => notify(`保存菜单设置失败：${String(err)}`));
     },
     [settings, notify],
+  );
+
+  // 统一内容的筛选器与统计
+  const loadEntryMeta = useCallback(async () => {
+    try {
+      setFilters((await ClipService.GetFilters()) ?? []);
+      setEntryStats(await ClipService.GetEntryStats());
+    } catch (err) {
+      console.error(err);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadEntryMeta();
+  }, [loadEntryMeta]);
+
+  const activeFilter = useMemo(
+    () => filters.find((f) => f.id === activeFilterId) ?? filters[0],
+    [filters, activeFilterId],
   );
 
   // 只刷新侧栏需要的计数与标签；列表本身由 MemosView 分页拉取
@@ -456,7 +481,7 @@ export default function App() {
   const syncActive = Boolean(settings?.syncEnabled);
 
   return (
-    <div className={`app ${view === "settings" ? "is-settings" : ""} ${view === "snippets" ? "is-snippets" : ""} ${view === "memos" ? "is-memos" : ""}`}>
+    <div className={`app ${view === "settings" ? "is-settings" : ""} ${view === "snippets" ? "is-snippets" : ""} ${view === "memos" ? "is-memos" : ""} ${view === "entries" ? "is-entries" : ""}`}>
       <TitleBar capturing={capturing} enabled={settings !== null} onToggleCapture={toggleCapture} />
 
       {updateInfo?.available && updateBanner ? (
@@ -500,6 +525,31 @@ export default function App() {
             setView("snippets");
           }}
           nav={nav}
+          filterProps={{
+            filters,
+            activeFilterId,
+            onSelectFilter: (f) => {
+              setActiveFilterId(f.id);
+              setView("entries");
+            },
+            selectedDay,
+            onPickDay: (day) => {
+              setSelectedDay(day);
+              setView("entries");
+            },
+            onEditFilter: (f) => {
+              const name = window.prompt("筛选器名称：", f.name);
+              if (name === null) return;
+              const icon = window.prompt(
+                "图标（all/pin/snippet/memo/star/folder/files/image/text/link/search）：",
+                f.icon || "memo",
+              );
+              void ClipService.SaveFilter({ ...f, name: name.trim() || f.name, icon: (icon || f.icon).trim() })
+                .then(() => void loadEntryMeta())
+                .catch((err) => notify(`保存筛选器失败：${String(err)}`));
+            },
+            entryStats,
+          }}
           onNavChange={saveNav}
           memoFilter={memoFilter}
           memoTags={memoTags}
@@ -608,6 +658,13 @@ export default function App() {
               }}
             />
           </>
+        ) : view === "entries" ? (
+          <EntriesView
+            filter={activeFilter ?? { id: "all", name: "全部内容", icon: "all", query: {}, sortOrder: 0, builtin: true }}
+            day={selectedDay}
+            onNotify={notify}
+            onChanged={() => void loadEntryMeta()}
+          />
         ) : view === "memos" ? (
           <MemosView
             tags={memoTags}
