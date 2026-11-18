@@ -16,7 +16,7 @@ import (
 )
 
 // Version is shown in the UI and written to the log on start.
-const Version = "1.5.1"
+const Version = "1.6.0"
 
 // AppInfo is static information the frontend needs for the about/settings view.
 type AppInfo struct {
@@ -118,6 +118,7 @@ func (s *ClipService) Start() error {
 	go s.updateCheckLoop()
 	s.EnsureCaptureHotkey()
 	s.MigrateLegacyMemoImages()
+	s.store.MigrateToEntries()
 	s.refreshTriggers()
 	s.applyExpander(s.store.Settings())
 	// Whatever is already on the clipboard when the app starts is also part of

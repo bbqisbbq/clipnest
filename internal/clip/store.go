@@ -167,6 +167,11 @@ func Open(dir string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("初始化数据库失败: %w", err)
 	}
+	// 统一条目模型（entries / entry_blobs / entries_fts / entry_filters）
+	if _, err := db.Exec(entrySchema); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("初始化统一条目表失败: %w", err)
+	}
 	// Older databases predate the snippet tombstones: add the scope column in
 	// place. SQLite has no "ADD COLUMN IF NOT EXISTS", so the error is expected.
 	_, _ = db.Exec(`ALTER TABLE tombstones ADD COLUMN scope TEXT NOT NULL DEFAULT 'item'`)
