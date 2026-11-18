@@ -258,33 +258,8 @@ export default function SettingsView(props: Props) {
             </Row>
           </Section>
 
-          <Section title="保留策略" desc="收藏（星标）的条目不会被自动清理。">
-            <Row label="最多保留条数" tip="超出后删除最旧的未收藏条目。">
-              <input
-                className="input is-num"
-                type="number"
-                min={50}
-                step={50}
-                value={draft.maxItems}
-                onChange={(e) => patch({ maxItems: Number(e.target.value) || 1000 })}
-              />
-              <span className="unit">条</span>
-            </Row>
-            <Row label="最长保留天数" tip="0 表示永久保留。">
-              <input
-                className="input is-num"
-                type="number"
-                min={0}
-                step={1}
-                value={draft.maxAgeDays}
-                onChange={(e) => patch({ maxAgeDays: Number(e.target.value) || 0 })}
-              />
-              <span className="unit">天</span>
-            </Row>
-          </Section>
-
-          <Section title="忽略规则" desc="命中的内容不会进入历史，适合密码管理器与内部系统。">
-            <Row label="忽略这些程序" tip="可执行文件名，逗号分隔，例如 keepass.exe, bitwarden.exe。" stacked>
+          <Section title="忽略程序" desc="这些程序里复制的内容不会被记录，适合密码管理器。">
+            <Row label="程序名" tip="可执行文件名，逗号分隔，例如 keepass.exe, bitwarden.exe。" stacked>
               <input
                 className="input"
                 value={appText}
@@ -292,17 +267,7 @@ export default function SettingsView(props: Props) {
                 onChange={(e) => setAppText(e.target.value)}
               />
             </Row>
-            <Row label="忽略匹配这些正则的内容" tip="每行一条正则，命中文本、预览或文件名即跳过。" stacked>
-              <textarea
-                className="input is-area"
-                rows={4}
-                value={patternText}
-                placeholder={"^sk-[A-Za-z0-9]{20,}\npassword\\s*="}
-                onChange={(e) => setPatternText(e.target.value)}
-              />
-            </Row>
           </Section>
-
           <Section title="交互与启动" desc="快速粘贴窗在光标处弹出，选中后直接粘进当前程序。">
             <Row label="快速粘贴快捷键" tip="例如 Ctrl+Shift+V；留空表示不注册全局快捷键。">
               <input

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { marked } from "marked";
 import MarkdownEditor from "./MarkdownEditor";
+import SnippetFields from "./SnippetFields";
 import { ClipService, type Entry, type EntryFilter, type EntryQuery } from "../lib/api";
 
 // 统一内容视图：剪贴板采集、片段、手写备忘都在这里，靠属性区分。
@@ -467,6 +468,16 @@ export default function EntriesView({ filter, day, onNotify, onChanged }: Props)
           onDoubleClick={() => setComposerHeight(COMPOSER_DEFAULT)}
           title="拖动调整高度，双击复位"
         />
+        {editing && editing.triggerKey ? (
+          <SnippetFields
+            entry={editing}
+            onSaved={() => {
+              void loadLatest();
+              onChanged();
+            }}
+            onNotify={onNotify}
+          />
+        ) : null}
         <div className="composer-box">
           {preview ? (
             <div
@@ -522,6 +533,12 @@ export default function EntriesView({ filter, day, onNotify, onChanged }: Props)
             </div>
           </div>
         </div>
+        {editing && editing.source === "clipboard" ? (
+          <p className="composer-hint entry-source-hint">
+            采集自 {editing.sourceApp || "剪贴板"} · 复制 {editing.copyCount || 1} 次
+            {(editing.seenCount ?? 0) > 1 ? ` · 出现 ${editing.seenCount} 次` : ""}
+          </p>
+        ) : null}
         {error ? <p className="snip-error composer-error">{error}</p> : null}
       </div>
     </div>

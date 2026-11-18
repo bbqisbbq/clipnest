@@ -55,7 +55,7 @@ func (s *Store) migrateItemsToEntries() int {
 	added := 0
 	for _, l := range list {
 		it := l.it
-		expires := it.CreatedAt.AddDate(0, 0, 30)
+		// 不设过期：采集的条目和手写的一样永久保留，删不删由用户决定
 		e := Entry{
 			ID:        it.ID,
 			Content:   it.Text,
@@ -74,21 +74,25 @@ func (s *Store) migrateItemsToEntries() int {
 			FormatName: it.FormatName,
 			FormatID:   it.FormatID,
 			Files:      it.Files,
-			ExpiresAt:  &expires,
 			CreatedAt:  it.CreatedAt,
 			UpdatedAt:  it.UpdatedAt,
 		}
-		// 图片/自定义格式的正文是空的，用一个占位让列表能显示
+		// 附件先搬过去（内容寻址，天然去重），图片条目要把引用写进正文，
+		// 否则列表里只有一行占位文字、永远看不到图
+		if data, err := s.LoadBlobByID(it.ID); err == nil && len(data) > 0 {
+			if token, err := s.SaveEntryBlob(data, s.BlobExt(it.ID)); err == nil {
+				if it.Kind == KindImage {
+					e.Content = "![](" + token + ")"
+				}
+			}
+		}
+		// 其它没有文本的格式给个占位，至少列表能看出是什么
 		if strings.TrimSpace(e.Content) == "" {
 			e.Content = placeholderForKind(it.Kind)
 		}
 		if _, err := s.SaveEntry(e); err != nil {
 			Logf(s.dir, "entry migration (item %s): %v", it.ID, err)
 			continue
-		}
-		// 附件搬过去（内容寻址，天然去重）
-		if data, err := s.LoadBlobByID(it.ID); err == nil && len(data) > 0 {
-			_, _ = s.SaveEntryBlob(data, s.BlobExt(it.ID))
 		}
 		added++
 	}

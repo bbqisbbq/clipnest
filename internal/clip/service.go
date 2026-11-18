@@ -16,7 +16,7 @@ import (
 )
 
 // Version is shown in the UI and written to the log on start.
-const Version = "1.7.0"
+const Version = "1.7.1"
 
 // AppInfo is static information the frontend needs for the about/settings view.
 type AppInfo struct {
@@ -119,6 +119,8 @@ func (s *ClipService) Start() error {
 	s.EnsureCaptureHotkey()
 	s.MigrateLegacyMemoImages()
 	s.store.MigrateToEntries()
+	s.store.RepairEntryImages()
+	s.store.ClearEntryExpiry()
 	s.refreshTriggers()
 	s.applyExpander(s.store.Settings())
 	// Whatever is already on the clipboard when the app starts is also part of
@@ -275,7 +277,7 @@ func (s *ClipService) handleClipboardChange() {
 	if err != nil {
 		return
 	}
-	s.store.Prune(st.MaxItems, st.MaxAgeDays)
+	// 不再自动清理：用户要求「以保留为主，手动删除」。Prune 保留实现但不再调用。
 
 	if isNew {
 		s.emit("clip:new", *item)
@@ -489,7 +491,7 @@ func (s *ClipService) SaveSettings(st Settings) (Settings, error) {
 			return s.store.Settings(), err
 		}
 	}
-	s.store.Prune(st.MaxItems, st.MaxAgeDays)
+	// 不再自动清理：用户要求「以保留为主，手动删除」。Prune 保留实现但不再调用。
 	go s.syncLoop()
 	go s.updateCheckLoop()
 	s.refreshTriggers()

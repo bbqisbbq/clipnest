@@ -2495,3 +2495,21 @@ body.is-col-resizing .memo-splitter { background: var(--accent-tint); }
   cursor: pointer;
 }
 .cal-clear:hover { background: var(--accent-tint); color: var(--accent); }
+/* 片段的额外编辑项 */
+.snippet-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+.snippet-fields-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sf-label { font-size: 11px; color: var(--text-3); white-space: nowrap; }
+.sf-trigger { width: 120px; font-family: var(--font-mono); font-size: 12px; }
+.sf-wide { width: 170px; font-size: 11px; }
+.sf-group { width: 110px; font-size: 11px; }
+.sf-check { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text-2); white-space: nowrap; }
+.entry-source-hint { margin: 4px 0 0; }
