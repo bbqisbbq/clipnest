@@ -64,6 +64,15 @@ export interface Filter {
 }
 
 /**
+ * ImportResult summarises what an import did.
+ */
+export interface ImportResult {
+    "added": number;
+    "skipped": number;
+    "error"?: string;
+}
+
+/**
  * Item is one clipboard entry.
  */
 export interface Item {
@@ -250,6 +259,11 @@ export interface Settings {
      * straight into the focused application.
      */
     "hotkey": string;
+
+    /**
+     * CaptureHotkey opens the quick-capture popup (a memo in one keystroke).
+     */
+    "captureHotkey": string;
 
     /**
      * PasteOnPick synthesises Ctrl+V after the picker writes the entry to the

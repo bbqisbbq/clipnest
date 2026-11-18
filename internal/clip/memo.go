@@ -318,8 +318,13 @@ func (s *ClipService) SaveMemo(m Memo) (Memo, error) {
 	return saved, nil
 }
 
-// DeleteMemo removes a note.
-func (s *ClipService) DeleteMemo(id string) bool { return s.store.DeleteMemo(id) }
+// DeleteMemo removes a note and leaves a tombstone so peers drop theirs.
+func (s *ClipService) DeleteMemo(id string) bool {
+	if m, ok := s.store.GetMemo(id); ok && m.Hash != "" {
+		s.store.AddTombstoneScoped("memo", m.Hash, nowUTC(), hostName())
+	}
+	return s.store.DeleteMemo(id)
+}
 
 // QuickMemo creates a note from a single line (the capture popup / tray entry).
 func (s *ClipService) QuickMemo(content string) (Memo, error) {
@@ -375,4 +380,151 @@ func (s *ClipService) MemoFromClipboard() (Memo, error) {
 		return Memo{}, errors.New("剪贴板里没有文本")
 	}
 	return s.SaveMemo(Memo{Content: text, Source: "clipboard"})
+}
+// ---- 同步支持 ------------------------------------------------------------
+
+// findMemoByHash looks a memo up by its content hash (the sync pairing key).
+func (s *Store) findMemoByHash(hash string) (Memo, bool) {
+	if hash == "" {
+		return Memo{}, false
+	}
+	row := s.db.QueryRow(`SELECT `+memoColumns+` FROM memos WHERE hash = ?`, hash)
+	m, err := scanMemo(row)
+	if err != nil {
+		return Memo{}, false
+	}
+	return m, true
+}
+
+// UpsertRemoteMemo merges a memo arriving from a peer (paired by hash).
+func (s *Store) UpsertRemoteMemo(in Memo) (isNew bool, changed bool) {
+	if in.Hash == "" || strings.TrimSpace(in.Content) == "" {
+		return false, false
+	}
+	local, ok := s.findMemoByHash(in.Hash)
+	if ok {
+		if in.UpdatedAt.After(local.UpdatedAt) {
+			_, _ = s.db.Exec(`UPDATE memos SET content=?, tags=?, updated_at=? WHERE id=?`,
+				in.Content, TagSpec(ExtractTags(in.Content)), encodeTime(in.UpdatedAt), local.ID)
+			changed = true
+		}
+		if in.Pinned && !local.Pinned {
+			_, _ = s.db.Exec(`UPDATE memos SET pinned = 1 WHERE id = ?`, local.ID)
+			changed = true
+		}
+		if in.Archived && !local.Archived {
+			_, _ = s.db.Exec(`UPDATE memos SET archived = 1 WHERE id = ?`, local.ID)
+			changed = true
+		}
+		if merged, ok := s.GetMemo(local.ID); ok {
+			_ = s.indexMemo(merged)
+		}
+		return false, changed
+	}
+	sp := in
+	if sp.ID == "" {
+		sp.ID = newID()
+	}
+	if sp.CreatedAt.IsZero() {
+		sp.CreatedAt = nowUTC()
+	}
+	if sp.UpdatedAt.IsZero() {
+		sp.UpdatedAt = sp.CreatedAt
+	}
+	if _, err := s.db.Exec(`
+		INSERT INTO memos (id, content, tags, pinned, archived, source, source_app, hash,
+		                   created_at, updated_at)
+		VALUES (?,?,?,?,?,?,?,?,?,?)`,
+		sp.ID, sp.Content, TagSpec(ExtractTags(sp.Content)), boolInt(sp.Pinned), boolInt(sp.Archived),
+		sp.Source, sp.SourceApp, sp.Hash, encodeTime(sp.CreatedAt), encodeTime(sp.UpdatedAt),
+	); err != nil {
+		return false, false
+	}
+	_ = s.indexMemo(sp)
+	return true, true
+}
+
+// DeleteMemoByHash drops a memo because a peer deleted it.
+func (s *Store) DeleteMemoByHash(hash string) bool {
+	local, ok := s.findMemoByHash(hash)
+	if !ok {
+		return false
+	}
+	return s.DeleteMemo(local.ID)
+}
+
+// ImportMemo inserts a memo with explicit timestamps (used by the Memos importer,
+// which must preserve createTime/updateTime).
+func (s *Store) ImportMemo(in Memo) (Memo, error) {
+	in.Content = strings.TrimSpace(in.Content)
+	if in.Content == "" {
+		return Memo{}, errors.New("内容为空")
+	}
+	in.ID = newID()
+	in.Hash = memoHash(in.Content)
+	in.Tags = ExtractTags(in.Content)
+	if in.CreatedAt.IsZero() {
+		in.CreatedAt = nowUTC()
+	}
+	if in.UpdatedAt.IsZero() {
+		in.UpdatedAt = in.CreatedAt
+	}
+	if in.Source == "" {
+		in.Source = "import"
+	}
+	if _, err := s.db.Exec(`
+		INSERT INTO memos (id, content, tags, pinned, archived, source, source_app, hash,
+		                   created_at, updated_at)
+		VALUES (?,?,?,?,?,?,?,?,?,?)`,
+		in.ID, in.Content, TagSpec(in.Tags), boolInt(in.Pinned), boolInt(in.Archived),
+		in.Source, in.SourceApp, in.Hash, encodeTime(in.CreatedAt), encodeTime(in.UpdatedAt),
+	); err != nil {
+		return Memo{}, err
+	}
+	_ = s.indexMemo(in)
+	return in, nil
+}
+
+// memoManifest renders memos for the sync package index.
+func (s *Store) memoManifest() []manifestItem {
+	rows, err := s.db.Query(`SELECT ` + memoColumns + ` FROM memos ORDER BY updated_at DESC`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	out := make([]manifestItem, 0, 32)
+	for rows.Next() {
+		m, err := scanMemo(rows)
+		if err != nil {
+			return out
+		}
+		out = append(out, manifestItem{
+			Hash:      m.Hash,
+			ID:        m.ID,
+			Kind:      KindText,
+			Preview:   truncateRunes(strings.ReplaceAll(m.Content, "\n", " "), 120),
+			UpdatedAt: m.UpdatedAt,
+			Pinned:    m.Pinned,
+			CopyCount: 0,
+		})
+	}
+	return out
+}
+
+// AllMemos returns every memo (used by sync and export).
+func (s *Store) AllMemos() []Memo {
+	rows, err := s.db.Query(`SELECT ` + memoColumns + ` FROM memos ORDER BY created_at ASC`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	out := make([]Memo, 0, 64)
+	for rows.Next() {
+		m, err := scanMemo(rows)
+		if err != nil {
+			return out
+		}
+		out = append(out, m)
+	}
+	return out
 }

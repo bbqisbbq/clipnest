@@ -111,7 +111,16 @@ export default function SnippetsView(props: Props) {
     setBusy(true);
     setError("");
     try {
-      const saved = await ClipService.SaveSnippet({ ...draft, body: draft.body ?? "" }, imageData);
+      const now = new Date().toISOString();
+      const saved = await ClipService.SaveSnippet(
+        {
+          ...draft,
+          body: draft.body ?? "",
+          createdAt: draft.createdAt || now,
+          updatedAt: draft.updatedAt || now,
+        },
+        imageData,
+      );
       setDraft({ ...saved });
       setImageData("");
       await props.onReload();

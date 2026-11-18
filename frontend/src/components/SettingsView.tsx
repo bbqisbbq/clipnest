@@ -93,6 +93,26 @@ function Section({
 
 export default function SettingsView(props: Props) {
   // 当前预设的对比度自检（WCAG AA 4.5:1）——相当于把 Memos 的单测变成界面提示
+  const exportMemos = async () => {
+    try {
+      const path = await ClipService.ExportMemosToFile("");
+      setMemoIo(`已导出：${path}`);
+    } catch (err) {
+      setMemoIo(`导出失败：${String(err)}`);
+    }
+  };
+
+  const importMemos = async () => {
+    try {
+      const res = await ClipService.ImportMemosFromFile(memoImportPath.trim());
+      setMemoIo(`导入完成：新增 ${res.added} 条，跳过 ${res.skipped} 条`);
+    } catch (err) {
+      setMemoIo(`导入失败：${String(err)}`);
+    }
+  };
+
+  const [memoImportPath, setMemoImportPath] = useState("");
+  const [memoIo, setMemoIo] = useState("");
   const contrast = useMemo(
     () => checkContrast(presetByID(props.settings?.themePreset).tokens),
     [props.settings?.themePreset],
@@ -530,6 +550,42 @@ export default function SettingsView(props: Props) {
                 )}
               </span>
             </div>
+          </Section>
+
+          <Section title="备忘" desc="快捷键在光标处弹出一个小输入框，Enter 存成备忘；也可以和 Memos 互相导入导出。">
+            <Row label="快速输入快捷键" tip="全局快捷键，例如 Ctrl+Shift+N。留空可关闭。">
+              <input
+                className="input is-narrow"
+                value={draft.captureHotkey ?? ""}
+                placeholder="Ctrl+Shift+N"
+                onChange={(e) => patch({ captureHotkey: e.target.value })}
+              />
+            </Row>
+            <Row label="导出为 Memos 包" tip="生成 memos-export 1.0 格式的 zip，可直接导入任意 Memos 实例。">
+              <div className="settings-inline">
+                <button className="btn btn-ghost btn-sm" onClick={() => void exportMemos()}>
+                  导出
+                </button>
+                {memoIo ? <span className="snip-hint">{memoIo}</span> : null}
+              </div>
+            </Row>
+            <Row label="从 Memos 包导入" tip="支持 memos-export 1.0 的 zip；同样的内容不会重复导入。">
+              <div className="settings-inline">
+                <input
+                  className="input"
+                  placeholder="C:\\path\\to\\memos-export.zip"
+                  value={memoImportPath}
+                  onChange={(e) => setMemoImportPath(e.target.value)}
+                />
+                <button
+                  className="btn btn-ghost btn-sm"
+                  disabled={!memoImportPath.trim()}
+                  onClick={() => void importMemos()}
+                >
+                  导入
+                </button>
+              </div>
+            </Row>
           </Section>
 
           <Section title="使用统计" desc="GitHub 公布的安装包下载次数，用来粗略判断有没有人在用；本地读取，不上传任何东西。">

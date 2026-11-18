@@ -135,3 +135,104 @@ func TestMemoFromClipboardAndSnippet(t *testing.T) {
 		t.Errorf("append failed: %q", updated.Content)
 	}
 }
+
+func TestMemoSyncAcrossDevices(t *testing.T) {
+	base, _, _ := newTestDAV(t)
+
+	a := syncedService(t, base)
+	if _, err := a.SaveMemo(Memo{Content: "同步测试：这条应该在另一台机器上出现 #同步"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.SyncNow(); err != nil {
+		t.Fatalf("A sync: %v", err)
+	}
+
+	b := syncedService(t, base)
+	if _, err := b.SyncNow(); err != nil {
+		t.Fatalf("B sync: %v", err)
+	}
+	got := b.GetMemos(MemoFilter{})
+	if len(got) != 1 || !strings.Contains(got[0].Content, "同步测试") {
+		t.Fatalf("B memos = %+v", got)
+	}
+	if len(got[0].Tags) != 1 || got[0].Tags[0] != "同步" {
+		t.Errorf("tags lost in transit: %v", got[0].Tags)
+	}
+
+	// 删除要传播
+	if !b.DeleteMemo(got[0].ID) {
+		t.Fatal("delete failed")
+	}
+	if _, err := b.SyncNow(); err != nil {
+		t.Fatalf("B resync: %v", err)
+	}
+	if _, err := a.SyncNow(); err != nil {
+		t.Fatalf("A resync: %v", err)
+	}
+	if left := a.GetMemos(MemoFilter{}); len(left) != 0 {
+		t.Errorf("deleted memo survived on A: %d", len(left))
+	}
+}
+
+func TestMemosExportImportRoundTrip(t *testing.T) {
+	svc := newTestService(t, t.TempDir())
+	keep, err := svc.SaveMemo(Memo{Content: "导出测试 #导出", Pinned: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	zipBytes, err := svc.ExportMemosZip()
+	if err != nil {
+		t.Fatalf("export: %v", err)
+	}
+	if len(zipBytes) == 0 {
+		t.Fatal("empty archive")
+	}
+
+	other := newTestService(t, t.TempDir())
+	res, err := other.ImportMemosZip(zipBytes)
+	if err != nil {
+		t.Fatalf("import: %v", err)
+	}
+	if res.Added != 1 {
+		t.Errorf("added = %d, want 1", res.Added)
+	}
+	got := other.GetMemos(MemoFilter{})
+	if len(got) != 1 || got[0].Content != keep.Content || !got[0].Pinned {
+		t.Errorf("imported memo = %+v", got)
+	}
+	if len(got[0].Tags) != 1 || got[0].Tags[0] != "导出" {
+		t.Errorf("tags lost: %v", got[0].Tags)
+	}
+
+	// 再导入一次不应重复
+	again, err := other.ImportMemosZip(zipBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.Added != 0 || again.Skipped != 1 {
+		t.Errorf("second import = %+v", again)
+	}
+}
+func TestPackageCarriesMemos(t *testing.T) {
+	svc := newTestService(t, t.TempDir())
+	if _, err := svc.SaveMemo(Memo{Content: "打包里应该有这条 #打包"}); err != nil {
+		t.Fatal(err)
+	}
+	payload, _, err := svc.buildOwnPackage(nil, nil, nil, nil, svc.store.Settings())
+	if err != nil {
+		t.Fatalf("buildOwnPackage: %v", err)
+	}
+	pkg, err := parsePackage(payload)
+	if err != nil {
+		t.Fatalf("parsePackage: %v", err)
+	}
+	if len(pkg.index.Memos) != 1 {
+		t.Errorf("index.Memos = %d, want 1", len(pkg.index.Memos))
+	}
+	if len(pkg.memos) != 1 {
+		t.Fatalf("pkg.memos = %d, want 1", len(pkg.memos))
+	}
+	if !strings.Contains(pkg.memos[0].Content, "打包") {
+		t.Errorf("memo content lost: %q", pkg.memos[0].Content)
+	}
+}

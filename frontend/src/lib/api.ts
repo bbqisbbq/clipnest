@@ -51,6 +51,7 @@ export function emptySettings(): Settings {
     ignorePatterns: [],
     ignoreApps: [],
     hotkey: "Ctrl+Shift+V",
+    captureHotkey: "Ctrl+Shift+N",
     pasteOnPick: true,
     showOnLaunch: false,
     closeToTray: true,

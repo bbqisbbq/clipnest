@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { marked } from "marked";
+import { highlightMarkdown } from "../lib/liveMarkdown";
 import { ClipService, type Memo } from "../lib/api";
 
 // 「备忘」= Memos 形态的碎片笔记，但完全本地：没有用户、权限、分享、评论。
@@ -12,6 +13,16 @@ type Props = {
   onReload: () => Promise<void>;
   onNotify: (message: string) => void;
 };
+
+// toSavePayload 去掉空时间戳：绑定层会把 "" 当成 RFC3339 解析并报错。
+function toSavePayload(m: Memo): Memo {
+  const now = new Date().toISOString();
+  return {
+    ...m,
+    createdAt: m.createdAt || now,
+    updatedAt: m.updatedAt || now,
+  };
+}
 
 const EMPTY: Memo = {
   id: "",
@@ -49,6 +60,7 @@ export default function MemosView(props: Props) {
   const [query, setQuery] = useState("");
   const [draft, setDraft] = useState<Memo>(EMPTY);
   const [preview, setPreview] = useState(false);
+  const backRef = useRef<HTMLDivElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -97,7 +109,7 @@ export default function MemosView(props: Props) {
     setBusy(true);
     setError("");
     try {
-      const saved = await ClipService.SaveMemo({ ...draft });
+      const saved = await ClipService.SaveMemo(toSavePayload(draft));
       setDraft({ ...saved });
       await props.onReload();
       props.onNotify(draft.id ? "已更新备忘" : "已记下");
@@ -111,7 +123,7 @@ export default function MemosView(props: Props) {
   const toggle = useCallback(
     async (m: Memo, field: "pinned" | "archived") => {
       try {
-        await ClipService.SaveMemo({ ...m, [field]: !m[field] });
+        await ClipService.SaveMemo(toSavePayload({ ...m, [field]: !m[field] }));
         await props.onReload();
       } catch (err) {
         props.onNotify(`操作失败：${String(err)}`);
@@ -260,18 +272,29 @@ export default function MemosView(props: Props) {
         {preview ? (
           <div className="snip-preview memo-preview" dangerouslySetInnerHTML={{ __html: previewHtml }} />
         ) : (
-          <textarea
-            className="input is-area memo-input"
-            placeholder={"随手记点什么…\n\n支持 Markdown，标签写成 #工作 #灵感"}
-            value={draft.content}
-            onChange={(e) => setDraft({ ...draft, content: e.target.value })}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-                e.preventDefault();
-                void save();
-              }
-            }}
-          />
+          <div className="md-live">
+            <div
+              className="md-live-back"
+              ref={backRef}
+              aria-hidden="true"
+              dangerouslySetInnerHTML={{ __html: highlightMarkdown(draft.content) }}
+            />
+            <textarea
+              className="input is-area memo-input md-live-front"
+              placeholder={"随手记点什么…\n\n支持 Markdown，标签写成 #工作 #灵感"}
+              value={draft.content}
+              onChange={(e) => setDraft({ ...draft, content: e.target.value })}
+              onScroll={(e) => {
+                if (backRef.current) backRef.current.scrollTop = e.currentTarget.scrollTop;
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                  e.preventDefault();
+                  void save();
+                }
+              }}
+            />
+          </div>
         )}
 
         <div className="memo-editor-foot">

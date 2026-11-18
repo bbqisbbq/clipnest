@@ -16,6 +16,7 @@ export type {
     AssetDownload,
     FileRef,
     Filter,
+    ImportResult,
     Item,
     Memo,
     MemoFilter,

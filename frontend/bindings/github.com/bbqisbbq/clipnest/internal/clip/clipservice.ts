@@ -27,10 +27,24 @@ export function AutoStartTarget(): $CancellablePromise<string> {
 }
 
 /**
+ * CaptureHotkey returns the accelerator that opens the quick-capture popup.
+ */
+export function CaptureHotkey(): $CancellablePromise<string> {
+    return $Call.ByID(2188251343);
+}
+
+/**
  * CheckUpdate asks GitHub for the newest release and compares it with Version.
  */
 export function CheckUpdate(): $CancellablePromise<$models.UpdateInfo> {
     return $Call.ByID(2960176974);
+}
+
+/**
+ * CloseCapture hides the quick-capture window and gives focus back.
+ */
+export function CloseCapture(): $CancellablePromise<void> {
+    return $Call.ByID(973706531);
 }
 
 /**
@@ -55,7 +69,7 @@ export function DeleteItem(id: string): $CancellablePromise<void> {
 }
 
 /**
- * DeleteMemo removes a note.
+ * DeleteMemo removes a note and leaves a tombstone so peers drop theirs.
  */
 export function DeleteMemo(id: string): $CancellablePromise<boolean> {
     return $Call.ByID(94505264, id);
@@ -95,6 +109,20 @@ export function DraftSnippetFromItem(itemID: string): $CancellablePromise<$model
  */
 export function ExpandActive(): $CancellablePromise<boolean> {
     return $Call.ByID(2704746155);
+}
+
+/**
+ * ExportMemosToFile writes the archive to disk and returns the path.
+ */
+export function ExportMemosToFile(dir: string): $CancellablePromise<string> {
+    return $Call.ByID(3729644697, dir);
+}
+
+/**
+ * ExportMemosZip renders every memo as a Memos-compatible archive.
+ */
+export function ExportMemosZip(): $CancellablePromise<string | null> {
+    return $Call.ByID(3716580873);
 }
 
 /**
@@ -245,6 +273,20 @@ export function HidePicker(): $CancellablePromise<void> {
  */
 export function HideWindow(): $CancellablePromise<void> {
     return $Call.ByID(3728197197);
+}
+
+/**
+ * ImportMemosFromFile reads an archive from disk.
+ */
+export function ImportMemosFromFile(path: string): $CancellablePromise<$models.ImportResult> {
+    return $Call.ByID(1267302221, path);
+}
+
+/**
+ * ImportMemosZip reads a Memos export archive (from bytes).
+ */
+export function ImportMemosZip(blob: string | null): $CancellablePromise<$models.ImportResult> {
+    return $Call.ByID(1628720278, blob);
 }
 
 /**
@@ -469,6 +511,22 @@ export function SetOwnWindowCheck(fn: any): $CancellablePromise<void> {
  */
 export function SetPinned(id: string, pinned: boolean): $CancellablePromise<$models.Item> {
     return $Call.ByID(301380581, id, pinned);
+}
+
+/**
+ * SetWindowChrome is called by the UI whenever the theme changes, so the native
+ * window border follows the palette instead of staying system-default.
+ */
+export function SetWindowChrome(dark: boolean, borderHex: string): $CancellablePromise<void> {
+    return $Call.ByID(1923503997, dark, borderHex);
+}
+
+/**
+ * ShowCapture pops the quick-capture window at the caret so a memo can be typed
+ * without leaving whatever you were doing.
+ */
+export function ShowCapture(): $CancellablePromise<void> {
+    return $Call.ByID(747984102);
 }
 
 /**

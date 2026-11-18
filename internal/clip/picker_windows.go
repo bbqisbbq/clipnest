@@ -5,6 +5,7 @@ package clip
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 	"unsafe"
 
@@ -13,6 +14,8 @@ import (
 
 // This file holds the "paste at the caret" plumbing for the picker: where to put
 // the popup, how to take and give back focus, and how to synthesise Ctrl+V.
+
+var dwmapi = windows.NewLazySystemDLL("dwmapi.dll")
 
 var (
 	procGetGUIThreadInfo   = user32.NewProc("GetGUIThreadInfo")
@@ -333,4 +336,53 @@ func InjectBackspaces(n int) {
 		)
 	}
 	procSendInput.Call(uintptr(len(batch)), uintptr(unsafe.Pointer(&batch[0])), unsafe.Sizeof(batch[0]))
+}
+// ---- 原生窗口外观（跟随主题） -------------------------------------------
+
+const (
+	dwmwaUseImmersiveDarkMode = 20
+	dwmwaBorderColor          = 34
+	dwmwaCaptionColor         = 35
+	dwmwaTextColor            = 36
+)
+
+// SetWindowChrome makes the native parts of a frameless window match the theme:
+// the 1px system border, the (invisible) caption area and the shadow. Without
+// this the window keeps the system's light/dark chrome and looks "off" next to
+// our own colors.
+func SetWindowChrome(hwnd uintptr, dark bool, borderHex string) {
+	if hwnd == 0 {
+		return
+	}
+	procDwmSetWindowAttribute := dwmapi.NewProc("DwmSetWindowAttribute")
+
+	useDark := int32(0)
+	if dark {
+		useDark = 1
+	}
+	procDwmSetWindowAttribute.Call(hwnd, uintptr(dwmwaUseImmersiveDarkMode),
+		uintptr(unsafe.Pointer(&useDark)), unsafe.Sizeof(useDark))
+
+	if rgb, ok := parseHexColor(borderHex); ok {
+		procDwmSetWindowAttribute.Call(hwnd, uintptr(dwmwaBorderColor),
+			uintptr(unsafe.Pointer(&rgb)), unsafe.Sizeof(rgb))
+		procDwmSetWindowAttribute.Call(hwnd, uintptr(dwmwaCaptionColor),
+			uintptr(unsafe.Pointer(&rgb)), unsafe.Sizeof(rgb))
+	}
+}
+
+// parseHexColor turns "#rrggbb" into the COLORREF value DWM expects (0x00BBGGRR).
+func parseHexColor(hex string) (uint32, bool) {
+	h := strings.TrimPrefix(strings.TrimSpace(hex), "#")
+	if len(h) == 3 {
+		h = string([]byte{h[0], h[0], h[1], h[1], h[2], h[2]})
+	}
+	if len(h) != 6 {
+		return 0, false
+	}
+	var r, g, b uint32
+	if _, err := fmt.Sscanf(h, "%02x%02x%02x", &r, &g, &b); err != nil {
+		return 0, false
+	}
+	return uint32(b)<<16 | uint32(g)<<8 | uint32(r), true
 }

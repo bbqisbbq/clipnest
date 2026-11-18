@@ -53,9 +53,12 @@ func main() {
 		app           *application.App
 		win           *application.WebviewWindow
 		picker        *application.WebviewWindow
+	capture       *application.WebviewWindow
 		pauseItem     *application.MenuItem
 		autoStartItem *application.MenuItem
 		currentHotkey string
+	currentCaptureHotkey string
+	applyCaptureHotkey   func(string) error
 		svc           *clip.ClipService
 	)
 
@@ -101,6 +104,47 @@ func main() {
 		}
 	}
 
+	// 快速输入：光标处弹一个小编辑框，Enter 存成备忘。
+	showCaptureAt := func(x, y int) bool {
+		if capture == nil {
+			return false
+		}
+		cx, cy := clip.ClampToWorkArea(x, y, clip.CaptureWidth, clip.CaptureHeight)
+		application.InvokeSync(func() {
+			capture.SetPosition(cx, cy)
+			capture.Show()
+			if hwnd := uintptr(capture.NativeWindow()); hwnd != 0 {
+				clip.ActivateWindow(hwnd)
+			}
+			capture.Focus()
+			clip.Logf(dataDir, "capture window: pos=(%d,%d) hwnd=%#x", cx, cy, uintptr(capture.NativeWindow()))
+		})
+		if app != nil {
+			app.Event.Emit("capture:opened", "")
+		}
+		return true
+	}
+	hideCapture := func() {
+		if capture != nil {
+			capture.Hide()
+		}
+	}
+
+	// 原生边框跟随主题：把 DWM 的系统边框/标题区刷成当前配色
+	applyChrome := func(dark bool, borderHex string) {
+		application.InvokeSync(func() {
+			if win != nil {
+				clip.SetWindowChrome(uintptr(win.NativeWindow()), dark, borderHex)
+			}
+			if picker != nil {
+				clip.SetWindowChrome(uintptr(picker.NativeWindow()), dark, borderHex)
+			}
+			if capture != nil {
+				clip.SetWindowChrome(uintptr(capture.NativeWindow()), dark, borderHex)
+			}
+		})
+	}
+
 	var applyHotkey func(string) error
 	applyHotkey = func(accel string) error {
 		if accel == currentHotkey {
@@ -121,6 +165,30 @@ func main() {
 			return err
 		}
 		currentHotkey = accel
+		return nil
+	}
+
+	applyCaptureHotkey = func(accel string) error {
+		if accel == currentCaptureHotkey {
+			return nil
+		}
+		if currentCaptureHotkey != "" && app.GlobalShortcut.IsRegistered(currentCaptureHotkey) {
+			_ = app.GlobalShortcut.Unregister(currentCaptureHotkey)
+		}
+		currentCaptureHotkey = ""
+		if accel == "" {
+			return nil
+		}
+		if err := app.GlobalShortcut.Register(accel, func() {
+			if err := svc.ShowCapture(); err != nil {
+				clip.Logf(dataDir, "open capture window failed: %v", err)
+			}
+		}); err != nil {
+			clip.Logf(dataDir, "capture hotkey register failed: %q: %v", accel, err)
+			return err
+		}
+		currentCaptureHotkey = accel
+		clip.Logf(dataDir, "capture hotkey registered: %s", accel)
 		return nil
 	}
 
@@ -164,7 +232,10 @@ func main() {
 		Quit:          quit,
 		ExePath:       exePath,
 		PlatformWorks: true,
-		ShowPickerAt:  showPickerAt,
+		ShowPickerAt:    showPickerAt,
+		ShowCaptureAt:   showCaptureAt,
+		HideCapture:     hideCapture,
+		ApplyChrome:     applyChrome,
 		HidePicker:    hidePicker,
 		OpenURL:       clip.OpenExternal,
 		OnSettings: func(st clip.Settings) error {
@@ -174,7 +245,8 @@ func main() {
 			if autoStartItem != nil {
 				autoStartItem.SetChecked(st.AutoStart)
 			}
-			return applyHotkey(st.Hotkey)
+			_ = applyCaptureHotkey(st.CaptureHotkey)
+		return applyHotkey(st.Hotkey)
 		},
 	})
 	if err != nil {
@@ -255,7 +327,27 @@ func main() {
 		URL:              "/?mode=picker",
 	})
 
+	// Quick capture popup: a memo in one keystroke, right where you are typing.
+	capture = app.Window.NewWithOptions(application.WebviewWindowOptions{
+		Name:            "capture",
+		Title:           "记一笔",
+		Width:           clip.CaptureWidth,
+		Height:          clip.CaptureHeight,
+		Frameless:       true,
+		AlwaysOnTop:     true,
+		Hidden:          true,
+		DisableResize:   true,
+		HideOnFocusLost: true,
+		Windows: application.WindowsWindow{
+			Theme: application.SystemDefault,
+		},
+		BackgroundColour: application.NewRGB(18, 21, 28),
+		URL:              "/?mode=capture",
+	})
+
 	applyHotkey(preSettings.Hotkey)
+	clip.Logf(dataDir, "capture hotkey configured: %q", preSettings.CaptureHotkey)
+	applyCaptureHotkey(preSettings.CaptureHotkey)
 
 	// Tray icon + menu.
 	tray := app.SystemTray.New()

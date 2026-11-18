@@ -15,8 +15,8 @@ import (
 	"net/url"
 	"os"
 	"path"
-	"strconv"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -103,18 +103,21 @@ type settingsPayload struct {
 // pkgIndex is package.json: everything needed to merge without opening the
 // per-item files.
 type pkgIndex struct {
-	Version   int              `json:"version"`
-	DeviceID  string           `json:"deviceId"`
-	Device    string           `json:"device"`
-	UpdatedAt time.Time        `json:"updatedAt"`
-	Items     []manifestItem   `json:"items"`
+	Version   int            `json:"version"`
+	DeviceID  string         `json:"deviceId"`
+	Device    string         `json:"device"`
+	UpdatedAt time.Time      `json:"updatedAt"`
+	Items     []manifestItem `json:"items"`
 	// Snippets travel in the same package: same merge rules, own namespace.
 	Snippets []manifestItem `json:"snippets,omitempty"`
-	Deleted   []Tombstone      `json:"deleted,omitempty"`
+	Deleted  []Tombstone    `json:"deleted,omitempty"`
 	// DeletedSnippets carries snippet deletions (hash + time).
 	DeletedSnippets []Tombstone `json:"deletedSnippets,omitempty"`
-	Settings  *settingsPayload `json:"settings,omitempty"`
-	Truncated bool             `json:"truncated,omitempty"`
+	// Memos travel the same way.
+	Memos        []manifestItem   `json:"memos,omitempty"`
+	DeletedMemos []Tombstone      `json:"deletedMemos,omitempty"`
+	Settings     *settingsPayload `json:"settings,omitempty"`
+	Truncated    bool             `json:"truncated,omitempty"`
 }
 
 // itemRecord is one items/<hash>.json body.
@@ -130,11 +133,18 @@ type snippetRecord struct {
 	Snippet Snippet `json:"snippet"`
 }
 
+// memoRecord is one memos/<hash>.json body.
+type memoRecord struct {
+	Version int  `json:"version"`
+	Memo    Memo `json:"memo"`
+}
+
 // syncPackage is a parsed archive.
 type syncPackage struct {
 	index    pkgIndex
 	items    []Item
 	snippets []Snippet
+	memos    []Memo
 	blobs    map[string][]byte // "<hash><ext>" (items) / "snippet-<hash><ext>"
 	size     int64
 }
@@ -411,7 +421,7 @@ func (c syncConfig) listPackages(dir string) ([]davEntry, error) {
 // ---- package (zip) ------------------------------------------------------
 
 // buildPackage serialises an index + records + payloads into one archive.
-func buildPackage(idx pkgIndex, records []itemRecord, snippets []snippetRecord, blobs map[string][]byte) ([]byte, error) {
+func buildPackage(idx pkgIndex, records []itemRecord, snippets []snippetRecord, memos []memoRecord, blobs map[string][]byte) ([]byte, error) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 
@@ -434,6 +444,23 @@ func buildPackage(idx pkgIndex, records []itemRecord, snippets []snippetRecord, 
 		}
 		f, err := zw.CreateHeader(&zip.FileHeader{
 			Name:   "snippets/" + rec.Snippet.Hash + ".json",
+			Method: zip.Deflate,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if _, err := f.Write(body); err != nil {
+			return nil, err
+		}
+	}
+
+	for _, rec := range memos {
+		body, err := json.Marshal(rec)
+		if err != nil {
+			return nil, err
+		}
+		f, err := zw.CreateHeader(&zip.FileHeader{
+			Name:   "memos/" + rec.Memo.Hash + ".json",
 			Method: zip.Deflate,
 		})
 		if err != nil {
@@ -546,6 +573,24 @@ func parsePackage(data []byte) (*syncPackage, error) {
 				continue
 			}
 			pkg.snippets = append(pkg.snippets, rec.Snippet)
+		case strings.HasPrefix(f.Name, "memos/") && strings.HasSuffix(f.Name, ".json"):
+			rc, err := f.Open()
+			if err != nil {
+				return nil, err
+			}
+			body, err := io.ReadAll(io.LimitReader(rc, 4<<20))
+			rc.Close()
+			if err != nil {
+				return nil, err
+			}
+			var rec memoRecord
+			if err := json.Unmarshal(body, &rec); err != nil {
+				continue
+			}
+			if rec.Memo.Hash == "" {
+				continue
+			}
+			pkg.memos = append(pkg.memos, rec.Memo)
 		case strings.HasPrefix(f.Name, "blobs/"):
 			rc, err := f.Open()
 			if err != nil {
@@ -718,6 +763,8 @@ func (s *ClipService) syncOnce(upload bool) (SyncStatus, error) {
 	pulledNew, pulledUpd, deletedLocal := 0, 0, 0
 	snippetTombIdx := make(map[string]time.Time, 8)
 	var snippetPeers []Tombstone
+	var memoPeers []Tombstone
+	memoTombIdx := make(map[string]time.Time, 8)
 	peerHasBlob := make(map[string]bool, 256)
 	peerTombstones := make([]Tombstone, 0, 32)
 	var newestPeerSettings *settingsPayload
@@ -810,6 +857,31 @@ func (s *ClipService) syncOnce(upload bool) (SyncStatus, error) {
 		}
 		snippetPeers = append(snippetPeers, res.pkg.index.DeletedSnippets...)
 
+		// ---- memos ----
+		for _, t := range res.pkg.index.DeletedMemos {
+			if cur, ok := memoTombIdx[t.Hash]; !ok || t.DeletedAt.After(cur) {
+				memoTombIdx[t.Hash] = t.DeletedAt
+			}
+			if s.store.DeleteMemoByHash(t.Hash) {
+				deletedLocal++
+			}
+		}
+		for _, remote := range res.pkg.memos {
+			if remote.Hash == "" {
+				continue
+			}
+			if at, killed := memoTombIdx[remote.Hash]; killed && !remote.UpdatedAt.After(at) {
+				continue
+			}
+			isNew, changed := s.store.UpsertRemoteMemo(remote)
+			if isNew {
+				pulledNew++
+			} else if changed {
+				pulledUpd++
+			}
+		}
+		memoPeers = append(memoPeers, res.pkg.index.DeletedMemos...)
+
 		for _, remote := range res.pkg.items {
 			if remote.Hash == "" {
 				continue
@@ -888,7 +960,7 @@ func (s *ClipService) syncOnce(upload bool) (SyncStatus, error) {
 		skipNote = "本地历史为空但对方有数据，已跳过上传"
 	}
 	if upload {
-		payload, fingerprint, err := s.buildOwnPackage(peerHasBlob, peerTombstones, snippetPeers, cur)
+		payload, fingerprint, err := s.buildOwnPackage(peerHasBlob, peerTombstones, snippetPeers, memoPeers, cur)
 		if err != nil {
 			s.setSyncError(err)
 			return s.GetSyncStatus(), err
@@ -970,7 +1042,7 @@ func (s *ClipService) syncOnce(upload bool) (SyncStatus, error) {
 
 // buildOwnPackage renders everything this machine knows: all record bodies, the
 // blobs no peer has yet, our tombstones and (when newest) our settings.
-func (s *ClipService) buildOwnPackage(peerHasBlob map[string]bool, peerTombstones []Tombstone, snippetPeers []Tombstone, st Settings) ([]byte, string, error) {
+func (s *ClipService) buildOwnPackage(peerHasBlob map[string]bool, peerTombstones []Tombstone, snippetPeers []Tombstone, memoPeers []Tombstone, st Settings) ([]byte, string, error) {
 	items := s.store.All()
 	idx := pkgIndex{
 		Version:   syncPackageVersion,
@@ -1043,6 +1115,14 @@ func (s *ClipService) buildOwnPackage(peerHasBlob map[string]bool, peerTombstone
 	}
 	horizon := time.Now().AddDate(0, 0, -tombstoneRetentionDays)
 	idx.DeletedSnippets = mergeTombstones(snippetPeers, s.store.TombstonesScoped("snippet", horizon, maxTombstones))
+
+	// ---- memos ----
+	idx.Memos = s.store.memoManifest()
+	memos := make([]memoRecord, 0, len(idx.Memos))
+	for _, m := range s.store.AllMemos() {
+		memos = append(memos, memoRecord{Version: syncPackageVersion, Memo: m})
+	}
+	idx.DeletedMemos = mergeTombstones(memoPeers, s.store.TombstonesScoped("memo", horizon, maxTombstones))
 	idx.Deleted = mergeTombstones(peerTombstones, s.store.Tombstones(horizon, maxTombstones))
 	s.store.PruneTombstones(horizon)
 
@@ -1058,7 +1138,7 @@ func (s *ClipService) buildOwnPackage(peerHasBlob map[string]bool, peerTombstone
 	for name := range blobs {
 		blobNames = append(blobNames, name)
 	}
-	payload, err := buildPackage(idx, records, snippets, blobs)
+	payload, err := buildPackage(idx, records, snippets, memos, blobs)
 	if err != nil {
 		return nil, "", err
 	}

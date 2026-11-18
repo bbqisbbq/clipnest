@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Events } from "@wailsio/runtime";
-import { applyCustomCSS, applyTheme as applyThemePreset, type ThemeScheme } from "./lib/themes";
+import {
+  THEME_PRESETS,
+  applyCustomCSS,
+  applyTheme as applyThemePreset,
+  type ThemeScheme,
+} from "./lib/themes";
 import { ClipService, EventNames, newFilter, type AppInfo, type Item, type Memo, type Settings, type Snippet, type Stats, type SyncStatus, type UpdateInfo } from "./lib/api";
 import TitleBar from "./components/TitleBar";
 import Sidebar from "./components/Sidebar";
@@ -157,6 +162,11 @@ export default function App() {
     applyCustomCSS(themeCss);
     localStorage.setItem("clipnest.theme", themeScheme);
     localStorage.setItem("clipnest.preset", themePreset);
+    // 原生窗口边框/标题区也跟着换，否则浅色主题下会残留系统深色边
+    const preset = THEME_PRESETS.find((p) => p.id === themePreset) ?? THEME_PRESETS[0];
+    void ClipService.SetWindowChrome(preset.scheme === "dark", preset.tokens["--bg"] ?? "").catch(
+      () => {},
+    );
     const mq = window.matchMedia?.("(prefers-color-scheme: light)");
     const onChange = () => {
       if (themeScheme === "system") applyThemePreset(themeScheme, themePreset);

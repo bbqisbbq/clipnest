@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import Picker from "./Picker";
+import Capture from "./Capture";
 import { ClipService } from "./lib/api";
 
 // Bundled fonts (SIL OFL / Apache-2.0). Shipping them avoids relying on
@@ -15,13 +16,16 @@ import { applyTheme } from "./lib/themes";
 
 // The same bundle serves two Wails windows: the manager (default) and the
 // hotkey popup, which main.go loads with ?mode=picker.
-const isPicker = new URLSearchParams(window.location.search).get("mode") === "picker";
+const mode = new URLSearchParams(window.location.search).get("mode");
+const isPicker = mode === "picker";
+const isCapture = mode === "capture";
 // Apply the theme as early as possible so the first paint is not the wrong colour.
 applyTheme(
   (localStorage.getItem("clipnest.theme") as "system" | "dark" | "light") ?? "system",
   localStorage.getItem("clipnest.preset") ?? undefined,
 );
 document.body.classList.toggle("is-picker", isPicker);
+document.body.classList.toggle("is-capture", isCapture);
 
 // Forward frontend failures to the Go log. Without this a render error just
 // leaves an empty window and there is nothing to debug from outside.
@@ -43,7 +47,7 @@ window.addEventListener("unhandledrejection", (e) => report("unhandledrejection"
 
 try {
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-    <React.StrictMode>{isPicker ? <Picker /> : <App />}</React.StrictMode>,
+    <React.StrictMode>{isPicker ? <Picker /> : isCapture ? <Capture /> : <App />}</React.StrictMode>,
   );
 } catch (err) {
   report("render", err);

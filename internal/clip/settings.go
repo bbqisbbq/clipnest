@@ -38,6 +38,8 @@ type Settings struct {
 	// Pressing it pops the picker at the text caret and pastes the chosen entry
 	// straight into the focused application.
 	Hotkey string `json:"hotkey"`
+	// CaptureHotkey opens the quick-capture popup (a memo in one keystroke).
+	CaptureHotkey string `json:"captureHotkey"`
 	// PasteOnPick synthesises Ctrl+V after the picker writes the entry to the
 	// clipboard. Turning it off makes the picker copy-only.
 	PasteOnPick bool `json:"pasteOnPick"`

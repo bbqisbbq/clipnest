@@ -16,7 +16,7 @@ import (
 )
 
 // Version is shown in the UI and written to the log on start.
-const Version = "1.2.0"
+const Version = "1.3.0"
 
 // AppInfo is static information the frontend needs for the about/settings view.
 type AppInfo struct {
@@ -49,6 +49,13 @@ type Hooks struct {
 	ShowPickerAt func(x, y int) bool
 	// HidePicker hides the popup window.
 	HidePicker func()
+	// ShowCaptureAt shows the quick-capture popup at the given screen point.
+	ShowCaptureAt func(x, y int) bool
+	// HideCapture hides the quick-capture popup.
+	HideCapture func()
+	// ApplyChrome paints the native window parts (borders, caption) to match the
+	// current theme. Implemented by main.go because only it knows the window handles.
+	ApplyChrome func(dark bool, borderHex string)
 	// OpenURL opens a link in the default browser.
 	OpenURL func(url string) error
 }
@@ -702,6 +709,12 @@ const (
 	PickerHeight = 424
 )
 
+// CaptureSize is the quick-capture popup: a one-box editor for a memo.
+const (
+	CaptureWidth  = 560
+	CaptureHeight = 190
+)
+
 // ShowPicker pops the list at the caret of whatever window has focus.
 func (s *ClipService) ShowPicker() error {
 	if s.hooks.ShowPickerAt == nil {
@@ -791,3 +804,46 @@ func (s *ClipService) LogClient(message string) {
 
 // encodeBase64 is shared by the store's data URL helper.
 func encodeBase64(b []byte) string { return base64.StdEncoding.EncodeToString(b) }
+
+// SetWindowChrome is called by the UI whenever the theme changes, so the native
+// window border follows the palette instead of staying system-default.
+func (s *ClipService) SetWindowChrome(dark bool, borderHex string) {
+	if s.hooks.ApplyChrome != nil {
+		s.hooks.ApplyChrome(dark, borderHex)
+	}
+}
+
+// ShowCapture pops the quick-capture window at the caret so a memo can be typed
+// without leaving whatever you were doing.
+func (s *ClipService) ShowCapture() error {
+	if s.hooks.ShowCaptureAt == nil {
+		return errors.New("快速输入窗口未就绪")
+	}
+	s.mu.Lock()
+	s.targetHwnd = ForegroundWindowHandle()
+	target := s.targetHwnd
+	s.mu.Unlock()
+
+	x, y := CaretAnchor()
+	if !s.hooks.ShowCaptureAt(x, y) {
+		return errors.New("无法显示快速输入窗口")
+	}
+	Logf(s.store.Dir(), "capture show: target=%#x anchor=(%d,%d)", target, x, y)
+	return nil
+}
+
+// CloseCapture hides the quick-capture window and gives focus back.
+func (s *ClipService) CloseCapture() {
+	if s.hooks.HideCapture != nil {
+		s.hooks.HideCapture()
+	}
+	s.mu.Lock()
+	target := s.targetHwnd
+	s.mu.Unlock()
+	if target != 0 {
+		go ActivateWindow(target)
+	}
+}
+
+// CaptureHotkey returns the accelerator that opens the quick-capture popup.
+func (s *ClipService) CaptureHotkey() string { return s.store.Settings().CaptureHotkey }
