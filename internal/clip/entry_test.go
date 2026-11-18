@@ -1,7 +1,6 @@
 package clip
 
 import (
-	"strings"
 	"testing"
 	"time"
 )
@@ -156,69 +155,6 @@ func TestEntryTriggerLookup(t *testing.T) {
 	}
 	if n := len(svc.store.EntryTriggers()); n != 1 {
 		t.Errorf("triggers = %d", n)
-	}
-}
-
-func TestMigrateToUnifiedEntries(t *testing.T) {
-	svc := newTestService(t, t.TempDir())
-
-	// 造三份老数据
-	if _, _, err := svc.store.Add(Captured{
-		Kind: KindText, Text: "复制过的内容", Preview: "复制过的内容", Hash: "h1", Size: 12,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := svc.SaveMemo(Memo{Content: "手写的备忘 #笔记"}); err != nil {
-		t.Fatal(err)
-	}
-	// 故意走旧表：迁移测试要模拟"老版本留下的数据"
-	if _, err := svc.store.SaveSnippet(Snippet{
-		Kind: SnippetText, Title: "话术", Body: "您好", Trigger: "th-",
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	n := svc.store.MigrateToEntries()
-	if n != 3 {
-		t.Fatalf("migrated = %d, want 3", n)
-	}
-
-	all := svc.store.ListEntries(EntryQuery{Limit: 100})
-	if len(all) != 3 {
-		t.Fatalf("entries = %d", len(all))
-	}
-
-	var sawClip, sawMemo, sawSnippet bool
-	for _, e := range all {
-		switch {
-		case e.Source == SourceClipboard:
-			sawClip = true
-			if !e.HasAction(ActionClipboard) {
-				t.Errorf("采集条目应该有 clipboard 能力: %v", e.Actions)
-			}
-			// 按「以保留为主」：采集条目也不设过期，删不删由用户决定
-			if e.ExpiresAt != nil {
-				t.Errorf("采集条目不应该有过期时间（保留为主）: %v", e.ExpiresAt)
-			}
-		case e.TriggerKey == "th-":
-			sawSnippet = true
-			if !e.HasAction(ActionSnippet) {
-				t.Errorf("片段应该有 snippet 能力: %v", e.Actions)
-			}
-		case strings.Contains(e.Content, "手写的备忘"):
-			sawMemo = true
-			if e.ExpiresAt != nil {
-				t.Error("手写备忘不该过期")
-			}
-		}
-	}
-	if !sawClip || !sawMemo || !sawSnippet {
-		t.Errorf("迁移不全: clip=%v memo=%v snippet=%v", sawClip, sawMemo, sawSnippet)
-	}
-
-	// 幂等
-	if again := svc.store.MigrateToEntries(); again != 0 {
-		t.Errorf("第二次迁移又搬了 %d 条", again)
 	}
 }
 

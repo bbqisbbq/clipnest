@@ -83,13 +83,6 @@ export function DeleteItem(id: string): $CancellablePromise<void> {
 }
 
 /**
- * DeleteMemo removes a note and leaves a tombstone so peers drop theirs.
- */
-export function DeleteMemo(id: string): $CancellablePromise<boolean> {
-    return $Call.ByID(94505264, id);
-}
-
-/**
  * DeleteSnippet removes one snippet.
  */
 export function DeleteSnippet(id: string): $CancellablePromise<boolean> {
@@ -126,10 +119,9 @@ export function DraftSnippetFromItem(itemID: string): $CancellablePromise<$model
 }
 
 /**
- * EnsureCaptureHotkey repairs the one-time damage done by an older build whose
- * defaults lacked the field: such a profile stored captureHotkey="" which means
- * "disabled", so the shortcut silently never registered. We only heal once (a
- * later deliberate clear is respected).
+ * EnsureCaptureHotkey repairs a profile whose captureHotkey ended up empty
+ * because an older build shipped no default for it. Runs once (meta marker), so
+ * a later deliberate clear is respected.
  */
 export function EnsureCaptureHotkey(): $CancellablePromise<void> {
     return $Call.ByID(3754874877);
@@ -140,20 +132,6 @@ export function EnsureCaptureHotkey(): $CancellablePromise<void> {
  */
 export function ExpandActive(): $CancellablePromise<boolean> {
     return $Call.ByID(2704746155);
-}
-
-/**
- * ExportMemosToFile writes the archive to disk and returns the path.
- */
-export function ExportMemosToFile(dir: string): $CancellablePromise<string> {
-    return $Call.ByID(3729644697, dir);
-}
-
-/**
- * ExportMemosZip renders every memo as a Memos-compatible archive.
- */
-export function ExportMemosZip(): $CancellablePromise<string | null> {
-    return $Call.ByID(3716580873);
 }
 
 /**
@@ -259,27 +237,6 @@ export function GetMemoImageInfo(hash: string): $CancellablePromise<$models.Memo
 }
 
 /**
- * GetMemoStats reports the badges for the sidebar.
- */
-export function GetMemoStats(): $CancellablePromise<$models.MemoStats> {
-    return $Call.ByID(1130702568);
-}
-
-/**
- * GetMemoTags lists tags in use.
- */
-export function GetMemoTags(): $CancellablePromise<string[] | null> {
-    return $Call.ByID(2704337076);
-}
-
-/**
- * GetMemos lists notes for the manager view.
- */
-export function GetMemos(filter: $models.MemoFilter): $CancellablePromise<$models.Memo[] | null> {
-    return $Call.ByID(119095950, filter);
-}
-
-/**
  * GetSettings returns the current settings.
  */
 export function GetSettings(): $CancellablePromise<$models.Settings> {
@@ -359,20 +316,6 @@ export function HideWindow(): $CancellablePromise<void> {
 }
 
 /**
- * ImportMemosFromFile reads an archive from disk.
- */
-export function ImportMemosFromFile(path: string): $CancellablePromise<$models.ImportResult> {
-    return $Call.ByID(1267302221, path);
-}
-
-/**
- * ImportMemosZip reads a Memos export archive (from bytes).
- */
-export function ImportMemosZip(blob: string | null): $CancellablePromise<$models.ImportResult> {
-    return $Call.ByID(1628720278, blob);
-}
-
-/**
  * InstallUpdate runs a downloaded installer silently and quits so it can
  * replace the binaries. The NSIS script keeps the clipboard history on /S.
  */
@@ -414,22 +357,6 @@ export function LogClient(message: string): $CancellablePromise<void> {
  */
 export function Match(buf: string): $CancellablePromise<[expand$0.Trigger, number, boolean]> {
     return $Call.ByID(472413710, buf);
-}
-
-/**
- * MemoFromClipboard turns whatever text is on the clipboard right now into a
- * note. This is the tray "记一笔" entry: no window, no focus stealing.
- */
-export function MemoFromClipboard(): $CancellablePromise<$models.Memo> {
-    return $Call.ByID(3229683327);
-}
-
-/**
- * MigrateLegacyMemoImages rewrites bare-file image references in memo bodies.
- * Idempotent: once rewritten they become memoimg: tokens and no longer match.
- */
-export function MigrateLegacyMemoImages(): $CancellablePromise<number> {
-    return $Call.ByID(3693119265);
 }
 
 /**
@@ -514,10 +441,11 @@ export function PromoteToSnippet(id: string, trigger: string): $CancellablePromi
 }
 
 /**
- * QuickMemo creates a note from a single line (the capture popup / tray entry).
+ * QuickMemo turns whatever text is on the clipboard right now into a handwritten
+ * entry. Used by the tray "记一笔" item: no window, no focus stealing.
  */
-export function QuickMemo(content: string): $CancellablePromise<$models.Memo> {
-    return $Call.ByID(3490807694, content);
+export function QuickMemo(): $CancellablePromise<$models.Entry> {
+    return $Call.ByID(3490807694);
 }
 
 /**
@@ -574,26 +502,11 @@ export function SaveFilter(f: $models.EntryFilter): $CancellablePromise<$models.
 }
 
 /**
- * SaveItemAsMemo turns a clipboard entry into a note.
- */
-export function SaveItemAsMemo(itemID: string): $CancellablePromise<$models.Memo> {
-    return $Call.ByID(327658405, itemID);
-}
-
-/**
  * SaveItemAsSnippet turns a clipboard-history entry into a snippet ("存为片段"),
  * so something you just copied can become a reusable phrase with a trigger.
  */
 export function SaveItemAsSnippet(itemID: string): $CancellablePromise<$models.Snippet> {
     return $Call.ByID(2119030672, itemID);
-}
-
-/**
- * SaveMemo creates or updates a note. content may be empty when only toggling
- * flags — the stored content is then reused.
- */
-export function SaveMemo(m: $models.Memo): $CancellablePromise<$models.Memo> {
-    return $Call.ByID(1225693786, m);
 }
 
 /**
@@ -692,13 +605,6 @@ export function ShowWindow(): $CancellablePromise<void> {
  */
 export function Shutdown(): $CancellablePromise<void> {
     return $Call.ByID(2570765379);
-}
-
-/**
- * SnippetToMemo appends (or creates) a note from a snippet body.
- */
-export function SnippetToMemo(snippetID: string, memoID: string): $CancellablePromise<$models.Memo> {
-    return $Call.ByID(2710091653, snippetID, memoID);
 }
 
 /**

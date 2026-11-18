@@ -50,7 +50,7 @@ export default function Capture() {
     setBusy(true);
     setError("");
     try {
-      await ClipService.QuickMemo(content);
+      await ClipService.SaveEntry({ content, source: "manual", kind: "text" } as never);
       setText("");
       await ClipService.CloseCapture();
     } catch (err) {

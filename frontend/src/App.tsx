@@ -6,9 +6,9 @@ import {
   applyTheme as applyThemePreset,
   type ThemeScheme,
 } from "./lib/themes";
-import { ClipService, EventNames, newFilter, type AppInfo, type EntryFilter, type EntryStats, type Item, type Settings, type Snippet, type Stats, type SyncStatus, type UpdateInfo } from "./lib/api";
+import { ClipService, EventNames, newFilter, type AppInfo, type EntryFilter, type EntryStats, type Item, type Settings, type Stats, type SyncStatus, type UpdateInfo } from "./lib/api";
 import TitleBar from "./components/TitleBar";
-import Sidebar, { type NavEntry } from "./components/Sidebar";
+import Sidebar from "./components/Sidebar";
 import ItemRow from "./components/ItemRow";
 import DetailPanel from "./components/DetailPanel";
 import SettingsView from "./components/SettingsView";
@@ -18,10 +18,6 @@ import { IconSearch } from "./components/Icons";
 type View = "history" | "settings" | "entries";
 
 // 一级菜单的默认形状；用户可改顺序、名称与图标（存在 settings 里）
-// 做减法：剪贴板 / 片段 / 备忘 不再是三个并列入口，统一由「内容」筛选器承载
-// （见 docs/UNIFIED-ENTRY.md）。保留空数组是为了兼容老配置里的 navOrder——
-// 老用户升级后不会再看到残留的三个入口。
-const DEFAULT_NAV: NavEntry[] = [];
 type Confirm = { message: string; action: () => void } | null;
 
 export default function App() {
@@ -36,8 +32,6 @@ export default function App() {
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
-  const [snippets, setSnippets] = useState<Snippet[]>([]);
-  const [snippetGroups, setSnippetGroups] = useState<string[]>([]);
   const [memoCount, setMemoCount] = useState(0);
   // 统一内容视图：筛选器 + 日历
   const [filters, setFilters] = useState<EntryFilter[]>([]);
@@ -149,19 +143,6 @@ export default function App() {
     return () => offs.forEach((off) => off());
   }, [loadItems]);
 
-  const loadSnippets = useCallback(async () => {
-    try {
-      const list = await ClipService.GetSnippets("", "");
-      setSnippets(list ?? []);
-      setSnippetGroups((await ClipService.GetSnippetGroups()) ?? []);
-    } catch (err) {
-      console.error(err);
-    }
-  }, []);
-
-  useEffect(() => {
-  }, [view, loadSnippets]);
-
   // 主题：配色预设 + 浅/深 scheme + 用户自定义 CSS（见 lib/themes.ts）
   const themeScheme = (settings?.theme ?? "system") as ThemeScheme;
   const themePreset = settings?.themePreset ?? "default-dark";
@@ -185,45 +166,6 @@ export default function App() {
   }, [themeScheme, themePreset, themeCss]);
 
   // 把一条剪贴板历史塞进片段编辑器（可改标题/类型/正文再保存）
-  // 把设置里的顺序/名称/图标套到默认菜单上
-  const nav = useMemo<NavEntry[]>(() => {
-    const order = settings?.navOrder ?? [];
-    const labels = (settings?.navLabels ?? {}) as Record<string, string>;
-    const icons = (settings?.navIcons ?? {}) as Record<string, string>;
-    const rank = (id: string) => {
-      const i = order.indexOf(id);
-      return i < 0 ? 999 : i;
-    };
-    return DEFAULT_NAV.map((n) => ({
-      ...n,
-      label: labels[n.id]?.trim() || n.label,
-      icon: icons[n.id] || n.icon,
-    })).sort((a, b) => rank(a.id) - rank(b.id));
-  }, [settings?.navOrder, settings?.navLabels, settings?.navIcons]);
-
-  const saveNav = useCallback(
-    (next: NavEntry[]) => {
-      if (!settings) return;
-      const navLabels: Record<string, string> = {};
-      const navIcons: Record<string, string> = {};
-      for (const item of next) {
-        const def = DEFAULT_NAV.find((d) => d.id === item.id);
-        if (!def) continue;
-        if (item.label !== def.label) navLabels[item.id] = item.label;
-        if (item.icon !== def.icon) navIcons[item.id] = item.icon;
-      }
-      void ClipService.SaveSettings({
-        ...settings,
-        navOrder: next.map((n) => n.id),
-        navLabels,
-        navIcons,
-      } as never)
-        .then((saved) => setSettings(saved))
-        .catch((err) => notify(`保存菜单设置失败：${String(err)}`));
-    },
-    [settings, notify],
-  );
-
   // 统一内容的筛选器与统计
   const loadEntryMeta = useCallback(async () => {
     try {
@@ -272,7 +214,7 @@ export default function App() {
         notify(`打开为片段失败：${String(err)}`);
       }
     },
-    [loadSnippets, notify],
+    [loadEntryMeta, notify],
   );
 
   const selected = useMemo(() => items.find((i) => i.id === selectedId) ?? null, [items, selectedId]);
@@ -504,10 +446,7 @@ export default function App() {
           view={view}
           kind={kind}
           pinnedOnly={pinnedOnly}
-          snippetGroup=""
-          snippetGroups={snippetGroups}
           stats={stats}
-          snippetCount={snippets.length}
           capturing={capturing}
           syncActive={syncActive}
           onSelectHistory={(k, pinned) => {
@@ -519,7 +458,6 @@ export default function App() {
             setActiveFilterId("snippets");
             setView("entries");
           }}
-          nav={nav}
           filterProps={{
             filters,
             activeFilterId,
@@ -545,7 +483,6 @@ export default function App() {
             },
             entryStats,
           }}
-          onNavChange={saveNav}
           memoFilter={memoFilter}
           memoTags={memoTags}
           memoCount={memoCount}
@@ -627,7 +564,7 @@ export default function App() {
               onEditAsSnippet={() => void editAsSnippet(selected)}
               onSaveAsMemo={() => {
                 if (!selected) return;
-                ClipService.SaveItemAsMemo(selected.id)
+                ClipService.SaveEntry({ content: selected.text ?? "", source: "manual", kind: "text" } as never)
                   .then(() => {
                     notify("已存为备忘");
                     void loadMemoMeta();
@@ -638,8 +575,8 @@ export default function App() {
                 if (!selected) return;
                 ClipService.SaveItemAsSnippet(selected.id)
                   .then(() => {
-                    notify("已存为片段，可在「片段」里配缩写");
-                    void loadSnippets();
+                    notify("已存为片段，可在「片段」筛选器里配缩写");
+                    void loadEntryMeta();
                   })
                   .catch((err) => notify(`保存失败：${String(err)}`));
               }}

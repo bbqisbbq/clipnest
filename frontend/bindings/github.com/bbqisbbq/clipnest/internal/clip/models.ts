@@ -212,15 +212,6 @@ export interface Filter {
 }
 
 /**
- * ImportResult summarises what an import did.
- */
-export interface ImportResult {
-    "added": number;
-    "skipped": number;
-    "error"?: string;
-}
-
-/**
  * Item is one clipboard entry.
  */
 export interface Item {
@@ -303,53 +294,6 @@ export enum Kind {
 };
 
 /**
- * Memo is one note.
- */
-export interface Memo {
-    "id": string;
-    "content": string;
-    "tags": string[] | null;
-    "pinned": boolean;
-    "archived": boolean;
-
-    /**
-     * manual | clipboard | snippet | import
-     */
-    "source": string;
-
-    /**
-     * which program it came from
-     */
-    "sourceApp": string;
-    "hash": string;
-    "createdAt": string;
-    "updatedAt": string;
-}
-
-/**
- * MemoFilter drives the list query.
- */
-export interface MemoFilter {
-    "query": string;
-    "tag": string;
-    "pinned": boolean;
-    "archived": boolean;
-    "limit": number;
-
-    /**
-     * BeforeCreatedAt 是"再往前一页"的游标：只取创建时间严格早于它的条目。
-     * 时间线是聊天式正序（最新在最下面），所以向上滚动时用这个游标翻页。
-     */
-    "beforeCreatedAt": string;
-
-    /**
-     * Tail 为 true 时取"最新的 N 条"（内部按倒序查再翻正），用于首屏。
-     * 否则按正序取最早的 N 条，配合 BeforeCreatedAt 向上翻页。
-     */
-    "tail": boolean;
-}
-
-/**
  * MemoImageMeta 描述一条附件在哪、多大。
  */
 export interface MemoImageMeta {
@@ -367,16 +311,6 @@ export interface MemoImageMeta {
      * 相对 dataDir（file 存储时有值）
      */
     "path": string;
-}
-
-/**
- * MemoStats summarises the module for the sidebar.
- */
-export interface MemoStats {
-    "total": number;
-    "pinned": number;
-    "archived": number;
-    "today": number;
 }
 
 /**

@@ -1232,3 +1232,19 @@ func normalizeTimestamps(db *sql.DB) {
 		}
 	}
 }
+
+// placeholderForKind gives a text stand-in for captures with no text body.
+func placeholderForKind(k Kind) string {
+	switch k {
+	case KindImage:
+		return "（图片）"
+	case KindFiles:
+		return "（文件）"
+	case KindRichText:
+		return "（富文本）"
+	case KindCustom:
+		return "（自定义格式）"
+	default:
+		return ""
+	}
+}

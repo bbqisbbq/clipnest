@@ -370,10 +370,10 @@ func main() {
 			setPauseLabel(pauseItem, updated.Capture)
 		}
 	})
-	// 记一笔：把剪贴板当前文本直接变成备忘，不弹窗、不抢焦点
+	// 记一笔：把剪贴板当前文本直接存成一条手写条目，不弹窗、不抢焦点
 	menu.Add("记一笔（剪贴板内容）").OnClick(func(_ *application.Context) {
 		go func() {
-			if _, err := svc.MemoFromClipboard(); err != nil {
+			if _, err := svc.QuickMemo(); err != nil {
 				log.Printf("记一笔失败: %v", err)
 			}
 		}()

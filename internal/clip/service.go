@@ -16,7 +16,7 @@ import (
 )
 
 // Version is shown in the UI and written to the log on start.
-const Version = "1.8.1"
+const Version = "1.9.0"
 
 // AppInfo is static information the frontend needs for the about/settings view.
 type AppInfo struct {
@@ -117,12 +117,6 @@ func (s *ClipService) Start() error {
 	go s.syncLoop()
 	go s.updateCheckLoop()
 	s.EnsureCaptureHotkey()
-	s.MigrateLegacyMemoImages()
-	s.store.MigrateToEntries()
-	s.store.RepairEntryImages()
-	s.store.ClearEntryExpiry()
-	s.store.BackfillEntryActions()
-	s.store.ResyncLegacyMemos()
 	s.refreshTriggers()
 	s.applyExpander(s.store.Settings())
 	// Whatever is already on the clipboard when the app starts is also part of
@@ -854,3 +848,20 @@ func (s *ClipService) CloseCapture() {
 
 // CaptureHotkey returns the accelerator that opens the quick-capture popup.
 func (s *ClipService) CaptureHotkey() string { return s.store.Settings().CaptureHotkey }
+
+// EnsureCaptureHotkey repairs a profile whose captureHotkey ended up empty
+// because an older build shipped no default for it. Runs once (meta marker), so
+// a later deliberate clear is respected.
+func (s *ClipService) EnsureCaptureHotkey() {
+	if s.store.Meta("capture.hotkeyInit") != "" {
+		return
+	}
+	st := s.store.Settings()
+	if st.CaptureHotkey == "" {
+		st.CaptureHotkey = DefaultSettings().CaptureHotkey
+		if err := s.store.SaveSettings(st); err != nil {
+			Logf(s.store.Dir(), "capture hotkey heal failed: %v", err)
+		}
+	}
+	_ = s.store.SetMeta("capture.hotkeyInit", "1")
+}

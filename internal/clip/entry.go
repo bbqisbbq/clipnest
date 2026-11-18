@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -317,7 +318,7 @@ func (s *Store) SaveEntry(in Entry) (Entry, error) {
 	}
 	in.UpdatedAt = now
 	if in.Hash == "" && in.Content != "" {
-		in.Hash = memoHash(in.Content)
+		in.Hash = contentHash(in.Content)
 	}
 
 	if _, err := s.db.Exec(`
@@ -715,4 +716,51 @@ func (s *Store) LoadEntryBlob(hash string) ([]byte, string, error) {
 		return buf, mime, nil
 	}
 	return data, mime, nil
+}
+
+// ---- 标签与哈希（从原 memo.go 收拢到这里） ------------------------------
+
+var tagPattern = regexp.MustCompile(`#([\p{L}\p{N}_\-/]+)`)
+
+// ExtractTags pulls "#tag" tokens out of content, keeping the order they appear.
+func ExtractTags(content string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, m := range tagPattern.FindAllStringSubmatch(content, -1) {
+		tag := strings.TrimSpace(m[1])
+		if tag == "" || seen[strings.ToLower(tag)] {
+			continue
+		}
+		seen[strings.ToLower(tag)] = true
+		out = append(out, tag)
+	}
+	return out
+}
+
+// TagSpec renders tags as ",a,b," for LIKE-friendly filtering.
+func TagSpec(tags []string) string {
+	if len(tags) == 0 {
+		return ""
+	}
+	return "," + strings.Join(tags, ",") + ","
+}
+
+func splitTagSpec(spec string) []string {
+	spec = strings.Trim(spec, ",")
+	if spec == "" {
+		return []string{}
+	}
+	out := make([]string, 0, 4)
+	for _, t := range strings.Split(spec, ",") {
+		if t = strings.TrimSpace(t); t != "" {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// contentHash is the de-dupe / sync pairing key.
+func contentHash(content string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(content)))
+	return hex.EncodeToString(sum[:])[:16]
 }
