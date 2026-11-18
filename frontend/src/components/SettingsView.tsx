@@ -1,5 +1,5 @@
 import UsageStats from "./UsageStats";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ClipService } from "../lib/api";
 import type { AppInfo, Settings, SyncPanel, SyncStatus, UpdateInfo } from "../lib/api";
 import { formatBytes, formatDateTime } from "../lib/format";
@@ -111,6 +111,8 @@ export default function SettingsView(props: Props) {
     }
   };
 
+  const [savedFlash, setSavedFlash] = useState(false);
+  const flashTimer = useRef<number | null>(null);
   const [memoImportPath, setMemoImportPath] = useState("");
   const [memoIo, setMemoIo] = useState("");
   const contrast = useMemo(
@@ -154,12 +156,20 @@ export default function SettingsView(props: Props) {
 
   const patch = (p: Partial<Settings>) => setDraft({ ...draft, ...p });
 
+  const showBar = dirty || savedFlash;
+
   const save = () => {
     const next = { ...draft };
     next.ignorePatterns = patternText.split("\n").map((s) => s.trim()).filter(Boolean);
     next.ignoreApps = appText.split(",").map((s) => s.trim()).filter(Boolean);
     props.onSave(next);
+    // 保存成功的提示只闪现 2 秒，然后状态栏自动收起，不长期占着屏幕
+    setSavedFlash(true);
+    if (flashTimer.current) window.clearTimeout(flashTimer.current);
+    flashTimer.current = window.setTimeout(() => setSavedFlash(false), 2000);
   };
+
+  useEffect(() => () => { if (flashTimer.current) window.clearTimeout(flashTimer.current); }, []);
 
   const revert = () => {
     setDraft(settings);
@@ -625,8 +635,10 @@ export default function SettingsView(props: Props) {
         </div>
       </div>
 
-      <footer className="settings-bar">
-        <span className={dirty ? "is-dirty" : "muted"}>{dirty ? "有未保存的修改" : "设置已保存"}</span>
+      <footer className={`settings-bar ${showBar ? "is-shown" : "is-hidden"}`} aria-hidden={!showBar}>
+        <span className={dirty ? "is-dirty" : "is-saved"}>
+          {dirty ? "有未保存的修改" : "设置已保存"}
+        </span>
         <div className="settings-bar-actions">
           <button className="btn btn-ghost" onClick={revert} disabled={!dirty}>
             撤销
