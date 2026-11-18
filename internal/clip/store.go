@@ -131,6 +131,17 @@ CREATE VIRTUAL TABLE IF NOT EXISTS memos_fts USING fts5(
   id UNINDEXED, content, tags, tokenize='trigram'
 );
 
+-- 备忘的图片附件（内容寻址：hash = sha256(data)[:24]）
+CREATE TABLE IF NOT EXISTS memo_blobs (
+  hash    TEXT PRIMARY KEY,
+  ext     TEXT NOT NULL DEFAULT 'png',
+  mime    TEXT NOT NULL DEFAULT 'image/png',
+  data    BLOB,
+  storage TEXT NOT NULL DEFAULT 'db',   -- db = 小图进库；file = 大图落盘
+  size    INTEGER NOT NULL DEFAULT 0,
+  path    TEXT NOT NULL DEFAULT ''      -- 相对 dataDir（storage=file 时有值）
+);
+
 -- Small key/value scratch space (sync fingerprints and other one-off flags).
 CREATE TABLE IF NOT EXISTS meta (
   k TEXT PRIMARY KEY,
@@ -159,6 +170,14 @@ func Open(dir string) (*Store, error) {
 	// Older databases predate the snippet tombstones: add the scope column in
 	// place. SQLite has no "ADD COLUMN IF NOT EXISTS", so the error is expected.
 	_, _ = db.Exec(`ALTER TABLE tombstones ADD COLUMN scope TEXT NOT NULL DEFAULT 'item'`)
+	// 备忘附件（1.5.0 起支持大文件落盘）：老库补齐列
+	for _, stmt := range []string{
+		`ALTER TABLE memo_blobs ADD COLUMN storage TEXT NOT NULL DEFAULT 'db'`,
+		`ALTER TABLE memo_blobs ADD COLUMN size INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE memo_blobs ADD COLUMN path TEXT NOT NULL DEFAULT ''`,
+	} {
+		_, _ = db.Exec(stmt)
+	}
 	// 片段触发选项（0.9.x 起）：老库补齐列
 	for _, stmt := range []string{
 		`ALTER TABLE snippets ADD COLUMN case_sensitive INTEGER NOT NULL DEFAULT 0`,
@@ -168,6 +187,8 @@ func Open(dir string) (*Store, error) {
 	} {
 		_, _ = db.Exec(stmt)
 	}
+
+	normalizeTimestamps(db)
 
 	logDirValue.Store(dir)
 	s := &Store{
@@ -384,7 +405,16 @@ func statFile(ref FileRef) FileRef {
 	return ref
 }
 
-func encodeTime(t time.Time) string { return t.UTC().Format(time.RFC3339Nano) }
+// timeLayout is a FIXED-WIDTH RFC3339 form: always 9 fractional digits.
+//
+// Why fixed width matters: every timestamp is stored as TEXT and ordered by
+// SQLite as a string. RFC3339Nano trims trailing zeros, so ".5Z" sorts AFTER
+// ".1234567Z" — ordering and cursor pagination silently break. A fixed-width
+// layout makes lexicographic order identical to chronological order, which also
+// keeps the (created_at) indexes usable.
+const timeLayout = "2006-01-02T15:04:05.000000000Z"
+
+func encodeTime(t time.Time) string { return t.UTC().Format(timeLayout) }
 
 func decodeTime(v string) time.Time {
 	t, err := time.Parse(time.RFC3339Nano, v)
@@ -1107,5 +1137,47 @@ func TrimLog(dir string, limit int64) {
 	p := filepath.Join(dir, "clipnest.log")
 	if info, err := os.Stat(p); err == nil && info.Size() > limit {
 		_ = os.WriteFile(p, nil, 0o644)
+	}
+}
+
+// normalizeTimestamps rewrites any timestamp that is not in the fixed-width
+// layout (older builds wrote RFC3339Nano, whose fraction width varies). Runs on
+// every open; it is a no-op once the data is already normalised.
+func normalizeTimestamps(db *sql.DB) {
+	targets := []struct{ table, column string }{
+		{"items", "created_at"}, {"items", "updated_at"},
+		{"snippets", "created_at"}, {"snippets", "updated_at"},
+		{"memos", "created_at"}, {"memos", "updated_at"},
+		{"tombstones", "deleted_at"},
+	}
+	for _, t := range targets {
+		rows, err := db.Query(`SELECT rowid, ` + t.column + ` FROM ` + t.table)
+		if err != nil {
+			continue
+		}
+		type fix struct {
+			rowid int64
+			value string
+		}
+		var fixes []fix
+		for rows.Next() {
+			var id int64
+			var raw string
+			if rows.Scan(&id, &raw) != nil {
+				continue
+			}
+			parsed, err := time.Parse(time.RFC3339Nano, raw)
+			if err != nil {
+				continue
+			}
+			want := parsed.UTC().Format(timeLayout)
+			if want != raw {
+				fixes = append(fixes, fix{id, want})
+			}
+		}
+		rows.Close()
+		for _, f := range fixes {
+			_, _ = db.Exec(`UPDATE `+t.table+` SET `+t.column+` = ? WHERE rowid = ?`, f.value, f.rowid)
+		}
 	}
 }

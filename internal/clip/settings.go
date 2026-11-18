@@ -1,6 +1,9 @@
 package clip
 
-import "time"
+import (
+	"sync"
+	"time"
+)
 
 // Settings controls capture behaviour and the UI. It is persisted as JSON next
 // to the item log.
@@ -148,4 +151,25 @@ func (s Settings) clone() Settings {
 	return out
 }
 
-func nowUTC() time.Time { return time.Now().UTC() }
+// nowUTC returns a strictly increasing UTC timestamp.
+//
+// Why not just time.Now(): several rows written in the same microsecond end up
+// with identical (or, worse, string-incomparable) timestamps. Every ordering and
+// cursor in this app is time-based — pruning "oldest", timeline pagination,
+// sync conflict resolution — so ties there show up as flaky behaviour rather
+// than a clean error. Forcing monotonicity removes that whole class of bug.
+var (
+	nowMu   sync.Mutex
+	nowLast time.Time
+)
+
+func nowUTC() time.Time {
+	nowMu.Lock()
+	defer nowMu.Unlock()
+	t := time.Now().UTC()
+	if !t.After(nowLast) {
+		t = nowLast.Add(time.Nanosecond)
+	}
+	nowLast = t
+	return t
+}

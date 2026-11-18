@@ -1,0 +1,34 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<link rel="stylesheet" href="styles.css">
+<style>html,body{margin:0;height:100%}body{padding:0}</style></head>
+<body class="is-capture">
+<div class="capture">
+  <div class="capture-head"><span class="capture-dot"></span><span class="capture-title">记一笔</span>
+    <span class="capture-hint">Ctrl+Enter 保存 · Esc 关闭</span><button class="capture-close">×</button></div>
+  <div class="composer-box capture-box">
+    <div class="md-editor" id="ed"></div>
+    <div class="composer-actions capture-actions">
+      <div class="capture-tools">
+        <button class="capture-tool">#</button><button class="capture-tool is-strong">B</button>
+        <button class="capture-tool is-em">I</button><button class="capture-tool">&lt;/&gt;</button>
+        <button class="capture-tool">•</button><button class="capture-tool">☐</button>
+        <button class="capture-tool">❝</button><button class="capture-tool">🔗</button>
+      </div>
+      <div class="composer-btns"><span class="composer-tags"><span class="composer-chip">#工作</span></span>
+        <button class="btn btn-primary btn-sm">保存</button></div>
+    </div>
+  </div>
+</div>
+<pre id="out" style="position:fixed;left:0;bottom:0;margin:0;font-size:10px">pending</pre>
+<script>
+const R=(s)=>{const e=document.querySelector(s);if(!e)return null;const b=e.getBoundingClientRect();return{x:Math.round(b.x),y:Math.round(b.y),w:Math.round(b.width),h:Math.round(b.height),bottom:Math.round(b.bottom)};};
+const cap=R(".capture"),box=R(".capture-box"),ed=R(".md-editor"),tools=R(".capture-tools"),save=R(".composer-btns");
+document.getElementById("out").textContent=JSON.stringify({
+ vp:{w:innerWidth,h:innerHeight}, capture:cap, box:box, editor:ed, tools:tools, save:save,
+ noOverflowX: cap.w<=innerWidth,
+ editorHasHeight: ed.h>30,
+ toolsVisible: tools.h>10,
+ saveVisible: save && save.w>0,
+ cardInsideWindow: box.bottom<=cap.bottom
+},null,2);
+</script></body></html>

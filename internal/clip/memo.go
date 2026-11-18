@@ -38,6 +38,12 @@ type MemoFilter struct {
 	Pinned   bool   `json:"pinned"`
 	Archived bool   `json:"archived"`
 	Limit    int    `json:"limit"`
+	// BeforeCreatedAt 是"再往前一页"的游标：只取创建时间严格早于它的条目。
+	// 时间线是聊天式正序（最新在最下面），所以向上滚动时用这个游标翻页。
+	BeforeCreatedAt string `json:"beforeCreatedAt"`
+	// Tail 为 true 时取"最新的 N 条"（内部按倒序查再翻正），用于首屏。
+	// 否则按正序取最早的 N 条，配合 BeforeCreatedAt 向上翻页。
+	Tail bool `json:"tail"`
 }
 
 var tagPattern = regexp.MustCompile(`#([\p{L}\p{N}_\-/]+)`)
@@ -210,8 +216,22 @@ func (s *Store) ListMemos(f MemoFilter) []Memo {
 			args = append(args, like, like)
 		}
 	}
+	if cursor := strings.TrimSpace(f.BeforeCreatedAt); cursor != "" {
+		// 时间戳是固定宽度的 RFC3339（见 timeLayout），字符串序 == 时间序，
+		// 所以这里可以直接比较，既精确又能走索引。
+		where = append(where, "created_at < ?")
+		args = append(args, cursor)
+	}
+	// 聊天式时间线：纯按创建时间正序，最新的贴着底部输入框。
+	// 不做「置顶优先」，否则置顶项会出现在每一页里，游标翻页就乱了；
+	// 置顶靠侧栏的「置顶」筛选 + 卡片上的标记来表达。
+	order := "ASC"
+	if f.Tail {
+		// 首屏要"最新的 N 条"：倒序取完再翻正，否则 LIMIT 拿到的是最早的 N 条
+		order = "DESC"
+	}
 	sqlText := `SELECT ` + memoColumns + ` FROM memos WHERE ` + strings.Join(where, " AND ") +
-		` ORDER BY pinned DESC, updated_at DESC LIMIT ?`
+		` ORDER BY created_at ` + order + `, updated_at ` + order + ` LIMIT ?`
 	args = append(args, f.Limit)
 
 	rows, err := s.db.Query(sqlText, args...)
@@ -227,6 +247,12 @@ func (s *Store) ListMemos(f MemoFilter) []Memo {
 			return out
 		}
 		out = append(out, m)
+	}
+	if f.Tail {
+		// 倒序取回来的，翻成时间正序给界面
+		for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+			out[i], out[j] = out[j], out[i]
+		}
 	}
 	return out
 }
@@ -339,7 +365,20 @@ func (s *ClipService) SaveItemAsMemo(itemID string) (Memo, error) {
 	}
 	content := strings.TrimSpace(it.Text)
 	if it.Kind == KindImage {
-		content = "![](" + it.ImageFile + ")"
+		// 图片必须进 memo_blobs 才能显示：直接写文件路径的话 webview 加载不出来
+		data, err := s.store.LoadBlobByID(it.ID)
+		if err != nil {
+			return Memo{}, errors.New("这条图片记录没有可用的数据")
+		}
+		token, err := s.SaveMemoImage(encodeBase64(data))
+		if err != nil {
+			return Memo{}, err
+		}
+		alt := strings.TrimSpace(it.SourceApp)
+		if alt == "" {
+			alt = "图片"
+		}
+		content = "![" + alt + "](" + token + ")"
 	}
 	if content == "" {
 		return Memo{}, errors.New("这条记录没有可写入的文本")

@@ -20,6 +20,7 @@ export type {
     Item,
     Memo,
     MemoFilter,
+    MemoImageMeta,
     MemoStats,
     Settings,
     Snippet,

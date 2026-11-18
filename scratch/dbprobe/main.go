@@ -11,38 +11,23 @@ import (
 
 func main() {
 	db := filepath.Join(os.Getenv("APPDATA"), "ClipNest", "clipnest.db")
-	conn, err := sql.Open("sqlite", "file:"+db+"?mode=ro&_pragma=busy_timeout(3000)")
-	if err != nil {
-		fmt.Println("open:", err)
-		return
-	}
+	conn, _ := sql.Open("sqlite", "file:"+db+"?mode=ro&_pragma=busy_timeout(3000)")
 	defer conn.Close()
 
-	rows, err := conn.Query(`SELECT name FROM sqlite_master WHERE type='table' ORDER BY name`)
-	if err != nil {
-		fmt.Println("tables:", err)
-		return
-	}
-	var names []string
-	for rows.Next() {
-		var n string
-		rows.Scan(&n)
-		names = append(names, n)
-	}
-	rows.Close()
-	fmt.Printf("表: %v\n", names)
-
-	for _, t := range []string{"items", "snippets", "memos", "blobs", "tombstones", "meta"} {
-		var c int
-		if err := conn.QueryRow("SELECT COUNT(*) FROM " + t).Scan(&c); err != nil {
-			fmt.Printf("  %-11s 读取失败: %v\n", t, err)
-			continue
+	for _, q := range []string{
+		`SELECT created_at FROM memos ORDER BY created_at LIMIT 1`,
+		`SELECT created_at FROM items ORDER BY created_at LIMIT 1`,
+		`SELECT created_at FROM snippets ORDER BY created_at LIMIT 1`,
+	} {
+		var v string
+		if err := conn.QueryRow(q).Scan(&v); err == nil {
+			fmt.Printf("%-40s -> %s\n", q[:34], v)
 		}
-		fmt.Printf("  %-11s %d 行\n", t, c)
 	}
-
-	var fts int
-	if err := conn.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE name='memos_fts'`).Scan(&fts); err == nil {
-		fmt.Printf("  memos_fts 存在: %v\n", fts == 1)
-	}
+	var n int
+	conn.QueryRow(`SELECT COUNT(*) FROM memos`).Scan(&n)
+	fmt.Println("memos 条数:", n)
+	var bad int
+	conn.QueryRow(`SELECT COUNT(*) FROM memos WHERE created_at NOT LIKE '____-__-__T__:__:__._________Z'`).Scan(&bad)
+	fmt.Println("非固定宽度格式的备忘:", bad)
 }

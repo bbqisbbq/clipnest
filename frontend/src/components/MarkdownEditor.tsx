@@ -1,5 +1,5 @@
-import { useEffect, useRef } from "react";
-import { EditorState, type Extension } from "@codemirror/state";
+import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
+import { EditorSelection, EditorState, type Extension } from "@codemirror/state";
 import {
   Decoration,
   EditorView,
@@ -22,13 +22,13 @@ import { tags as t } from "@lezer/highlight";
 const themeExtension = EditorView.theme({
   "&": {
     height: "100%",
-    fontSize: "12.8px",
+    fontSize: "13px",
     backgroundColor: "transparent",
     color: "var(--text)",
   },
   ".cm-scroller": {
     fontFamily: "var(--font-mono)",
-    lineHeight: "1.7",
+    lineHeight: "1.65",
     overflow: "auto",
   },
   ".cm-content": {
@@ -111,15 +111,29 @@ type Props = {
   value: string;
   onChange: (next: string) => void;
   onSave?: () => void;
+  // 粘贴图片：收到 data URL，由调用方存进附件并插入 Markdown
+  onImagePaste?: (dataUrl: string) => void;
   placeholder?: string;
   autoFocus?: boolean;
 };
 
-export default function MarkdownEditor({ value, onChange, onSave, placeholder, autoFocus }: Props) {
+// 供工具条调用的命令式接口：都在 CodeMirror 事务里做，不会丢格式/撤销栈。
+export type MarkdownEditorHandle = {
+  insert: (text: string) => void;
+  wrap: (before: string, after: string) => void;
+  focus: () => void;
+};
+
+const MarkdownEditor = forwardRef<MarkdownEditorHandle, Props>(function MarkdownEditor(
+  { value, onChange, onSave, onImagePaste, placeholder, autoFocus }: Props,
+  ref,
+) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
   const onSaveRef = useRef(onSave);
+  const onPasteRef = useRef(onImagePaste);
+  onPasteRef.current = onImagePaste;
   onChangeRef.current = onChange;
   onSaveRef.current = onSave;
 
@@ -146,6 +160,26 @@ export default function MarkdownEditor({ value, onChange, onSave, placeholder, a
         ...defaultKeymap,
         ...historyKeymap,
       ]),
+      EditorView.domEventHandlers({
+        paste: (event) => {
+          const items = event.clipboardData?.items;
+          if (!items || !onPasteRef.current) return false;
+          for (const item of items) {
+            if (!item.type.startsWith("image/")) continue;
+            const file = item.getAsFile();
+            if (!file) continue;
+            event.preventDefault();
+            const reader = new FileReader();
+            reader.onload = () => {
+              const url = String(reader.result ?? "");
+              if (url) onPasteRef.current?.(url);
+            };
+            reader.readAsDataURL(file);
+            return true;
+          }
+          return false;
+        },
+      }),
       EditorView.updateListener.of((update) => {
         if (update.docChanged) {
           onChangeRef.current(update.state.doc.toString());
@@ -179,5 +213,41 @@ export default function MarkdownEditor({ value, onChange, onSave, placeholder, a
     });
   }, [value]);
 
+  useImperativeHandle(
+    ref,
+    () => ({
+      insert(text: string) {
+        const view = viewRef.current;
+        if (!view) return;
+        const sel = view.state.selection.main;
+        view.dispatch({
+          changes: { from: sel.from, to: sel.to, insert: text },
+          selection: { anchor: sel.from + text.length },
+        });
+        view.focus();
+      },
+      wrap(before: string, after: string) {
+        const view = viewRef.current;
+        if (!view) return;
+        const sel = view.state.selection.main;
+        const selected = view.state.sliceDoc(sel.from, sel.to);
+        const insert = before + selected + after;
+        // 有选中内容：光标落到包裹之后；没有：停在两个标记中间
+        const anchor = selected ? sel.from + insert.length : sel.from + before.length;
+        view.dispatch({
+          changes: { from: sel.from, to: sel.to, insert },
+          selection: EditorSelection.cursor(anchor),
+        });
+        view.focus();
+      },
+      focus() {
+        viewRef.current?.focus();
+      },
+    }),
+    [],
+  );
+
   return <div className="md-editor" ref={hostRef} />;
-}
+});
+
+export default MarkdownEditor;

@@ -1,8 +1,10 @@
 package clip
 
 import (
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestMemoTagExtraction(t *testing.T) {
@@ -234,5 +236,111 @@ func TestPackageCarriesMemos(t *testing.T) {
 	}
 	if !strings.Contains(pkg.memos[0].Content, "打包") {
 		t.Errorf("memo content lost: %q", pkg.memos[0].Content)
+	}
+}
+func TestMemoImageRoundTrip(t *testing.T) {
+	svc := newTestService(t, t.TempDir())
+
+	// 1x1 透明 PNG
+	const onePixel = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+	token, err := svc.SaveMemoImage(onePixel)
+	if err != nil {
+		t.Fatalf("SaveMemoImage: %v", err)
+	}
+	if !strings.HasPrefix(token, "memoimg:") {
+		t.Fatalf("token = %q", token)
+	}
+
+	m, err := svc.SaveMemo(Memo{Content: "看这张图 ![截图](" + token + ") #图片"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	hash := strings.TrimPrefix(token, "memoimg:")
+	dataURL, err := svc.GetMemoImage(hash)
+	if err != nil {
+		t.Fatalf("GetMemoImage: %v", err)
+	}
+	if !strings.HasPrefix(dataURL, "data:image/png;base64,") {
+		t.Errorf("dataURL = %.40q", dataURL)
+	}
+
+	// 引用还在，清理不应删掉
+	if removed := svc.store.PruneMemoImages(); removed != 0 {
+		t.Errorf("prune removed referenced image: %d", removed)
+	}
+
+	// 删掉备忘后再清理，图片应被回收
+	svc.DeleteMemo(m.ID)
+	if removed := svc.store.PruneMemoImages(); removed != 1 {
+		t.Errorf("prune after delete = %d, want 1", removed)
+	}
+
+	// 不同内容同 hash 只存一份
+	t1, _ := svc.SaveMemoImage(onePixel)
+	t2, _ := svc.SaveMemoImage(onePixel)
+	if t1 != t2 {
+		t.Errorf("content addressing broken: %q vs %q", t1, t2)
+	}
+}
+func TestMemoTimelineOrder(t *testing.T) {
+	svc := newTestService(t, t.TempDir())
+
+	first, _ := svc.SaveMemo(Memo{Content: "第一条"})
+	second, _ := svc.SaveMemo(Memo{Content: "第二条"})
+	third, _ := svc.SaveMemo(Memo{Content: "第三条"})
+
+	// 时间戳精度到秒，稍等一下确保 created_at 不同
+	time.Sleep(1100 * time.Millisecond)
+	third, _ = svc.SaveMemo(Memo{ID: third.ID, Content: "第三条（改过）"})
+
+	got := svc.GetMemos(MemoFilter{})
+	if len(got) != 3 {
+		t.Fatalf("memos = %d", len(got))
+	}
+	// 聊天式正序：最早的在最前，最新的贴在最后（靠输入框）；改过内容不改变位置
+	if got[0].ID != first.ID || got[1].ID != second.ID || got[2].ID != third.ID {
+		t.Errorf("order = %s, %s, %s", shortID(got[0].ID), shortID(got[1].ID), shortID(got[2].ID))
+	}
+
+	// 游标翻页：取比第二条更早的，应只剩第一条
+	// 前端是把 JSON 里的 createdAt 原样回传，所以这里也用序列化后的精确值
+	page := svc.GetMemos(MemoFilter{BeforeCreatedAt: encodeTime(second.CreatedAt)})
+	if len(page) != 1 || page[0].ID != first.ID {
+		t.Errorf("cursor page = %d 条", len(page))
+	}
+}
+
+func shortID(id string) string {
+	if len(id) > 6 {
+		return id[:6]
+	}
+	return id
+}
+func TestMemoTailPagination(t *testing.T) {
+	svc := newTestService(t, t.TempDir())
+	var ids []string
+	for i := 0; i < 5; i++ {
+		m, err := svc.SaveMemo(Memo{Content: fmt.Sprintf("第 %d 条", i)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, m.ID)
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	// Tail：拿最新的 2 条，且按时间正序（最新在末尾）
+	tail := svc.GetMemos(MemoFilter{Limit: 2, Tail: true})
+	if len(tail) != 2 {
+		t.Fatalf("tail = %d 条", len(tail))
+	}
+	if tail[0].ID != ids[3] || tail[1].ID != ids[4] {
+		t.Errorf("tail 顺序不对: %s, %s", shortID(tail[0].ID), shortID(tail[1].ID))
+	}
+
+	// 用最早一条作游标往前翻，应拿到它之前的（这里没有）
+	older := svc.GetMemos(MemoFilter{Limit: 2, BeforeCreatedAt: encodeTime(tail[0].CreatedAt)})
+	if len(older) != 2 || older[1].ID != ids[1] {
+		t.Errorf("cursor 翻页 = %d 条", len(older))
 	}
 }

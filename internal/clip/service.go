@@ -16,7 +16,7 @@ import (
 )
 
 // Version is shown in the UI and written to the log on start.
-const Version = "1.4.1"
+const Version = "1.5.0"
 
 // AppInfo is static information the frontend needs for the about/settings view.
 type AppInfo struct {
@@ -712,8 +712,8 @@ const (
 
 // CaptureSize is the quick-capture popup: a one-box editor for a memo.
 const (
-	CaptureWidth  = 560
-	CaptureHeight = 190
+	CaptureWidth  = 620
+	CaptureHeight = 220
 )
 
 // ShowPicker pops the list at the caret of whatever window has focus.

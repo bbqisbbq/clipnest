@@ -6,7 +6,7 @@ import {
   applyTheme as applyThemePreset,
   type ThemeScheme,
 } from "./lib/themes";
-import { ClipService, EventNames, newFilter, type AppInfo, type Item, type Memo, type Settings, type Snippet, type Stats, type SyncStatus, type UpdateInfo } from "./lib/api";
+import { ClipService, EventNames, newFilter, type AppInfo, type Item, type Settings, type Snippet, type Stats, type SyncStatus, type UpdateInfo } from "./lib/api";
 import TitleBar from "./components/TitleBar";
 import Sidebar, { type NavEntry } from "./components/Sidebar";
 import ItemRow from "./components/ItemRow";
@@ -41,7 +41,7 @@ export default function App() {
   const [snippets, setSnippets] = useState<Snippet[]>([]);
   const [snippetGroups, setSnippetGroups] = useState<string[]>([]);
   const [snippetGroup, setSnippetGroup] = useState("");
-  const [memos, setMemos] = useState<Memo[]>([]);
+  const [memoCount, setMemoCount] = useState(0);
   const [memoTags, setMemoTags] = useState<string[]>([]);
   const [memoFilter, setMemoFilter] = useState<{ tag: string; pinned: boolean; archived: boolean }>({
     tag: "",
@@ -222,25 +222,20 @@ export default function App() {
     [settings, notify],
   );
 
-  const loadMemos = useCallback(async () => {
+  // 只刷新侧栏需要的计数与标签；列表本身由 MemosView 分页拉取
+  const loadMemoMeta = useCallback(async () => {
     try {
-      const list = await ClipService.GetMemos({
-        query: "",
-        tag: memoFilter.tag,
-        pinned: memoFilter.pinned,
-        archived: memoFilter.archived,
-        limit: 300,
-      } as never);
-      setMemos(list ?? []);
+      const stats = await ClipService.GetMemoStats();
+      setMemoCount(stats?.total ?? 0);
       setMemoTags((await ClipService.GetMemoTags()) ?? []);
     } catch (err) {
       console.error(err);
     }
-  }, [memoFilter]);
+  }, []);
 
   useEffect(() => {
-    if (view === "memos") void loadMemos();
-  }, [view, loadMemos]);
+    if (view === "memos") void loadMemoMeta();
+  }, [view, loadMemoMeta]);
 
   const editAsSnippet = useCallback(
     async (item: Item | null) => {
@@ -508,7 +503,7 @@ export default function App() {
           onNavChange={saveNav}
           memoFilter={memoFilter}
           memoTags={memoTags}
-          memoCount={memos.length}
+          memoCount={memoCount}
           onSelectMemos={(filter) => {
             setMemoFilter({
               tag: filter.tag ?? "",
@@ -589,7 +584,7 @@ export default function App() {
                 ClipService.SaveItemAsMemo(selected.id)
                   .then(() => {
                     notify("已存为备忘");
-                    void loadMemos();
+                    void loadMemoMeta();
                   })
                   .catch((err) => notify(`保存失败：${String(err)}`));
               }}
@@ -615,10 +610,9 @@ export default function App() {
           </>
         ) : view === "memos" ? (
           <MemosView
-            memos={memos}
             tags={memoTags}
             filter={memoFilter}
-            onReload={loadMemos}
+            onReload={loadMemoMeta}
             onNotify={notify}
           />
         ) : view === "snippets" ? (

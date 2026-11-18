@@ -186,6 +186,22 @@ export function GetItems(filter: $models.Filter): $CancellablePromise<$models.It
 }
 
 /**
+ * GetMemoImage returns a data URL for display. Oversized images come back as a
+ * downscaled PNG so a 20 MB screenshot does not become a 27 MB string.
+ */
+export function GetMemoImage(hash: string): $CancellablePromise<string> {
+    return $Call.ByID(3179218926, hash);
+}
+
+/**
+ * GetMemoImageInfo reports where an attachment lives (used by the UI to show
+ * size / storage kind, and to open the original file).
+ */
+export function GetMemoImageInfo(hash: string): $CancellablePromise<$models.MemoImageMeta> {
+    return $Call.ByID(3299525390, hash);
+}
+
+/**
  * GetMemoStats reports the badges for the sidebar.
  */
 export function GetMemoStats(): $CancellablePromise<$models.MemoStats> {
@@ -367,6 +383,14 @@ export function OpenItem(id: string): $CancellablePromise<void> {
 }
 
 /**
+ * OpenMemoImage opens the original file in the system viewer (large ones only
+ * live on disk, so there is always a real file for them).
+ */
+export function OpenMemoImage(hash: string): $CancellablePromise<void> {
+    return $Call.ByID(396819236, hash);
+}
+
+/**
  * OpenReleasePage opens the releases page in the default browser.
  */
 export function OpenReleasePage(): $CancellablePromise<void> {
@@ -476,6 +500,14 @@ export function SaveItemAsSnippet(itemID: string): $CancellablePromise<$models.S
  */
 export function SaveMemo(m: $models.Memo): $CancellablePromise<$models.Memo> {
     return $Call.ByID(1225693786, m);
+}
+
+/**
+ * SaveMemoImage stores an image (data URL or bare base64) and returns the token
+ * to put inside Markdown: memoimg:<hash>.
+ */
+export function SaveMemoImage(dataB64: string): $CancellablePromise<string> {
+    return $Call.ByID(3262841519, dataB64);
 }
 
 /**
