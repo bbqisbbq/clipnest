@@ -14,7 +14,7 @@ import (
 )
 
 // Version is shown in the UI and written to the log on start.
-const Version = "0.8.0"
+const Version = "0.8.1"
 
 // AppInfo is static information the frontend needs for the about/settings view.
 type AppInfo struct {
@@ -539,33 +539,88 @@ func (s *ClipService) IsAutoStartEnabled() bool {
 //
 // A pre-existing entry that ClipNest did not write itself (for example, the one
 // the installer creates when the user ticks "开机自动启动") is adopted rather
-// than deleted: the installer's choice wins on first run.
+// than deleted: the installer's choice wins on first run. An entry pointing at a
+// binary that no longer exists (a moved or deleted build) is *repaired*, never
+// adopted — adopting a dead path is how a stale debug build keeps hijacking
+// logon.
 func (s *ClipService) ReconcileAutoStart() {
 	if !s.hooks.PlatformWorks || s.hooks.ExePath == "" {
 		return
 	}
 	st := s.store.Settings()
-	have := strings.ToLower(autoStartCommandValue())
-	want := strings.ToLower(s.hooks.ExePath)
+	current := autoStartCommandValue()
+	registered := exePathFromCommand(current)
+	registeredOK := registered != "" && fileExists(registered)
+	self := filepath.Clean(s.hooks.ExePath)
+	sameExe := registered != "" && strings.EqualFold(filepath.Clean(registered), self)
 
-	switch {
-	case st.AutoStart && !strings.Contains(have, want):
+	Logf(s.store.Dir(), "autostart: registry=%q (exists=%v) settings=%v exe=%s",
+		current, registeredOK, st.AutoStart, self)
+
+	register := func(reason string) {
 		if err := setAutoStart(true, s.hooks.ExePath); err != nil {
-			Logf(s.store.Dir(), "autostart reconcile failed: %v", err)
+			Logf(s.store.Dir(), "autostart reconcile failed (%s): %v", reason, err)
 			return
 		}
-		Logf(s.store.Dir(), "autostart registered: %s", autoStartCommand(s.hooks.ExePath))
-	case !st.AutoStart && strings.Contains(have, "clipnest"):
-		// Adopt the existing entry (installer choice) into the settings.
+		Logf(s.store.Dir(), "autostart registered (%s): %s", reason, autoStartCommand(s.hooks.ExePath))
+	}
+
+	switch {
+	case current == "":
+		if st.AutoStart {
+			register("missing entry")
+		}
+
+	case !registeredOK:
+		// Dead path: repoint if the user wants autostart, otherwise clean up.
+		if st.AutoStart {
+			register("stale path " + registered)
+		} else if err := setAutoStart(false, ""); err == nil {
+			Logf(s.store.Dir(), "autostart removed stale entry: %q", current)
+		}
+
+	case st.AutoStart && !sameExe:
+		register("points at another build")
+
+	case !st.AutoStart:
+		// Adopt the installer's choice.
 		st.AutoStart = true
 		if err := s.store.SaveSettings(st); err != nil {
 			Logf(s.store.Dir(), "autostart adopt failed: %v", err)
 			return
 		}
-		Logf(s.store.Dir(), "autostart adopted from registry: %s", have)
+		Logf(s.store.Dir(), "autostart adopted from registry: %q", current)
 		s.emit("settings:changed", st)
 	}
 }
+
+// exePathFromCommand pulls the executable path out of a Run value like
+// `"C:\Program Files\X\app.exe" --background`.
+func exePathFromCommand(cmd string) string {
+	cmd = strings.TrimSpace(cmd)
+	if cmd == "" {
+		return ""
+	}
+	if strings.HasPrefix(cmd, `"`) {
+		if end := strings.Index(cmd[1:], `"`); end >= 0 {
+			return cmd[1 : end+1]
+		}
+		return strings.TrimPrefix(cmd, `"`)
+	}
+	if i := strings.Index(strings.ToLower(cmd), ".exe"); i >= 0 {
+		return cmd[:i+len(".exe")]
+	}
+	return ""
+}
+
+func fileExists(path string) bool {
+	if path == "" {
+		return false
+	}
+	_, err := osStat(path)
+	return err == nil
+}
+
 
 // AutoStartTarget is the command line that would be registered, for the UI to
 // show what "开机自启" actually points at.

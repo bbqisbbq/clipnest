@@ -5,7 +5,9 @@ package clip
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
+	"strings"
 	"time"
 	"unsafe"
 
@@ -235,8 +237,18 @@ func foregroundAppName() string {
 	return filepath.Base(windows.UTF16ToString(buf[:size]))
 }
 
-const autoRunKey = `Software\Microsoft\Windows\CurrentVersion\Run`
+const autoRunKeyDefault = `Software\Microsoft\Windows\CurrentVersion\Run`
 const autoRunValue = "ClipNest"
+
+// autoRunKey honours CLIPNEST_RUN_KEY so end-to-end tests never touch the real
+// logon entry (a sandboxed test once registered a console build here, which then
+// popped a console window at every logon).
+func autoRunKey() string {
+	if custom := strings.TrimSpace(os.Getenv("CLIPNEST_RUN_KEY")); custom != "" {
+		return custom
+	}
+	return autoRunKeyDefault
+}
 
 // autoStartCommand is what gets written to the Run key. The --background flag
 // tells the app it was started by Windows at logon, so it stays in the tray
@@ -250,7 +262,7 @@ func autoStartCommand(exePath string) string {
 
 // setAutoStart registers/unregisters the app in HKCU Run.
 func setAutoStart(enabled bool, exePath string) error {
-	k, err := registry.OpenKey(registry.CURRENT_USER, autoRunKey, registry.SET_VALUE|registry.QUERY_VALUE)
+	k, err := registry.OpenKey(registry.CURRENT_USER, autoRunKey(), registry.SET_VALUE|registry.QUERY_VALUE)
 	if err != nil {
 		return err
 	}
@@ -269,7 +281,7 @@ func setAutoStart(enabled bool, exePath string) error {
 
 // autoStartEnabled reports whether the Run entry exists.
 func autoStartEnabled() bool {
-	k, err := registry.OpenKey(registry.CURRENT_USER, autoRunKey, registry.QUERY_VALUE)
+	k, err := registry.OpenKey(registry.CURRENT_USER, autoRunKey(), registry.QUERY_VALUE)
 	if err != nil {
 		return false
 	}
@@ -280,7 +292,7 @@ func autoStartEnabled() bool {
 
 // autoStartCommandValue returns the registered command line ("" when absent).
 func autoStartCommandValue() string {
-	k, err := registry.OpenKey(registry.CURRENT_USER, autoRunKey, registry.QUERY_VALUE)
+	k, err := registry.OpenKey(registry.CURRENT_USER, autoRunKey(), registry.QUERY_VALUE)
 	if err != nil {
 		return ""
 	}
@@ -290,4 +302,20 @@ func autoStartCommandValue() string {
 		return ""
 	}
 	return v
+}
+
+// PrepareWindowlessStart detaches the process from any console it was started
+// with. A console-subsystem build (debug builds, `go run`) would otherwise show a
+// black window at logon — and closing that window terminates the app. Detaching
+// makes every build behave like a GUI app: no window, nothing to close by
+// accident. Set CLIPNEST_KEEP_CONSOLE=1 to keep the console for debugging.
+func PrepareWindowlessStart() {
+	if strings.TrimSpace(os.Getenv("CLIPNEST_KEEP_CONSOLE")) == "1" {
+		return
+	}
+	procGetConsoleWindow := kernel32.NewProc("GetConsoleWindow")
+	procFreeConsole := kernel32.NewProc("FreeConsole")
+	if hwnd, _, _ := procGetConsoleWindow.Call(); hwnd != 0 {
+		procFreeConsole.Call()
+	}
 }

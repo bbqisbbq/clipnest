@@ -268,7 +268,10 @@ export function Quit(): $CancellablePromise<void> {
  * 
  * A pre-existing entry that ClipNest did not write itself (for example, the one
  * the installer creates when the user ticks "开机自动启动") is adopted rather
- * than deleted: the installer's choice wins on first run.
+ * than deleted: the installer's choice wins on first run. An entry pointing at a
+ * binary that no longer exists (a moved or deleted build) is *repaired*, never
+ * adopted — adopting a dead path is how a stale debug build keeps hijacking
+ * logon.
  */
 export function ReconcileAutoStart(): $CancellablePromise<void> {
     return $Call.ByID(4196985168);

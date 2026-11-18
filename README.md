@@ -237,6 +237,31 @@ docs/SNIPPETS.md              片段库/缩写触发/同步行为
 docs/FILE-STRATEGY.md         文件复制的方案对比与数据模型
 ```
 
+## 排查：开机启动弹出一个黑框
+
+如果登录后看到一个黑色命令行窗口、关掉它 ClipNest 就退出了，说明**开机启动项指向了一个控制台版本的可执行文件**
+（调试构建、或者被误写的路径）。自查与修复：
+
+1. 看现在指向哪里
+
+   ``powershell
+   (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run').ClipNest
+   ``
+
+   正常应当是 "C:\Program Files\bbqisbbq\ClipNest\clipnest.exe" --background，
+   而这个 exe 是 GUI 子系统（不带控制台）。
+
+2. 让 ClipNest 自己修：用**正确安装的那份**启动一次，它会把启动项重写成自己的路径
+   （日志里有 utostart registered (points at another build): …）。
+
+3. 或者在托盘菜单里把「开机自动启动」关掉再打开。
+
+0.8.1 起额外做了三层防护：
+
+- 程序启动时如果检测到自己带着控制台窗口（调试构建），会立刻 FreeConsole() 脱离——
+  不再显示黑框，也就不存在"关掉窗口把程序关掉"这回事（调试时可用 CLIPNEST_KEEP_CONSOLE=1 保留）
+- 开机启动项指向**已不存在的路径**时不再"沿用"，而是按设置修复或删除
+- 联调/测试可以通过 CLIPNEST_RUN_KEY 指向一个临时注册表子键，绝不碰真实的登录启动项
 ## 已知限制
 
 - **只在 Windows 上有意义**：监听、DIB 解码、光标定位、托盘均为 Win32 实现；其它平台编译出的是空壳。

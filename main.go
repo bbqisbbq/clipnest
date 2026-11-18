@@ -39,6 +39,11 @@ func init() {
 }
 
 func main() {
+	// A console-subsystem build (debug builds, `go run`) would otherwise open a
+	// black window at logon, and closing that window kills the app. Detaching
+	// makes every build behave like a GUI app.
+	clip.PrepareWindowlessStart()
+
 	dataDir := defaultDataDir()
 	exePath, _ := os.Executable()
 	clip.TrimLog(dataDir, 2<<20)
