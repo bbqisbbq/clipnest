@@ -31,7 +31,7 @@ func main() {
 		{Kind: clip.SnippetText, Title: "客户回复·退款", Trigger: "th-", Group: "客户",
 			Body: "您好，退换货申请可在订单详情页提交，我们会在 24 小时内处理。"},
 		{Kind: clip.SnippetCommand, Title: "查看分支", Trigger: "gb-", Group: "开发",
-			Body: "git branch -vv"},
+			Body: "echo ClipNest-cmd-ok"},
 		{Kind: clip.SnippetText, Title: "光标演示", Trigger: "cur-", Group: "测试",
 			Body: "AB{{cursor}}CD"},
 	}

@@ -297,6 +297,19 @@ export interface Snippet {
 }
 
 /**
+ * SnippetDraft is a pre-filled (unsaved) snippet: the editor opening with the
+ * content of a clipboard entry, so what was collected can be edited into a phrase.
+ */
+export interface SnippetDraft {
+    "snippet": Snippet;
+
+    /**
+     * ImageData is a data URL for image entries (the editor needs the bytes).
+     */
+    "imageData"?: string;
+}
+
+/**
  * SnippetKind describes what the body means and which action applies.
  */
 export enum SnippetKind {

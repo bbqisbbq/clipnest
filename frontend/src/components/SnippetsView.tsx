@@ -1,8 +1,9 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { marked } from "marked";
 import { ClipService, type Snippet } from "../lib/api";
 import { formatRelative } from "../lib/format";
 import { IconTrash } from "./Icons";
+import { NO_GROUP } from "./Sidebar";
 
 const KINDS: Array<{ value: string; label: string; hint: string }> = [
   { value: "text", label: "文本", hint: "复制到剪贴板；在弹窗里回车直接粘贴；缩写触发时直接打字出来" },
@@ -17,6 +18,10 @@ const KINDS: Array<{ value: string; label: string; hint: string }> = [
 type Props = {
   snippets: Snippet[];
   groups: string[];
+  // 侧栏二级筛选（"" = 全部，NO_GROUP = 未分组）
+  group: string;
+  // 从剪贴板历史「编辑为片段」时带过来的草稿
+  initial?: { snippet: Snippet; imageData: string; seq: number } | null;
   onReload: () => Promise<void>;
   onNotify: (message: string) => void;
 };
@@ -40,15 +45,15 @@ export default function SnippetsView(props: Props) {
   const [draft, setDraft] = useState<Snippet>(EMPTY);
   const [imageData, setImageData] = useState("");
   const [query, setQuery] = useState("");
-  const [group, setGroup] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [preview, setPreview] = useState(false);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
+    const group = props.group;
     return props.snippets.filter((sp) => {
-      if (group && sp.group !== group) return false;
+      if (group === NO_GROUP ? !!sp.group : group ? sp.group !== group : false) return false;
       if (!q) return true;
       return (
         sp.title.toLowerCase().includes(q) ||
@@ -57,7 +62,7 @@ export default function SnippetsView(props: Props) {
         (sp.group ?? "").toLowerCase().includes(q)
       );
     });
-  }, [props.snippets, query, group]);
+  }, [props.snippets, query, props.group]);
 
   // 纯本地内容，做最小化清理即可：去掉脚本/iframe/内联事件与 javascript: 链接
   const previewHtml = useMemo(() => {
@@ -72,6 +77,16 @@ export default function SnippetsView(props: Props) {
   const insertVariable = useCallback((token: string) => {
     setDraft((cur) => ({ ...cur, body: `${cur.body ?? ""}${token}` }));
   }, []);
+
+  // 「编辑为片段」：侧栏之外的入口把历史内容塞进编辑器
+  useEffect(() => {
+    if (!props.initial) return;
+    setDraft({ ...props.initial.snippet });
+    setImageData(props.initial.imageData ?? "");
+    setError("");
+    setPreview(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.initial?.seq]);
 
   const pick = useCallback((sp: Snippet) => {
     setDraft({ ...sp });
@@ -153,16 +168,6 @@ export default function SnippetsView(props: Props) {
           </button>
         </div>
 
-        <div className="snip-groups">
-          <button className={`chip ${group === "" ? "is-on" : ""}`} onClick={() => setGroup("")}>
-            全部 {props.snippets.length}
-          </button>
-          {props.groups.map((g) => (
-            <button key={g} className={`chip ${group === g ? "is-on" : ""}`} onClick={() => setGroup(g)}>
-              {g}
-            </button>
-          ))}
-        </div>
 
         <div className="snip-rows">
           {filtered.length === 0 ? (

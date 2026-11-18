@@ -14,6 +14,7 @@ type Props = {
   onClose: () => void;
   onRefresh: () => void;
   onSaveAsSnippet: () => void;
+  onEditAsSnippet: () => void;
 };
 
 export default function DetailPanel(props: Props) {
@@ -150,6 +151,15 @@ export default function DetailPanel(props: Props) {
         </dl>
       </div>
 
+      <div className="detail-snippet-row">
+        <button className="link-btn" onClick={props.onEditAsSnippet} title="带着这段内容打开片段编辑器：可改标题、加缩写、改类型后再保存">
+          编辑为片段
+        </button>
+        <span className="detail-snippet-sep">·</span>
+        <button className="link-btn" onClick={props.onSaveAsSnippet} title="直接存成片段（之后到片段页配缩写）">
+          存为片段
+        </button>
+      </div>
       <footer className="detail-actions">
         <button className="btn btn-primary" onClick={props.onCopy}>
           <IconCopy size={14} />
@@ -159,9 +169,7 @@ export default function DetailPanel(props: Props) {
           <IconStar size={14} filled={item.pinned} />
           {item.pinned ? "已收藏" : "收藏"}
         </button>
-        <button className="btn btn-ghost" onClick={props.onSaveAsSnippet} title="把这条历史存成可复用的片段（之后可配缩写）">
-          存为片段
-        </button>
+
         {canOpen ? (
           <button className="btn btn-ghost" onClick={props.onOpen}>
             {item.kind === "link" ? <IconExternal size={14} /> : <IconFolder size={14} />}

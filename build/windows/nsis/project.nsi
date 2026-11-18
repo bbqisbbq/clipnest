@@ -64,6 +64,22 @@ ShowInstDetails show
 
 Function .onInit
    !insertmacro wails.checkArchitecture
+
+   # 安装前先收掉正在运行的 ClipNest：否则 exe 被占用，覆盖时会弹"重试/取消"，
+   # 用户会以为装失败了。这里直接结束旧进程，装完由结束页的"运行"重新拉起。
+   # taskkill 退出码：0 = 结束成功，128 = 没找到进程（说明本来就没在跑）
+   nsExec::ExecToStack 'cmd /c taskkill /IM ${PRODUCT_EXECUTABLE} /T /F'
+   Pop $0
+   Pop $1
+   ${If} $0 == 0
+     Sleep 800
+     DetailPrint "已结束正在运行的 ClipNest（安装完成后会重新启动）"
+     ; 再补一刀：有时候主进程结束了，子进程还握着 exe
+     nsExec::ExecToStack 'cmd /c taskkill /IM ${PRODUCT_EXECUTABLE} /T /F'
+     Pop $0
+     Pop $1
+     Sleep 300
+   ${EndIf}
 FunctionEnd
 
 !define AUTORUN_KEY "Software\Microsoft\Windows\CurrentVersion\Run"

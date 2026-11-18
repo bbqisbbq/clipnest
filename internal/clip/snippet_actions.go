@@ -62,8 +62,11 @@ const (
 	inlineType = "type"
 	// inlineImage pastes the snippet image; an image cannot be typed.
 	inlineImage = "image"
-	// inlineExecute runs the snippet action (command / program / folder).
+	// inlineExecute runs the snippet action (program): nothing to type afterwards.
 	inlineExecute = "execute"
+	// inlineRun runs a command and types its output at the caret — the output is
+	// the point, a command that runs silently is useless while writing.
+	inlineRun = "run"
 )
 
 // inlineMode says how a snippet kind behaves when its trigger fires. Every kind
@@ -75,7 +78,9 @@ func inlineMode(kind SnippetKind) string {
 		return inlineType
 	case SnippetImage:
 		return inlineImage
-	case SnippetCommand, SnippetApp:
+	case SnippetCommand:
+		return inlineRun
+	case SnippetApp:
 		return inlineExecute
 	}
 	return inlineType
@@ -108,14 +113,31 @@ var (
 	snippetHookMu         sync.RWMutex
 	runSnippetByIDHook    func(id string) (string, error)
 	pasteSnippetImageHook func(id string) error
+	commandOutputHook     func(id string) (string, error)
 )
 
-// SetSnippetActionHooks wires the service into the expander.
-func SetSnippetActionHooks(run func(id string) (string, error), pasteImage func(id string) error) {
+// SetSnippetActionHooks wires the service into the expander. commandOutput runs a
+// command snippet and returns its output, which the expander types at the caret.
+func SetSnippetActionHooks(
+	run func(id string) (string, error),
+	pasteImage func(id string) error,
+	commandOutput func(id string) (string, error),
+) {
 	snippetHookMu.Lock()
 	runSnippetByIDHook = run
 	pasteSnippetImageHook = pasteImage
+	commandOutputHook = commandOutput
 	snippetHookMu.Unlock()
+}
+
+func commandOutputForID(id string) (string, error) {
+	snippetHookMu.RLock()
+	fn := commandOutputHook
+	snippetHookMu.RUnlock()
+	if fn == nil {
+		return "", errors.New("命令执行器还没准备好")
+	}
+	return fn(id)
 }
 
 func runSnippetByID(id string) (string, error) {
@@ -150,15 +172,9 @@ func init() {
 	}
 }
 
-// SaveItemAsSnippet turns a clipboard-history entry into a snippet ("存为片段"),
-// so something you just copied can become a reusable phrase with a trigger.
-func (s *ClipService) SaveItemAsSnippet(itemID string) (Snippet, error) {
-	it, ok := s.store.Get(itemID)
-	if !ok {
-		return Snippet{}, errors.New("条目不存在")
-	}
-
-	sp := Snippet{Title: truncateRunes(it.Preview, 24), Group: "来自历史"}
+// snippetFromItem maps a history entry onto an unsaved snippet (kind + body).
+func snippetFromItem(it Item) (Snippet, error) {
+	sp := Snippet{Title: truncateRunes(it.Preview, 24)}
 	switch it.Kind {
 	case KindText, KindRichText:
 		sp.Kind = SnippetText
@@ -177,7 +193,20 @@ func (s *ClipService) SaveItemAsSnippet(itemID string) (Snippet, error) {
 		sp.Kind = SnippetImage
 		sp.Body = it.Preview
 	default:
-		return Snippet{}, errors.New("这个类型暂不支持存为片段")
+		return Snippet{}, errors.New("这个类型暂不支持做成片段")
+	}
+	return sp, nil
+}
+// SaveItemAsSnippet turns a clipboard-history entry into a snippet ("存为片段"),
+// so something you just copied can become a reusable phrase with a trigger.
+func (s *ClipService) SaveItemAsSnippet(itemID string) (Snippet, error) {
+	it, ok := s.store.Get(itemID)
+	if !ok {
+		return Snippet{}, errors.New("条目不存在")
+	}
+	sp, err := snippetFromItem(it)
+	if err != nil {
+		return Snippet{}, err
 	}
 
 	saved, err := s.store.SaveSnippet(sp)
@@ -308,17 +337,42 @@ func (s *ClipService) runSnippet(sp Snippet, paste bool, target uintptr) (string
 		return "已启动", nil
 
 	case SnippetCommand:
+		// A command's *output* is what you want at the caret, so it is handled
+		// like text: copy it (and paste it when asked) instead of running the
+		// command silently and letting the output disappear into the log.
 		out, err := runCommand(sp.Body)
 		if err != nil {
 			return "", fmt.Errorf("命令失败: %w", err)
 		}
+		out = strings.TrimRight(out, "\r\n")
 		if out == "" {
-			return "已执行", nil
+			return "命令没有输出", nil
 		}
-		return truncateRunes(out, 60), nil
+		if err := WriteTextToClipboard(out); err != nil {
+			return "", err
+		}
+		if paste && target != 0 {
+			go s.pasteAndLog(target, "snippet-command")
+			return truncateRunes(firstLine(out), 40), nil
+		}
+		if target != 0 {
+			go ActivateWindow(target)
+		}
+		return truncateRunes(firstLine(out), 40), nil
 	}
 	return "", errors.New("未知的片段类型")
 }
+
+// firstLine is the first non-empty line of command output.
+func firstLine(s string) string {
+	for _, line := range strings.Split(s, "\n") {
+		if t := strings.TrimSpace(line); t != "" {
+			return t
+		}
+	}
+	return ""
+}
+
 
 func (s *ClipService) pasteAndLog(target uintptr, what string) {
 	s.pasteAndLogAt(target, what, 0)
@@ -396,6 +450,51 @@ func (s *ClipService) TestSnippet(id string) (string, error) {
 	return status, nil
 }
 
+// snippetCommandOutput runs a command snippet and returns its trimmed output.
+// The expander types this at the caret, so `ipconfig-` inserts the addresses
+// instead of silently running something in the background.
+func (s *ClipService) snippetCommandOutput(id string) (string, error) {
+	sp, ok := s.store.GetSnippet(id)
+	if !ok {
+		return "", errors.New("片段不存在")
+	}
+	if sp.Kind != SnippetCommand {
+		return "", errors.New("这个片段不是命令类型")
+	}
+	out, err := runCommand(sp.Body)
+	if err != nil {
+		return "", err
+	}
+	s.store.MarkSnippetUsed(id)
+	return out, nil
+}
+
+// SnippetDraft is a pre-filled (unsaved) snippet: the editor opening with the
+// content of a clipboard entry, so what was collected can be edited into a phrase.
+type SnippetDraft struct {
+	Snippet Snippet `json:"snippet"`
+	// ImageData is a data URL for image entries (the editor needs the bytes).
+	ImageData string `json:"imageData,omitempty"`
+}
+
+// DraftSnippetFromItem maps a history entry into an unsaved snippet draft.
+func (s *ClipService) DraftSnippetFromItem(itemID string) (SnippetDraft, error) {
+	it, ok := s.store.Get(itemID)
+	if !ok {
+		return SnippetDraft{}, errors.New("条目不存在")
+	}
+	sp, err := snippetFromItem(it)
+	if err != nil {
+		return SnippetDraft{}, err
+	}
+	draft := SnippetDraft{Snippet: sp}
+	if it.Kind == KindImage && it.ImageFile != "" {
+		if payload, err := s.store.LoadBlobByName(it.ImageFile); err == nil && len(payload) > 0 {
+			draft.ImageData = "data:image/png;base64," + encodeBase64(payload)
+		}
+	}
+	return draft, nil
+}
 // pasteImageInline writes an image snippet to the clipboard and pastes it into
 // whatever window has focus — the expander's path, since an image has no text
 // form that could be typed.

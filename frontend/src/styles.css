@@ -1914,3 +1914,61 @@ body.is-picker {
   border-left: 2px solid var(--border-strong);
   color: var(--text-dim);
 }
+/* 两级导航：一级醒目一点，二级缩进 + 更小字号 */
+.side-primary {
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.side-sub {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding-left: 10px;
+}
+
+.side-sub .side-item {
+  font-size: 12.2px;
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+.side-sub .side-item span {
+  opacity: 0.92;
+}
+
+/* 深色主题下原生下拉框的选项文字：不显式指定会渲染成黑字看不清 */
+:root {
+  color-scheme: dark;
+}
+
+select,
+select option,
+.input option {
+  background-color: #14181f;
+  color: #e6e9ef;
+}
+
+select:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+  outline: 1px solid rgba(125, 140, 255, 0.55);
+  outline-offset: 1px;
+}
+/* 详情面板：片段动作单独一行，别把底部按钮挤出去 */
+.detail-snippet-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-top: 1px solid var(--border-soft);
+  font-size: 11.8px;
+}
+
+.detail-snippet-sep {
+  color: var(--text-muted, #6b7280);
+}
+
+.detail-snippet-row .link-btn {
+  margin: 0;
+}

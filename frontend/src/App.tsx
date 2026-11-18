@@ -26,6 +26,10 @@ export default function App() {
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [snippets, setSnippets] = useState<Snippet[]>([]);
   const [snippetGroups, setSnippetGroups] = useState<string[]>([]);
+  const [snippetGroup, setSnippetGroup] = useState("");
+  const [snippetDraft, setSnippetDraft] = useState<
+    { snippet: Snippet; imageData: string; seq: number } | null
+  >(null);
   const [updateBanner, setUpdateBanner] = useState(true);
   const [images, setImages] = useState<Record<string, string>>({});
   const [toast, setToast] = useState("");
@@ -134,6 +138,24 @@ export default function App() {
   useEffect(() => {
     if (view === "snippets") void loadSnippets();
   }, [view, loadSnippets]);
+
+  // 把一条剪贴板历史塞进片段编辑器（可改标题/类型/正文再保存）
+  const editAsSnippet = useCallback(
+    async (item: Item | null) => {
+      if (!item) return;
+      try {
+        const draft = await ClipService.DraftSnippetFromItem(item.id);
+        if (!draft?.snippet) return;
+        setSnippetGroup("");
+        setSnippetDraft({ snippet: draft.snippet, imageData: draft.imageData ?? "", seq: Date.now() });
+        setView("snippets");
+        void loadSnippets();
+      } catch (err) {
+        notify(`打开为片段失败：${String(err)}`);
+      }
+    },
+    [loadSnippets, notify],
+  );
 
   const selected = useMemo(() => items.find((i) => i.id === selectedId) ?? null, [items, selectedId]);
 
@@ -361,30 +383,25 @@ export default function App() {
           view={view}
           kind={kind}
           pinnedOnly={pinnedOnly}
+          snippetGroup={snippetGroup}
+          snippetGroups={snippetGroups}
           stats={stats}
+          snippetCount={snippets.length}
           capturing={capturing}
           syncActive={syncActive}
-          onSelectAll={() => {
-            setView("history");
-            setKind("");
-            setPinnedOnly(false);
-          }}
-          onSelectKind={(k) => {
+          onSelectHistory={(k, pinned) => {
             setView("history");
             setKind(k);
-            setPinnedOnly(false);
+            setPinnedOnly(pinned);
           }}
-          onSelectPinned={() => {
-            setView("history");
-            setKind("");
-            setPinnedOnly(true);
+          onSelectSnippets={(group) => {
+            setSnippetGroup(group);
+            setView("snippets");
           }}
           onOpenSearch={() => {
             setView("history");
             requestAnimationFrame(() => searchRef.current?.focus());
           }}
-          onSelectSnippets={() => setView("snippets")}
-          snippetCount={snippets.length}
           onOpenSettings={() => setView("settings")}
           onToggleCapture={toggleCapture}
         />
@@ -447,6 +464,7 @@ export default function App() {
                 ClipService.OpenItem(selected.id).catch((err) => notify(`打开失败：${String(err)}`));
               }}
               onClose={() => setSelectedId(null)}
+              onEditAsSnippet={() => void editAsSnippet(selected)}
               onSaveAsSnippet={() => {
                 if (!selected) return;
                 ClipService.SaveItemAsSnippet(selected.id)
@@ -471,6 +489,8 @@ export default function App() {
           <SnippetsView
             snippets={snippets}
             groups={snippetGroups}
+            group={snippetGroup}
+            initial={snippetDraft}
             onReload={loadSnippets}
             onNotify={notify}
           />

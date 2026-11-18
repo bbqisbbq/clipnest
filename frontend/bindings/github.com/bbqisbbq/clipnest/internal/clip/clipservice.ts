@@ -66,6 +66,13 @@ export function DownloadUpdate(): $CancellablePromise<string> {
 }
 
 /**
+ * DraftSnippetFromItem maps a history entry into an unsaved snippet draft.
+ */
+export function DraftSnippetFromItem(itemID: string): $CancellablePromise<$models.SnippetDraft> {
+    return $Call.ByID(3529849242, itemID);
+}
+
+/**
  * ExpanderActive reports whether the inline expansion hook is installed.
  */
 export function ExpanderActive(): $CancellablePromise<boolean> {

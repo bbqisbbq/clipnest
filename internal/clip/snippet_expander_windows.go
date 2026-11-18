@@ -334,6 +334,26 @@ func expandTrigger(trigger string, entry triggerEntry, erase int) {
 		}
 		Logf(logDir(), "expander: %q -> ran %s snippet %s (%s)", trigger, entry.Kind, entry.ID, out)
 
+	case inlineRun:
+		// 命令类：跑完把**输出**打到光标处，命令本身不留在文本里
+		out, err := commandOutputForID(entry.ID)
+		if err != nil {
+			Logf(logDir(), "expander: %q (command) failed: %v", trigger, err)
+			return
+		}
+		out = strings.TrimRight(out, "\r\n")
+		if out == "" {
+			Logf(logDir(), "expander: %q (command) produced no output", trigger)
+			return
+		}
+		if err := InjectUnicodeText(out); err != nil {
+			if werr := WriteTextToClipboard(out); werr == nil {
+				_ = SendPaste()
+			}
+		}
+		Logf(logDir(), "expander: %q -> command output %d bytes", trigger, len([]rune(out)))
+
+
 	default:
 		text, cursor := renderTemplate(inlineText(entry))
 		if text != "" {

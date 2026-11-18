@@ -18,6 +18,7 @@ export type {
     Item,
     Settings,
     Snippet,
+    SnippetDraft,
     Stats,
     SyncDetail,
     SyncDeviceInfo,

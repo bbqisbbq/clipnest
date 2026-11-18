@@ -14,7 +14,7 @@ import (
 )
 
 // Version is shown in the UI and written to the log on start.
-const Version = "0.8.3"
+const Version = "0.9.0"
 
 // AppInfo is static information the frontend needs for the about/settings view.
 type AppInfo struct {
@@ -106,6 +106,7 @@ func (s *ClipService) Start() error {
 	SetSnippetActionHooks(
 		func(id string) (string, error) { return s.TestSnippet(id) },
 		func(id string) error { return s.pasteImageInline(id) },
+		func(id string) (string, error) { return s.snippetCommandOutput(id) },
 	)
 	s.applyExpander(s.store.Settings())
 	// Whatever is already on the clipboard when the app starts is also part of

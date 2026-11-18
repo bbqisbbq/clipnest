@@ -200,7 +200,7 @@ func TestInlineModeDispatch(t *testing.T) {
 		{SnippetURL, inlineType},
 		{SnippetFile, inlineType},
 		{SnippetImage, inlineImage},
-		{SnippetCommand, inlineExecute},
+		{SnippetCommand, inlineRun},
 		{SnippetApp, inlineExecute},
 	}
 	for _, c := range cases {
@@ -223,8 +223,8 @@ func TestInlineModeDispatch(t *testing.T) {
 	if !ok {
 		t.Fatal("command trigger gb- not indexed")
 	}
-	if inlineMode(entry.Kind) != inlineExecute {
-		t.Errorf("gb- mode = %s, want execute", inlineMode(entry.Kind))
+	if inlineMode(entry.Kind) != inlineRun {
+		t.Errorf("gb- mode = %s, want run (命令跑完把输出打到光标处)", inlineMode(entry.Kind))
 	}
 	if inlineText(entry) != "" {
 		t.Errorf("command snippet should have no inline text, got %q", inlineText(entry))
