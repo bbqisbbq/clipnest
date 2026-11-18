@@ -35,8 +35,8 @@ func TestSnippetCRUDAndTriggerLookup(t *testing.T) {
 	}
 
 	// Trigger lookup is case-insensitive and feeds the inline expander.
-	if body, ok := lookupTrigger("ADDR-"); !ok || body != saved.Body {
-		t.Errorf("lookupTrigger(ADDR-) = %q,%v", body, ok)
+	if entry, ok := lookupTrigger("ADDR-"); !ok || inlineText(entry) != saved.Body {
+		t.Errorf("lookupTrigger(ADDR-) = %+v,%v", entry, ok)
 	}
 
 	// Saving the same meaning again updates instead of duplicating.
@@ -187,5 +187,54 @@ func TestSnippetSyncRoundTrip(t *testing.T) {
 		if cand.ID == textID {
 			t.Error("deleted snippet survived on B")
 		}
+	}
+}
+
+func TestInlineModeDispatch(t *testing.T) {
+	cases := []struct {
+		kind SnippetKind
+		mode string
+	}{
+		{SnippetText, inlineType},
+		{SnippetPassword, inlineType},
+		{SnippetURL, inlineType},
+		{SnippetFile, inlineType},
+		{SnippetImage, inlineImage},
+		{SnippetCommand, inlineExecute},
+		{SnippetApp, inlineExecute},
+	}
+	for _, c := range cases {
+		if got := inlineMode(c.kind); got != c.mode {
+			t.Errorf("inlineMode(%s) = %s, want %s", c.kind, got, c.mode)
+		}
+	}
+
+	// A command snippet must be reachable through its trigger: that was the bug
+	// where `gb-` (命令) silently did nothing while `th-` (文本) expanded.
+	svc := newTestService(t, t.TempDir())
+	if _, err := svc.SaveSnippet(Snippet{Kind: SnippetCommand, Title: "查看分支", Trigger: "gb-", Body: "git branch -vv"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.SaveSnippet(Snippet{Kind: SnippetFile, Title: "项目目录", Trigger: "dir-", Body: "E:\\\\default\\\\clipnest\\nE:\\\\default\\\\ops"}, ""); err != nil {
+		t.Fatal(err)
+	}
+
+	entry, ok := lookupTrigger("gb")
+	if !ok {
+		t.Fatal("command trigger gb- not indexed")
+	}
+	if inlineMode(entry.Kind) != inlineExecute {
+		t.Errorf("gb- mode = %s, want execute", inlineMode(entry.Kind))
+	}
+	if inlineText(entry) != "" {
+		t.Errorf("command snippet should have no inline text, got %q", inlineText(entry))
+	}
+
+	fileEntry, ok := lookupTrigger("dir")
+	if !ok {
+		t.Fatal("file trigger dir- not indexed")
+	}
+	if got := inlineText(fileEntry); got != "E:\\\\default\\\\clipnest\\nE:\\\\default\\\\ops" {
+		t.Errorf("file snippet inline text = %q", got)
 	}
 }

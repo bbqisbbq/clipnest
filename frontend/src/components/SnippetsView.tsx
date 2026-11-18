@@ -5,13 +5,13 @@ import { formatRelative } from "../lib/format";
 import { IconTrash } from "./Icons";
 
 const KINDS: Array<{ value: string; label: string; hint: string }> = [
-  { value: "text", label: "文本", hint: "复制到剪贴板；在弹窗里回车直接粘贴" },
-  { value: "password", label: "密码", hint: "同文本，但在列表里掩码显示；仍会同步" },
-  { value: "image", label: "图片", hint: "粘贴 PNG（从剪贴板抓一张）" },
-  { value: "file", label: "文件", hint: "一行一个路径；单个目录 = 打开它，文件 = 复制到剪贴板" },
-  { value: "url", label: "网址", hint: "回车用默认浏览器打开，Ctrl+回车只复制" },
-  { value: "app", label: "程序", hint: "启动程序，可带参数，例如 code E:\\proj" },
-  { value: "command", label: "命令", hint: "用 cmd /c 执行，返回首行输出" },
+  { value: "text", label: "文本", hint: "复制到剪贴板；在弹窗里回车直接粘贴；缩写触发时直接打字出来" },
+  { value: "password", label: "密码", hint: "同文本，但在列表里掩码显示；仍会同步；缩写触发时打字出来" },
+  { value: "image", label: "图片", hint: "粘贴 PNG（从剪贴板抓一张）；缩写触发时直接粘贴图片" },
+  { value: "file", label: "文件", hint: "一行一个路径；单个目录 = 打开它，文件 = 复制到剪贴板；缩写触发时把路径打出来" },
+  { value: "url", label: "网址", hint: "回车用默认浏览器打开，Ctrl+回车只复制；缩写触发时打网址出来" },
+  { value: "app", label: "程序", hint: "启动程序，可带参数，例如 code E:\\proj；缩写触发时直接启动" },
+  { value: "command", label: "命令", hint: "用 cmd /c 执行，返回首行输出；缩写触发时直接执行（记事本里也会执行，留意）" },
 ];
 
 type Props = {

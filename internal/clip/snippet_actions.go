@@ -56,23 +56,88 @@ func (s *ClipService) refreshTriggerIndex() {
 	triggerMu.Unlock()
 }
 
-// lookupTrigger is called by the expander for every keystroke.
-func lookupTrigger(key string) (string, bool) {
+// Inline expansion modes: what a trigger does when it fires.
+const (
+	// inlineType types the snippet text at the caret (no clipboard involved).
+	inlineType = "type"
+	// inlineImage pastes the snippet image; an image cannot be typed.
+	inlineImage = "image"
+	// inlineExecute runs the snippet action (command / program / folder).
+	inlineExecute = "execute"
+)
+
+// inlineMode says how a snippet kind behaves when its trigger fires. Every kind
+// is usable as a trigger: the ones that carry no text simply run their action
+// instead of silently doing nothing.
+func inlineMode(kind SnippetKind) string {
+	switch kind {
+	case SnippetText, SnippetPassword, SnippetURL, SnippetFile:
+		return inlineType
+	case SnippetImage:
+		return inlineImage
+	case SnippetCommand, SnippetApp:
+		return inlineExecute
+	}
+	return inlineType
+}
+
+// inlineText is the text typed for a "type" snippet ("" for other modes).
+func inlineText(e triggerEntry) string {
+	if inlineMode(e.Kind) != inlineType {
+		return ""
+	}
+	if e.Kind == SnippetFile {
+		return strings.Join(splitPaths(e.Body), "\n")
+	}
+	return e.Body
+}
+
+// lookupTrigger is called by the expander for every keystroke. Every kind comes
+// back: a command or app snippet has no text to type, but its trigger must still
+// run the action rather than silently ignoring the abbreviation.
+func lookupTrigger(key string) (triggerEntry, bool) {
 	triggerMu.RLock()
 	defer triggerMu.RUnlock()
 	e, ok := triggerIndex[NormalizeTrigger(key)]
-	if !ok {
-		return "", false
-	}
-	// Only text-like snippets can be typed into the target application.
-	switch e.Kind {
-	case SnippetText, SnippetPassword:
-		return e.Body, true
-	case SnippetURL:
-		return e.Body, true
-	}
-	return "", false
+	return e, ok
 }
+
+// snippetActionHooks lets the platform expander execute actions and paste images
+// without owning a *ClipService.
+var (
+	snippetHookMu         sync.RWMutex
+	runSnippetByIDHook    func(id string) (string, error)
+	pasteSnippetImageHook func(id string) error
+)
+
+// SetSnippetActionHooks wires the service into the expander.
+func SetSnippetActionHooks(run func(id string) (string, error), pasteImage func(id string) error) {
+	snippetHookMu.Lock()
+	runSnippetByIDHook = run
+	pasteSnippetImageHook = pasteImage
+	snippetHookMu.Unlock()
+}
+
+func runSnippetByID(id string) (string, error) {
+	snippetHookMu.RLock()
+	fn := runSnippetByIDHook
+	snippetHookMu.RUnlock()
+	if fn == nil {
+		return "", errors.New("片段动作还没准备好")
+	}
+	return fn(id)
+}
+
+func pasteSnippetImage(id string) error {
+	snippetHookMu.RLock()
+	fn := pasteSnippetImageHook
+	snippetHookMu.RUnlock()
+	if fn == nil {
+		return errors.New("片段图片刚准备好")
+	}
+	return fn(id)
+}
+
 
 func init() {
 	// {{clipboard}} 读取当前剪贴板文本
@@ -329,6 +394,24 @@ func (s *ClipService) TestSnippet(id string) (string, error) {
 		return "", err
 	}
 	return status, nil
+}
+
+// pasteImageInline writes an image snippet to the clipboard and pastes it into
+// whatever window has focus — the expander's path, since an image has no text
+// form that could be typed.
+func (s *ClipService) pasteImageInline(id string) error {
+	payload, err := s.store.SnippetBlob(id)
+	if err != nil || len(payload) == 0 {
+		return errors.New("这个片段没有图片数据")
+	}
+	if err := WriteImageToClipboard(payload); err != nil {
+		return err
+	}
+	target := ForegroundWindowHandle()
+	if target == 0 {
+		return nil
+	}
+	return PasteInto(target)
 }
 
 // PickerSnippets powers "--" search inside the popup.

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -100,6 +101,8 @@ type expander struct {
 	threadID  uint32
 	injecting atomic.Bool
 	stop      chan struct{}
+	lastKey   time.Time
+	lastHwnd  uintptr
 }
 
 var (
@@ -211,6 +214,18 @@ func (e *expander) onKey(vk int) bool {
 		e.buf = e.buf[:0]
 		return false
 	}
+	// The buffer is only a short-lived guess at "what is in front of the caret".
+	// A pause or a window switch means a fresh context, so start over rather than
+	// carrying characters from another place into the next trigger.
+	now := time.Now()
+	if now.Sub(e.lastKey) > 2*time.Second {
+		e.buf = e.buf[:0]
+	}
+	e.lastKey = now
+	if fg := ForegroundWindowHandle(); fg != 0 && fg != e.lastHwnd {
+		e.buf = e.buf[:0]
+		e.lastHwnd = fg
+	}
 	// 输入法正在组词（中文/日文/韩文）：让 IME 自己处理这些按键，不插手
 	if imeBusy() {
 		if len(e.buf) > 0 {
@@ -233,6 +248,11 @@ func (e *expander) onKey(vk int) bool {
 		e.buf = e.buf[:0]
 		return false
 	}
+	// 空格/制表/换行永远不在缩写里，遇到就是分段
+	if r == ' ' || r == '\t' || r == '\n' || r == '\r' {
+		e.buf = e.buf[:0]
+		return false
+	}
 	e.buf = append(e.buf, r)
 	if len(e.buf) > 64 {
 		e.buf = append([]rune(nil), e.buf[len(e.buf)-64:]...)
@@ -244,50 +264,91 @@ func (e *expander) onKey(vk int) bool {
 		return false
 	}
 
-	candidate := string(e.buf[:len(e.buf)-len(e.suffix)])
-	content, hit := lookupTrigger(candidate)
+	// Match a trigger against the *end* of the buffer instead of requiring the
+	// whole buffer to be the trigger: whatever came before (a previous word, a
+	// character typed in another window) must not break the abbreviation.
+	body := e.buf[:len(e.buf)-len(e.suffix)]
+	entry, triggerLen, hit := matchTriggerAtEnd(body)
 	if debugExpander {
-		Logf(logDir(), "expander debug: candidate=%q suffix=%q hit=%v", candidate, string(e.suffix), hit)
+		Logf(logDir(), "expander debug: buffer=%q suffix=%q hit=%v trigger=%q kind=%s mode=%s",
+			string(body), string(e.suffix), hit, string(body[len(body)-triggerLen:]), entry.Kind, inlineMode(entry.Kind))
 	}
 	if !hit {
 		return false
 	}
+	candidate := string(body[len(body)-triggerLen:])
 
-	erased := len([]rune(candidate)) + len(e.suffix)
+	// Erase exactly what the trigger occupied; anything typed before it stays.
+	erased := triggerLen + len(e.suffix)
 	e.buf = e.buf[:0]
 	e.injecting.Store(true)
 	go func() {
 		defer e.injecting.Store(false)
-		expandInto(candidate, content, erased)
+		expandTrigger(candidate, entry, erased)
 	}()
 	return true
 }
 
-// expandInto deletes the typed trigger and pastes the content in its place.
-// expandInto deletes the typed trigger and types the content in place.
-//
-// Text is injected as Unicode keystrokes instead of going through the
-// clipboard: no clipboard round-trip means the target app never flashes a paste
-// and the user's clipboard keeps its previous content — the difference between
-// "smooth" and "visible flicker". Clipboard paste stays as a fallback for hosts
-// that reject injected Unicode input.
-func expandInto(trigger, content string, erase int) {
-	text, cursor := renderTemplate(content)
-
-	// Remove the abbreviation that was already typed, in one atomic batch.
-	InjectBackspaces(erase)
-	if text != "" {
-		if err := InjectUnicodeText(text); err != nil {
-			Logf(logDir(), "expander: unicode inject failed (%v), falling back to paste", err)
-			if werr := WriteTextToClipboard(text); werr == nil {
-				_ = SendPaste()
-			}
+// matchTriggerAtEnd finds the longest registered trigger that the buffer ends
+// with. Returns the entry, the trigger's rune length and whether one was found.
+func matchTriggerAtEnd(body []rune) (triggerEntry, int, bool) {
+	max := len(body)
+	if max > 32 {
+		max = 32
+	}
+	for l := max; l >= 1; l-- {
+		if entry, ok := lookupTrigger(string(body[len(body)-l:])); ok {
+			return entry, l, true
 		}
 	}
-	if lefts := leftArrows(text, cursor); lefts > 0 {
-		sendLeftArrows(lefts)
+	return triggerEntry{}, 0, false
+}
+
+// expandTrigger runs whatever the matched snippet kind means:
+//
+//   - text / password / url / file → type the content at the caret
+//   - image                       → paste the image (it has no text form)
+//   - command / program           → run the action (a command has nothing to type)
+//
+// Text is injected as Unicode keystrokes instead of going through the clipboard:
+// no clipboard round-trip means the target app never flashes a paste and the
+// user's clipboard keeps its previous content. Clipboard paste stays as a
+// fallback for hosts that reject injected Unicode input.
+func expandTrigger(trigger string, entry triggerEntry, erase int) {
+	// Remove the abbreviation that was already typed, in one atomic batch.
+	InjectBackspaces(erase)
+
+	switch inlineMode(entry.Kind) {
+	case inlineImage:
+		if err := pasteSnippetImage(entry.ID); err != nil {
+			Logf(logDir(), "expander: %q (image) failed: %v", trigger, err)
+			return
+		}
+		Logf(logDir(), "expander: %q -> pasted image snippet %s", trigger, entry.ID)
+
+	case inlineExecute:
+		out, err := runSnippetByID(entry.ID)
+		if err != nil {
+			Logf(logDir(), "expander: %q (%s) failed: %v", trigger, entry.Kind, err)
+			return
+		}
+		Logf(logDir(), "expander: %q -> ran %s snippet %s (%s)", trigger, entry.Kind, entry.ID, out)
+
+	default:
+		text, cursor := renderTemplate(inlineText(entry))
+		if text != "" {
+			if err := InjectUnicodeText(text); err != nil {
+				Logf(logDir(), "expander: unicode inject failed (%v), falling back to paste", err)
+				if werr := WriteTextToClipboard(text); werr == nil {
+					_ = SendPaste()
+				}
+			}
+		}
+		if lefts := leftArrows(text, cursor); lefts > 0 {
+			sendLeftArrows(lefts)
+		}
+		Logf(logDir(), "expander: %q -> %d bytes (cursor at %d)", trigger, len([]rune(text)), cursor)
 	}
-	Logf(logDir(), "expander: %q -> %d bytes (cursor at %d)", trigger, len([]rune(text)), cursor)
 }
 
 
