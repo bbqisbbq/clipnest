@@ -28,6 +28,103 @@
 
 **推荐 A 为主体，D 作为可选同步后端**：本地永远可用；如果哪天你已经在服务器上跑了 Memos，再把 ClipNest 指过去就行——仍然是 ClipNest 主动推拉，不在本机起服务。
 
+## 二·五、Memos 自己的数据形态（实证：schema / proto / 导出格式）
+
+要"抄形态不抄代码"，就得先看清它的三层形态。以下均取自 main 分支源码。
+
+### 1. 物理层：SQLite / MySQL / PostgreSQL 三套同构 schema
+
+默认 SQLite 文件 `memos_prod.db`（WAL）。核心表：
+
+```sql
+-- 一条备忘 = memo 表的一行
+CREATE TABLE memo (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  uid TEXT NOT NULL UNIQUE,                  -- 对外用 uid，内部用自增 id
+  creator_id INTEGER NOT NULL,
+  created_ts BIGINT NOT NULL,                -- Unix 秒（不是 RFC3339）
+  updated_ts BIGINT NOT NULL,
+  row_status TEXT CHECK (row_status IN ('NORMAL','ARCHIVED')) DEFAULT 'NORMAL',  -- "归档"就是这个
+  content TEXT NOT NULL DEFAULT '',          -- Markdown 原文
+  visibility TEXT CHECK (visibility IN ('PUBLIC','PROTECTED','PRIVATE','SPACE')) DEFAULT 'PRIVATE',
+  pinned INTEGER CHECK (pinned IN (0,1)) DEFAULT 0,
+  payload TEXT NOT NULL DEFAULT '{}',        -- JSON：派生属性
+  space_id INTEGER DEFAULT NULL
+);
+
+CREATE TABLE attachment (
+  id, uid, creator_id, created_ts, updated_ts,
+  filename TEXT, blob BLOB,                  -- 小文件直接进库
+  type TEXT, size INTEGER, memo_id INTEGER,
+  storage_type TEXT, reference TEXT,         -- 大文件存外部时用这两个
+  payload TEXT
+);
+
+CREATE TABLE memo_relation (memo_id, related_memo_id, type);   -- 引用关系
+CREATE TABLE memo_share  (id, uid, memo_id, creator_id, created_ts, expires_ts);  -- 公开分享链接
+-- 还有 user / user_setting / space / memo_reaction 等
+```
+
+`payload` 里存的是**从正文派生出来的东西**（`proto/store/memo.proto` 的 `MemoPayload`）：
+
+```json
+{ "property": { "has_link": true, "has_task_list": true, "has_code": false,
+                "has_incomplete_tasks": true, "title": "第一个 H1 标题",
+                "has_inline_image": false },
+  "tags": ["工作", "会议"],
+  "location": { "placeholder": "杭州", "latitude": 30.2, "longitude": 120.1 } }
+```
+
+**两个关键结论**：
+- **标签不是独立输入，是从正文 `#tag` 解析出来的**（`payload.tags` 是派生缓存）
+- **"归档"不占额外字段**，就是 `row_status`
+
+### 2. 接口层：gRPC + REST 网关（`proto/api/memo_service.proto`）
+
+```jsonc
+// GET /api/v1/memos  →  Memo
+{
+  "name": "memos/abc123",          // 资源名，id 就在里面
+  "creator": "users/1",
+  "content": "今天 #工作 开会…",     // Markdown
+  "visibility": "PRIVATE",
+  "pinned": false,
+  "attachments": [ … ],
+  "relations": [ … ],
+  "reactions": [ … ],
+  "tags": ["工作"],                 // OUTPUT_ONLY：服务端解析，客户端只读
+  "snippet": "今天 开会…",           // 纯文本摘要，列表页用
+  "createTime": "2026-11-18T10:00:00Z",
+  "updateTime": "2026-11-18T10:00:00Z"
+}
+```
+
+服务：`ListMemos / GetMemo / CreateMemo / UpdateMemo / DeleteMemo` + 附件、关系、评论（`CreateMemoComment`）、表情、分享链接、链接元数据。
+
+### 3. 导出层：一个 ZIP（`core/memoexport`，格式 1.0）
+
+MediaType `application/vnd.usememos.export+zip`，布局：
+
+```
+manifest.json                  { format:"memos-export", formatVersion:"1.0",
+                                 generator:{name,version}, exportTime,
+                                 scope:{ kind:"USER", user:{username,displayName} },
+                                 counts:{ memos, attachments } }
+memos/<uid>.json               { uid, creator, createTime, updateTime, state,
+                                 visibility, pinned, contentPath, tags[],
+                                 location?, space?, parent?, relations[],
+                                 attachments[], reactions[] }
+memos/<uid>.md                 Markdown 正文（contentPath 指向它）
+attachments/<uid>/<filename>   附件字节
+```
+
+**这个形态和我们的同步包结构几乎同构**：我们都是 `manifest + 一条一文件 + 正文单独存 + 附件单独目录`。
+所以：
+
+- **导入器很便宜**：读 zip → 逐条映射到本地 `memos` 表（标签直接用 `tags[]`，正文读 `.md`）
+- **导出也便宜**：反向生成同样的 zip，就能让本地库带进任何 Memos 实例
+- 时间要换算：导出是 RFC3339，库里是 Unix 秒
+
 ## 三、数据模型（贴着 Memos 的字段名，方便将来互通）
 
 ```sql
