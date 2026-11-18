@@ -16,7 +16,7 @@ import (
 )
 
 // Version is shown in the UI and written to the log on start.
-const Version = "2.0.0"
+const Version = "2.1.0"
 
 // AppInfo is static information the frontend needs for the about/settings view.
 type AppInfo struct {
@@ -69,7 +69,6 @@ type ClipService struct {
 	mu           sync.Mutex
 	suppressHash string
 	suppressAt   time.Time
-	ignoreRe     []*regexp.Regexp
 	stopCh       chan struct{}
 	stopped      bool
 	// targetHwnd is the window that had focus when the picker was opened; it is
@@ -101,7 +100,6 @@ func NewClipService(dataDir string, hooks Hooks) (*ClipService, error) {
 		stopCh: make(chan struct{}),
 	}
 	s.engine = expand.New(s)
-	s.compileIgnorePatterns(s.store.Settings())
 	return s, nil
 }
 
@@ -196,22 +194,6 @@ func (s *ClipService) emit(name string, data any) {
 	}
 }
 
-func (s *ClipService) compileIgnorePatterns(st Settings) {
-	out := make([]*regexp.Regexp, 0, len(st.IgnorePatterns))
-	for _, p := range st.IgnorePatterns {
-		p = strings.TrimSpace(p)
-		if p == "" {
-			continue
-		}
-		if re, err := regexp.Compile(p); err == nil {
-			out = append(out, re)
-		}
-	}
-	s.mu.Lock()
-	s.ignoreRe = out
-	s.mu.Unlock()
-}
-
 func (s *ClipService) handleClipboardChange() {
 	st := s.store.Settings()
 	if !st.Capture {
@@ -226,7 +208,6 @@ func (s *ClipService) handleClipboardChange() {
 	// Ignore the echo of our own copy-back.
 	s.mu.Lock()
 	suppressed := cap.Hash == s.suppressHash && time.Since(s.suppressAt) < 4*time.Second
-	patterns := s.ignoreRe
 	s.mu.Unlock()
 	if suppressed {
 		return
@@ -263,9 +244,6 @@ func (s *ClipService) handleClipboardChange() {
 		if len([]rune(cap.Text)) > st.MaxTextLength {
 			return
 		}
-	}
-	if s.shouldIgnore(cap, st, patterns) {
-		return
 	}
 
 	entry, isNew, err := s.store.SaveCapture(*cap)
@@ -442,7 +420,6 @@ func (s *ClipService) SaveSettings(st Settings) (Settings, error) {
 			return s.store.Settings(), fmt.Errorf("设置开机启动失败: %w", err)
 		}
 	}
-	s.compileIgnorePatterns(st)
 	if s.hooks.OnSettings != nil {
 		if err := s.hooks.OnSettings(st); err != nil {
 			return s.store.Settings(), err

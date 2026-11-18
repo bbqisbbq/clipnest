@@ -14,7 +14,6 @@ export {
 
 export type {
     AppInfo,
-    AssetDownload,
     DayCount,
     Entry,
     EntryFilter,

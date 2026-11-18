@@ -20,19 +20,6 @@ export interface AppInfo {
 }
 
 /**
- * Usage stats without any telemetry: GitHub publishes how many times each release
- * asset was downloaded, and the repo traffic API gives views/clones for the last
- * 14 days. Both are read-only and need no service of our own.
- * AssetDownload is one release asset with its download count.
- */
-export interface AssetDownload {
-    "name": string;
-    "downloads": number;
-    "release": string;
-    "published": string;
-}
-
-/**
  * DayCount is one cell of the calendar heatmap.
  */
 export interface DayCount {
@@ -269,18 +256,6 @@ export interface Settings {
      * MaxAgeDays drops entries older than this (0 = keep forever).
      */
     "maxAgeDays": number;
-
-    /**
-     * IgnorePatterns are regular expressions; a capture whose text, preview or
-     * any file name matches one of them is dropped (password managers etc.).
-     */
-    "ignorePatterns": string[] | null;
-
-    /**
-     * IgnoreApps are executable names (e.g. "keepass.exe") whose copies are
-     * never recorded.
-     */
-    "ignoreApps": string[] | null;
 
     /**
      * Hotkey is a Wails accelerator, e.g. "Ctrl+Shift+V". Empty disables it.

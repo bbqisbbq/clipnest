@@ -30,12 +30,6 @@ type Settings struct {
 	// MaxAgeDays drops entries older than this (0 = keep forever).
 	MaxAgeDays int `json:"maxAgeDays"`
 
-	// IgnorePatterns are regular expressions; a capture whose text, preview or
-	// any file name matches one of them is dropped (password managers etc.).
-	IgnorePatterns []string `json:"ignorePatterns"`
-	// IgnoreApps are executable names (e.g. "keepass.exe") whose copies are
-	// never recorded.
-	IgnoreApps []string `json:"ignoreApps"`
 
 	// Hotkey is a Wails accelerator, e.g. "Ctrl+Shift+V". Empty disables it.
 	// Pressing it pops the picker at the text caret and pastes the chosen entry
@@ -113,8 +107,6 @@ func DefaultSettings() Settings {
 		MaxTextLength:  100_000,
 		MaxItems:       1000,
 		MaxAgeDays:     30,
-		IgnorePatterns: nil,
-		IgnoreApps:     nil,
 		Hotkey:         "Ctrl+Shift+V",
 		CaptureHotkey:   "Ctrl+Shift+N",
 		PasteOnPick:    true,
@@ -145,10 +137,7 @@ func DefaultSettings() Settings {
 
 // clone returns a deep copy so callers can mutate freely.
 func (s Settings) clone() Settings {
-	out := s
-	out.IgnorePatterns = append([]string(nil), s.IgnorePatterns...)
-	out.IgnoreApps = append([]string(nil), s.IgnoreApps...)
-	return out
+	return s
 }
 
 // nowUTC returns a strictly increasing UTC timestamp.

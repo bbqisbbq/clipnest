@@ -141,14 +141,6 @@ export function GetAppInfo(): $CancellablePromise<$models.AppInfo> {
 }
 
 /**
- * GetDownloadStats reads GitHub release asset download counts — a zero-privacy
- * proxy for "how many people installed it". No telemetry involved.
- */
-export function GetDownloadStats(): $CancellablePromise<$models.AssetDownload[] | null> {
-    return $Call.ByID(2125658118);
-}
-
-/**
  * GetEntries is the single list call for the whole app.
  */
 export function GetEntries(q: $models.EntryQuery): $CancellablePromise<$models.Entry[] | null> {

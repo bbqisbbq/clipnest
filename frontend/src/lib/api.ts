@@ -11,7 +11,6 @@ export type AppInfo = Models.AppInfo;
 export type SyncStatus = Models.SyncStatus;
 export type UpdateInfo = Models.UpdateInfo;
 export type SyncPanel = Models.SyncPanel;
-export type AssetDownload = Models.AssetDownload;
 export type Entry = Models.Entry;
 export type EntryQuery = Models.EntryQuery;
 export type EntryFilter = Models.EntryFilter;
@@ -43,8 +42,6 @@ export function emptySettings(): Settings {
     maxTextLength: 100000,
     maxItems: 1000,
     maxAgeDays: 30,
-    ignorePatterns: [],
-    ignoreApps: [],
     hotkey: "Ctrl+Shift+V",
     captureHotkey: "Ctrl+Shift+N",
     pasteOnPick: true,

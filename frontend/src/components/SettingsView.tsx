@@ -1,5 +1,5 @@
-import UsageStats from "./UsageStats";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import HotkeyInput from "./HotkeyInput";
 import { ClipService } from "../lib/api";
 import type { AppInfo, Settings, SyncPanel, SyncStatus, UpdateInfo } from "../lib/api";
 import { formatBytes, formatDateTime } from "../lib/format";
@@ -101,8 +101,6 @@ export default function SettingsView(props: Props) {
   );
   const { settings, appInfo, storageBytes, syncStatus } = props;
   const [draft, setDraft] = useState<Settings | null>(settings);
-  const [patternText, setPatternText] = useState("");
-  const [appText, setAppText] = useState("");
   const [testing, setTesting] = useState(false);
   const [checking, setChecking] = useState(false);
   const [panel, setPanel] = useState<SyncPanel | null>(null);
@@ -111,20 +109,13 @@ export default function SettingsView(props: Props) {
   useEffect(() => {
     setDraft(settings);
     if (settings) {
-      setPatternText((settings.ignorePatterns ?? []).join("\n"));
-      setAppText((settings.ignoreApps ?? []).join(", "));
     }
   }, [settings]);
 
   const dirty = useMemo(() => {
     if (!draft || !settings) return false;
-    return (
-      JSON.stringify({ ...draft, ignorePatterns: [], ignoreApps: [] }) !==
-        JSON.stringify({ ...settings, ignorePatterns: [], ignoreApps: [] }) ||
-      patternText !== (settings.ignorePatterns ?? []).join("\n") ||
-      appText !== (settings.ignoreApps ?? []).join(", ")
-    );
-  }, [draft, settings, patternText, appText]);
+    return JSON.stringify(draft) !== JSON.stringify(settings);
+  }, [draft, settings]);
 
   if (!draft) {
     return (
@@ -140,8 +131,6 @@ export default function SettingsView(props: Props) {
 
   const save = () => {
     const next = { ...draft };
-    next.ignorePatterns = patternText.split("\n").map((s) => s.trim()).filter(Boolean);
-    next.ignoreApps = appText.split(",").map((s) => s.trim()).filter(Boolean);
     props.onSave(next);
     // 保存成功的提示只闪现 2 秒，然后状态栏自动收起，不长期占着屏幕
     setSavedFlash(true);
@@ -154,8 +143,6 @@ export default function SettingsView(props: Props) {
   const revert = () => {
     setDraft(settings);
     if (settings) {
-      setPatternText((settings.ignorePatterns ?? []).join("\n"));
-      setAppText((settings.ignoreApps ?? []).join(", "));
     }
     setTestResult("");
   };
@@ -238,24 +225,9 @@ export default function SettingsView(props: Props) {
             </Row>
           </Section>
 
-          <Section title="忽略程序" desc="这些程序里复制的内容不会被记录，适合密码管理器。">
-            <Row label="程序名" tip="可执行文件名，逗号分隔，例如 keepass.exe, bitwarden.exe。" stacked>
-              <input
-                className="input"
-                value={appText}
-                placeholder="keepass.exe, bitwarden.exe"
-                onChange={(e) => setAppText(e.target.value)}
-              />
-            </Row>
-          </Section>
           <Section title="交互与启动" desc="快速粘贴窗在光标处弹出，选中后直接粘进当前程序。">
-            <Row label="快速粘贴快捷键" tip="例如 Ctrl+Shift+V；留空表示不注册全局快捷键。">
-              <input
-                className="input is-short"
-                value={draft.hotkey}
-                placeholder="Ctrl+Shift+V"
-                onChange={(e) => patch({ hotkey: e.target.value })}
-              />
+            <Row label="快速粘贴快捷键" tip="点一下然后按下组合键即可录制；留空表示不注册全局快捷键。">
+              <HotkeyInput value={draft.hotkey} onChange={(v) => patch({ hotkey: v })} />
             </Row>
             <Row label="选中后自动粘贴" tip="关闭后只写入剪贴板，需要自己按 Ctrl+V。">
               <Switch checked={draft.pasteOnPick} onChange={(v) => patch({ pasteOnPick: v })} />
@@ -508,9 +480,6 @@ export default function SettingsView(props: Props) {
           </Section>
 
 
-          <Section title="使用统计" desc="GitHub 公布的安装包下载次数，用来粗略判断有没有人在用；本地读取，不上传任何东西。">
-            <UsageStats appVersion={appInfo?.version ?? "1.0.0"} />
-          </Section>
 
 
           <Section title="数据与关于" desc="所有数据都在本机（SQLite 数据库），不同步时不会产生任何网络请求。">

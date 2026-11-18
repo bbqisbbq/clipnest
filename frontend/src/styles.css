@@ -2532,3 +2532,22 @@ body.is-col-resizing .memo-splitter { background: var(--accent-tint); }
 .sf-group { width: 110px; font-size: 11px; }
 .sf-check { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text-2); white-space: nowrap; }
 .entry-source-hint { margin: 4px 0 0; }
+
+/* 快捷键录制器 */
+.hotkey-input { display: flex; align-items: center; gap: 8px; }
+.hotkey-box {
+  width: 168px;
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+.hotkey-box.is-recording {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-tint);
+}
+.hotkey-rec { font-family: var(--font-ui); }
+.hotkey-clear { font-size: 11px; color: var(--text-3); }
+.hotkey-hint { font-size: 11px; color: var(--text-3); }
