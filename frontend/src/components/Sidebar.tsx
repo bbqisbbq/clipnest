@@ -1,3 +1,4 @@
+import { useCallback, useRef, useState } from "react";
 import type { Stats } from "../lib/api";
 import {
   IconAll,
@@ -22,6 +23,8 @@ import {
 // 两级导航：一级是「剪贴板 / 片段」两个功能区，二级是各自的筛选条件。
 // 后面加新功能时只需要在 PRIMARY 里加一项，并在下面给它一段二级列表。
 
+export type NavEntry = { id: string; label: string; icon: string };
+
 type Props = {
   view: "history" | "settings" | "snippets" | "memos";
   kind: string;
@@ -38,6 +41,8 @@ type Props = {
   onSelectHistory: (kind: string, pinnedOnly: boolean) => void;
   onSelectSnippets: (group: string) => void;
   onSelectMemos: (filter: { tag?: string; pinned?: boolean; archived?: boolean }) => void;
+  nav: NavEntry[];
+  onNavChange: (next: NavEntry[]) => void;
   onOpenSearch: () => void;
   onOpenSettings: () => void;
   onToggleCapture: () => void;
@@ -55,7 +60,78 @@ const KINDS = [
 // 未分组的片段用这个哨兵值筛选（空串表示「全部」）
 export const NO_GROUP = "__none__";
 
+const NAV_ICONS = ["pin", "snippet", "memo", "star", "folder", "files", "image", "text", "link", "search"];
+
+function renderNavIcon(name: string, size: number) {
+  switch (name) {
+    case "snippet": return <IconSnippet size={size} />;
+    case "memo": return <IconMemo size={size} />;
+    case "star": return <IconStar size={size} />;
+    case "folder": return <IconFolder size={size} />;
+    case "files": return <IconFiles size={size} />;
+    case "image": return <IconImage size={size} />;
+    case "text": return <IconText size={size} />;
+    case "link": return <IconLink size={size} />;
+    case "search": return <IconSearch size={size} />;
+    default: return <IconPin size={size} />;
+  }
+}
+
 export default function Sidebar(props: Props) {
+  // 一级菜单的拖动排序与改名状态
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [editing, setEditing] = useState<{ id: string; label: string; icon: string } | null>(null);
+  const navRef = useRef<HTMLDivElement>(null);
+  const draggedRef = useRef(false);
+
+  const startDrag = useCallback(
+    (e: React.PointerEvent<HTMLButtonElement>, id: string) => {
+      const startY = e.clientY;
+      draggedRef.current = false;
+      const onMove = (ev: PointerEvent) => {
+        if (!draggedRef.current && Math.abs(ev.clientY - startY) < 5) return;
+        draggedRef.current = true;
+        setDragId(id);
+        const host = navRef.current;
+        if (!host) return;
+        const buttons = Array.from(host.querySelectorAll<HTMLElement>("[data-nav-id]"));
+        const over = buttons.find((b: HTMLElement) => {
+          const r = b.getBoundingClientRect();
+          return ev.clientY >= r.top && ev.clientY <= r.bottom;
+        });
+        const targetId = over?.dataset.navId;
+        if (!targetId || targetId === id) return;
+        const next = [...props.nav];
+        const from = next.findIndex((n) => n.id === id);
+        const to = next.findIndex((n) => n.id === targetId);
+        if (from < 0 || to < 0) return;
+        const [moved] = next.splice(from, 1);
+        next.splice(to, 0, moved);
+        props.onNavChange(next);
+      };
+      const onUp = () => {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        setDragId(null);
+        window.setTimeout(() => {
+          draggedRef.current = false;
+        }, 0);
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    },
+    [props],
+  );
+
+  const commitEdit = useCallback(() => {
+    if (!editing) return;
+    const label = editing.label.trim();
+    const next = props.nav.map((n) =>
+      n.id === editing.id ? { ...n, label: label || n.label, icon: editing.icon } : n,
+    );
+    props.onNavChange(next);
+    setEditing(null);
+  }, [editing, props]);
   const { view, kind, pinnedOnly, snippetGroup, stats } = props;
   const history = view === "history";
   const snippets = view === "snippets";
@@ -65,31 +141,92 @@ export default function Sidebar(props: Props) {
   return (
     <aside className="side">
       <div className="side-scroll">
-        <div className="side-group">
-          <button
-            className={`side-item side-primary ${history ? "is-active" : ""}`}
-            onClick={() => props.onSelectHistory("", false)}
-          >
-            <IconPin size={15} />
-            <span>剪贴板</span>
-            <em>{stats?.total ?? 0}</em>
-          </button>
-          <button
-            className={`side-item side-primary ${snippets ? "is-active" : ""}`}
-            onClick={() => props.onSelectSnippets("")}
-          >
-            <IconSnippet size={15} />
-            <span>片段</span>
-            <em>{props.snippetCount}</em>
-          </button>
-          <button
-            className={`side-item side-primary ${memos ? "is-active" : ""}`}
-            onClick={() => props.onSelectMemos({})}
-          >
-            <IconMemo size={15} />
-            <span>备忘</span>
-            <em>{props.memoCount}</em>
-          </button>
+        <div className="side-group" ref={navRef}>
+          {props.nav.map((entry) => {
+            const active =
+              (entry.id === "history" && history) ||
+              (entry.id === "snippets" && snippets) ||
+              (entry.id === "memos" && memos);
+            const badge =
+              entry.id === "history"
+                ? (stats?.total ?? 0)
+                : entry.id === "snippets"
+                  ? props.snippetCount
+                  : entry.id === "memos"
+                    ? props.memoCount
+                    : null;
+            if (editing?.id === entry.id) {
+              return (
+                <div className="nav-edit" key={entry.id}>
+                  <input
+                    className="input nav-edit-input"
+                    autoFocus
+                    value={editing.label}
+                    onChange={(e) => setEditing({ ...editing, label: e.target.value })}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") commitEdit();
+                      if (e.key === "Escape") setEditing(null);
+                    }}
+                    placeholder="菜单名称"
+                  />
+                  <div className="nav-icon-picker">
+                    {NAV_ICONS.map((name) => (
+                      <button
+                        key={name}
+                        className={`nav-icon-choice ${editing.icon === name ? "is-on" : ""}`}
+                        title={name}
+                        onClick={() => setEditing({ ...editing, icon: name })}
+                      >
+                        {renderNavIcon(name, 14)}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="nav-edit-actions">
+                    <button className="link-btn" onClick={() => setEditing(null)}>
+                      取消
+                    </button>
+                    <button className="btn btn-primary btn-sm" onClick={commitEdit}>
+                      完成
+                    </button>
+                  </div>
+                </div>
+              );
+            }
+            return (
+              <button
+                key={entry.id}
+                className={`side-item side-primary ${active ? "is-active" : ""} ${dragId === entry.id ? "is-dragging" : ""}`}
+                data-nav-id={entry.id}
+                onPointerDown={(e) => startDrag(e, entry.id)}
+                onClick={(e) => {
+                  if (draggedRef.current) {
+                    e.preventDefault();
+                    draggedRef.current = false;
+                    return;
+                  }
+                  if (entry.id === "history") props.onSelectHistory("", false);
+                  else if (entry.id === "snippets") props.onSelectSnippets("");
+                  else if (entry.id === "memos") props.onSelectMemos({});
+                }}
+                onDoubleClick={() => setEditing({ id: entry.id, label: entry.label, icon: entry.icon })}
+                title="拖动可排序，双击可改名换图标"
+              >
+                {renderNavIcon(entry.icon, 15)}
+                <span>{entry.label}</span>
+                {badge !== null ? <em>{badge}</em> : null}
+                <span
+                  className="nav-edit-btn"
+                  title="改名 / 换图标"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setEditing({ id: entry.id, label: entry.label, icon: entry.icon });
+                  }}
+                >
+                  ✎
+                </span>
+              </button>
+            );
+          })}
         </div>
 
         {history ? (

@@ -308,6 +308,13 @@ export interface Settings {
 
     /**
      * ---- appearance ----
+     * ---- 一级菜单自定义（顺序 / 名称 / 图标）----
+     */
+    "navOrder": string[] | null;
+    "navLabels": { [_ in string]?: string } | null;
+    "navIcons": { [_ in string]?: string } | null;
+
+    /**
      * ThemePreset selects a palette (see frontend/src/lib/themes.ts).
      */
     "themePreset": string;

@@ -62,6 +62,11 @@ type Settings struct {
 	ExpandEndChars string `json:"expandEndChars"`
 
 	// ---- appearance ----
+	// ---- 一级菜单自定义（顺序 / 名称 / 图标）----
+	NavOrder  []string          `json:"navOrder"`
+	NavLabels map[string]string `json:"navLabels"`
+	NavIcons  map[string]string `json:"navIcons"`
+
 	// ThemePreset selects a palette (see frontend/src/lib/themes.ts).
 	ThemePreset string `json:"themePreset"`
 	// ThemeCustomCSS is user-authored CSS applied on top of the preset.
@@ -126,6 +131,9 @@ func DefaultSettings() Settings {
 		ExpandEnabled:    false,
 		ExpandSuffix:     "-",
 		ExpandEndChars:   DefaultEndChars,
+		NavOrder:        []string{"history", "snippets", "memos"},
+		NavLabels:       map[string]string{},
+		NavIcons:        map[string]string{},
 		ThemePreset:     "default-dark",
 		ThemeCustomCSS:  "",
 		UpdateCheck:      true,

@@ -1,34 +1,37 @@
-<!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8">
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <link rel="stylesheet" href="styles.css">
-<style>html,body{margin:0;height:100%} .app{height:100%;display:flex;flex-direction:column}
-.workspace{display:grid;grid-template-columns:218px minmax(0,1fr);flex:1;min-height:0}</style>
-</head><body class="app is-memos"><div class="workspace"><div></div>
+<style>html,body{margin:0;height:100%}.app{height:100%;display:flex;flex-direction:column}
+.workspace{display:grid;grid-template-columns:218px minmax(0,1fr);flex:1;min-height:0}</style></head>
+<body class="app is-memos"><div class="workspace"><div></div>
 <div class="memos" style="height:100%">
   <div class="memo-main">
     <div class="memo-head"><input class="input" value="x"><span class="memo-count">全部 · 2 条</span></div>
     <div class="memo-timeline"><div class="memo-day"><div class="memo-day-label">今天</div>
-      <article class="memo-card"><div class="memo-body">发大水 #test</div></article></div></div>
+      <article class="memo-card"><div class="memo-body">发大水 #test</div>
+      <footer class="memo-meta"><span>12:57</span><span class="memo-tag">#test</span></footer></article></div></div>
   </div>
-  <div class="memo-composer" id="composer" style="height:132px">
-    <div class="memo-composer-resizer" id="rz"></div>
-    <div class="memo-composer-bar"><span class="memo-composer-title">新备忘</span>
-      <div class="snip-editor-actions"><button class="btn btn-primary btn-sm">保存</button></div></div>
-    <div class="md-editor" id="ed" style="min-height:40px"></div>
+  <div class="memo-composer" id="composer" style="height:184px">
+    <div class="memo-composer-resizer"></div>
+    <div class="composer-box" id="box">
+      <div class="md-editor" id="ed"></div>
+      <div class="composer-actions"><span class="composer-tags"><span class="composer-chip">#test</span></span>
+        <div class="composer-btns"><button class="link-btn">预览</button>
+        <button class="btn btn-primary btn-sm">保存</button></div></div>
+    </div>
   </div>
 </div></div>
 <pre id="out" style="position:fixed;left:0;bottom:0;margin:0;z-index:9">pending</pre>
 <script>
-const r = (id) => { const b = document.getElementById(id).getBoundingClientRect(); return { x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width), h: Math.round(b.height) }; };
-const composer = document.getElementById("composer");
-const timeline = document.querySelector(".memo-timeline");
-const cr = r("composer"), tr = r("composer"), tl = (() => { const b = timeline.getBoundingClientRect(); return { x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width), h: Math.round(b.height) }; })();
-document.getElementById("out").textContent = JSON.stringify({
-  viewport: { w: window.innerWidth, h: window.innerHeight },
-  composer: cr,
-  timeline: tl,
-  composerAtBottom: Math.abs((cr.y + cr.h) - window.innerHeight) < 3,
-  composerFullWidth: Math.abs(cr.w - (window.innerWidth - 218)) < 3,
-  order: cr.y > tl.y ? "时间线在上、输入区在下 ✅" : "顺序不对 ❌",
-}, null, 2);
+const box=(id)=>{const b=document.getElementById(id).getBoundingClientRect();return{x:Math.round(b.x),y:Math.round(b.y),w:Math.round(b.width),h:Math.round(b.height),bottom:Math.round(b.bottom)};};
+const rectOf=(el)=>{const r=el.getBoundingClientRect();return{x:Math.round(r.x),y:Math.round(r.y),w:Math.round(r.width),h:Math.round(r.height),bottom:Math.round(r.bottom)};};
+const c=box("composer"),b=box("box"),ed=box("ed"),tl=rectOf(document.querySelector(".memo-timeline"));
+const act=document.querySelector(".composer-actions").getBoundingClientRect();
+document.getElementById("out").textContent=JSON.stringify({
+ viewport:{w:innerWidth,h:innerHeight}, composer:c, box:b, editor:ed,
+ boxInsideComposer: b.bottom<=c.bottom && b.h>0,
+ actionsVisible: act.height>20,
+ boxFillsWidth: Math.abs(b.w-(c.w-48))<4,
+ composerAtBottom: Math.abs(c.bottom-innerHeight)<3,
+ order: c.y>tl.y?"时间线在上/输入区在下 ✅":"❌"
+},null,2);
 </script></body></html>

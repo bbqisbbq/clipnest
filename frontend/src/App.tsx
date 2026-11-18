@@ -8,7 +8,7 @@ import {
 } from "./lib/themes";
 import { ClipService, EventNames, newFilter, type AppInfo, type Item, type Memo, type Settings, type Snippet, type Stats, type SyncStatus, type UpdateInfo } from "./lib/api";
 import TitleBar from "./components/TitleBar";
-import Sidebar from "./components/Sidebar";
+import Sidebar, { type NavEntry } from "./components/Sidebar";
 import ItemRow from "./components/ItemRow";
 import DetailPanel from "./components/DetailPanel";
 import SettingsView from "./components/SettingsView";
@@ -17,6 +17,13 @@ import MemosView from "./components/MemosView";
 import { IconSearch } from "./components/Icons";
 
 type View = "history" | "settings" | "snippets" | "memos";
+
+// 一级菜单的默认形状；用户可改顺序、名称与图标（存在 settings 里）
+const DEFAULT_NAV: NavEntry[] = [
+  { id: "history", label: "剪贴板", icon: "pin" },
+  { id: "snippets", label: "片段", icon: "snippet" },
+  { id: "memos", label: "备忘", icon: "memo" },
+];
 type Confirm = { message: string; action: () => void } | null;
 
 export default function App() {
@@ -176,6 +183,45 @@ export default function App() {
   }, [themeScheme, themePreset, themeCss]);
 
   // 把一条剪贴板历史塞进片段编辑器（可改标题/类型/正文再保存）
+  // 把设置里的顺序/名称/图标套到默认菜单上
+  const nav = useMemo<NavEntry[]>(() => {
+    const order = settings?.navOrder ?? [];
+    const labels = (settings?.navLabels ?? {}) as Record<string, string>;
+    const icons = (settings?.navIcons ?? {}) as Record<string, string>;
+    const rank = (id: string) => {
+      const i = order.indexOf(id);
+      return i < 0 ? 999 : i;
+    };
+    return DEFAULT_NAV.map((n) => ({
+      ...n,
+      label: labels[n.id]?.trim() || n.label,
+      icon: icons[n.id] || n.icon,
+    })).sort((a, b) => rank(a.id) - rank(b.id));
+  }, [settings?.navOrder, settings?.navLabels, settings?.navIcons]);
+
+  const saveNav = useCallback(
+    (next: NavEntry[]) => {
+      if (!settings) return;
+      const navLabels: Record<string, string> = {};
+      const navIcons: Record<string, string> = {};
+      for (const item of next) {
+        const def = DEFAULT_NAV.find((d) => d.id === item.id);
+        if (!def) continue;
+        if (item.label !== def.label) navLabels[item.id] = item.label;
+        if (item.icon !== def.icon) navIcons[item.id] = item.icon;
+      }
+      void ClipService.SaveSettings({
+        ...settings,
+        navOrder: next.map((n) => n.id),
+        navLabels,
+        navIcons,
+      } as never)
+        .then((saved) => setSettings(saved))
+        .catch((err) => notify(`保存菜单设置失败：${String(err)}`));
+    },
+    [settings, notify],
+  );
+
   const loadMemos = useCallback(async () => {
     try {
       const list = await ClipService.GetMemos({
@@ -372,7 +418,10 @@ export default function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
-      const typing = target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName);
+      // CodeMirror 用 contenteditable，必须一并当成"正在输入"，否则回车会漏到列表快捷键上
+      const typing =
+        !!target &&
+        (/^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName) || target.isContentEditable);
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
         e.preventDefault();
         setView("history");
@@ -389,6 +438,7 @@ export default function App() {
         return;
       }
       if (typing) return;
+      if (view === "memos") return; // 备忘页的快捷键由编辑器自己处理
       if (e.key === "ArrowDown") {
         e.preventDefault();
         moveSelection(1);
@@ -454,6 +504,8 @@ export default function App() {
             setSnippetGroup(group);
             setView("snippets");
           }}
+          nav={nav}
+          onNavChange={saveNav}
           memoFilter={memoFilter}
           memoTags={memoTags}
           memoCount={memos.length}

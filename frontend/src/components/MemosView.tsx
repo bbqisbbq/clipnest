@@ -37,8 +37,8 @@ const EMPTY: Memo = {
   updatedAt: "",
 };
 
-const COMPOSER_MIN = 96;
-const COMPOSER_DEFAULT = 132;
+const COMPOSER_MIN = 120;
+const COMPOSER_DEFAULT = 184;
 
 function maxComposer(): number {
   return Math.max(COMPOSER_MIN + 40, Math.round(window.innerHeight * 0.5));
@@ -303,44 +303,55 @@ export default function MemosView(props: Props) {
           title="拖动调整高度，双击复位"
         />
 
-        <div className="memo-composer-bar">
-          <span className="memo-composer-title">{draft.id ? "编辑备忘" : "新备忘"}</span>
-          <span className="memo-composer-tags">
-            {(draft.tags ?? []).length > 0
-              ? (draft.tags ?? []).map((t) => `#${t}`).join(" ")
-              : ""}
-          </span>
-          <div className="snip-editor-actions">
-            <button className="link-btn" onClick={() => setPreview((v) => !v)}>
-              {preview ? "编辑" : "预览"}
-            </button>
-            <button
-              className="link-btn"
-              onClick={() => {
-                setDraft(EMPTY);
-                setPreview(false);
-                setError("");
-              }}
-            >
-              清空
-            </button>
-            <button className="btn btn-primary btn-sm" onClick={save} disabled={busy}>
-              {busy ? "保存中…" : "保存"}
-            </button>
+        <div className="composer-box">
+          {preview ? (
+            <div
+              className="snip-preview composer-preview"
+              dangerouslySetInnerHTML={{ __html: previewHtml }}
+            />
+          ) : (
+            <MarkdownEditor
+              value={draft.content}
+              onChange={(next) => setDraft({ ...draft, content: next })}
+              onSave={() => void save()}
+              placeholder={"随手记点什么…（Enter 换行，Ctrl+Enter 保存）"}
+            />
+          )}
+
+          <div className="composer-actions">
+            <span className="composer-tags">
+              {(draft.tags ?? []).length > 0 ? (
+                (draft.tags ?? []).map((t) => (
+                  <span key={t} className="composer-chip">
+                    #{t}
+                  </span>
+                ))
+              ) : (
+                <span className="composer-hint">写 #标签 就能归类 · Ctrl+Enter 保存</span>
+              )}
+            </span>
+            <div className="composer-btns">
+              <button className="link-btn" onClick={() => setPreview((v) => !v)}>
+                {preview ? "编辑" : "预览"}
+              </button>
+              <button
+                className="link-btn"
+                onClick={() => {
+                  setDraft(EMPTY);
+                  setPreview(false);
+                  setError("");
+                }}
+              >
+                清空
+              </button>
+              <button className="btn btn-primary btn-sm" onClick={save} disabled={busy}>
+                {busy ? "保存中…" : "保存"}
+              </button>
+            </div>
           </div>
         </div>
 
-        {error ? <p className="snip-error">{error}</p> : null}
-        {preview ? (
-          <div className="snip-preview memo-preview" dangerouslySetInnerHTML={{ __html: previewHtml }} />
-        ) : (
-          <MarkdownEditor
-            value={draft.content}
-            onChange={(next) => setDraft({ ...draft, content: next })}
-            onSave={() => void save()}
-            placeholder={"随手记点什么…（Enter 换行，Ctrl+Enter 保存）"}
-          />
-        )}
+        {error ? <p className="snip-error composer-error">{error}</p> : null}
       </div>
     </div>
   );
