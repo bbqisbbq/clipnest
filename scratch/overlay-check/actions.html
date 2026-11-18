@@ -1,0 +1,26 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><link rel="stylesheet" href="styles.css">
+<style>html,body{margin:0;padding:12px}</style></head><body>
+<article class="memo-card entry-card is-collected" id="c1">
+  <div class="memo-body">甲硝唑 这是一条比较长的内容用来测试换行之后操作按钮是否还在可见区域里面不会溢出</div>
+  <footer class="memo-meta"><span>14:31</span><span class="entry-autotag">剪贴板</span>
+    <span class="memo-src">来自 chrome.exe</span>
+    <span class="memo-actions" id="a1">
+      <button class="link-btn">置顶</button><button class="link-btn">设为片段</button>
+      <button class="link-btn">永久保存</button><button class="link-btn">归档</button>
+      <button class="link-btn is-danger">删除</button></span>
+  </footer>
+</article>
+<pre id="out">pending</pre>
+<script>
+const a=document.getElementById("a1"), c=document.getElementById("c1");
+const cs=getComputedStyle(a), r=a.getBoundingClientRect(), cr=c.getBoundingClientRect();
+document.getElementById("out").textContent=JSON.stringify({
+  opacity: cs.opacity,
+  visible: Number(cs.opacity) > 0,
+  buttons: a.querySelectorAll("button").length,
+  actionsInsideCard: r.right <= cr.right + 1,
+  actionsWidth: Math.round(r.width),
+  cardWidth: Math.round(cr.width),
+  metaWraps: getComputedStyle(document.querySelector(".memo-meta")).flexWrap
+},null,2);
+</script></body></html>

@@ -10,6 +10,8 @@
   --border: #21252e;
   --border-soft: #1a1e26;
   --border-strong: #2c313b;
+  --scrollbar: rgba(148, 163, 196, 0.28);
+  --scrollbar-hover: rgba(148, 163, 196, 0.55);
 
   --text: #e9ebf0;
   --text-2: var(--text-2);
@@ -97,26 +99,35 @@ textarea {
 }
 
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 9px;
+  height: 9px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #262b35;
+  background: var(--scrollbar);
   border: 3px solid transparent;
   background-clip: content-box;
   border-radius: 8px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #333a47;
+  background: var(--scrollbar-hover);
   background-clip: content-box;
 }
 
-::-webkit-scrollbar-track {
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
   background: transparent;
 }
 
+/* 标准属性：Firefox / 新 Chromium 也认 */
+.side-scroll,
+.memo-timeline,
+.snip-preview,
+.composer-preview {
+  scrollbar-color: var(--scrollbar) transparent;
+  scrollbar-width: thin;
+}
 .muted {
   color: var(--text-3);
 }
@@ -2104,8 +2115,16 @@ textarea:focus-visible {
 }
 .memo-tag { border: 0; background: none; color: var(--accent); font-size: 11px; cursor: pointer; padding: 0; }
 .memo-src { color: var(--text-3); }
-.memo-actions { margin-left: auto; display: flex; gap: 10px; opacity: 0; transition: opacity .15s var(--ease); }
+/* 操作按钮常驻可见（原来 opacity:0 只在悬停时出现，用户找不到） */
+.memo-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 10px;
+  opacity: .55;
+  transition: opacity .15s var(--ease);
+}
 .memo-card:hover .memo-actions { opacity: 1; }
+.memo-card.is-active .memo-actions { opacity: 1; }
 .link-btn.is-on { color: var(--accent); }
 .link-btn.is-danger:hover { color: var(--danger); }
 

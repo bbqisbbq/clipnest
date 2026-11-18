@@ -46,7 +46,11 @@ export default function App() {
   // 统一内容视图：筛选器 + 日历
   const [filters, setFilters] = useState<EntryFilter[]>([]);
   const [activeFilterId, setActiveFilterId] = useState("all");
-  const [selectedDay, setSelectedDay] = useState("");
+  // 默认只看今天的时间线（像聊天一样，打开就是当下的上下文）
+  const [selectedDay, setSelectedDay] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  });
   const [entryStats, setEntryStats] = useState<EntryStats | null>(null);
   const [memoTags, setMemoTags] = useState<string[]>([]);
   const [memoFilter, setMemoFilter] = useState<{ tag: string; pinned: boolean; archived: boolean }>({

@@ -195,8 +195,9 @@ func TestMigrateToUnifiedEntries(t *testing.T) {
 			if !strings.Contains(strings.Join(e.AllTags(), ","), AutoTagClipboard) {
 				t.Errorf("采集条目缺 #剪贴板: %v", e.AllTags())
 			}
-			if e.ExpiresAt == nil {
-				t.Error("采集条目应该有到期时间")
+			// 按「以保留为主」：采集条目也不设过期，删不删由用户决定
+			if e.ExpiresAt != nil {
+				t.Errorf("采集条目不应该有过期时间（保留为主）: %v", e.ExpiresAt)
 			}
 		case e.TriggerKey == "th-":
 			sawSnippet = true
