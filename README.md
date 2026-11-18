@@ -1,5 +1,7 @@
 # ClipNest
 
+[![下载量](https://img.shields.io/github/downloads/bbqisbbq/clipnest/total)](https://github.com/bbqisbbq/clipnest/releases) [![最新版本](https://img.shields.io/github/v/release/bbqisbbq/clipnest)](https://github.com/bbqisbbq/clipnest/releases/latest) [![License](https://img.shields.io/github/license/bbqisbbq/clipnest)](LICENSE)
+
 > 常驻托盘的 Windows 剪贴板管理器 · [Wails v3](https://v3.wails.io) + Go + React + TypeScript
 
 ClipNest 在你使用电脑时安静地记录进入过系统剪贴板的一切——文本、链接、图片、富文本、文件（只记引用），

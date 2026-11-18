@@ -13,6 +13,7 @@ export type Filter = Models.Filter;
 export type SyncStatus = Models.SyncStatus;
 export type UpdateInfo = Models.UpdateInfo;
 export type SyncPanel = Models.SyncPanel;
+export type AssetDownload = Models.AssetDownload;
 export type Snippet = Models.Snippet;
 export type SnippetKind = Models.SnippetKind;
 export type SyncDeviceInfo = Models.SyncDeviceInfo;

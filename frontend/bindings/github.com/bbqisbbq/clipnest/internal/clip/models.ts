@@ -20,6 +20,19 @@ export interface AppInfo {
 }
 
 /**
+ * Usage stats without any telemetry: GitHub publishes how many times each release
+ * asset was downloaded, and the repo traffic API gives views/clones for the last
+ * 14 days. Both are read-only and need no service of our own.
+ * AssetDownload is one release asset with its download count.
+ */
+export interface AssetDownload {
+    "name": string;
+    "downloads": number;
+    "release": string;
+    "published": string;
+}
+
+/**
  * FileRef is one entry of a captured file list. ClipNest deliberately stores a
  * reference (path + metadata) instead of a copy: see docs/FILE-STRATEGY.md.
  */

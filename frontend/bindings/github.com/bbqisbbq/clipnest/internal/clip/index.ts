@@ -13,6 +13,7 @@ export {
 
 export type {
     AppInfo,
+    AssetDownload,
     FileRef,
     Filter,
     Item,

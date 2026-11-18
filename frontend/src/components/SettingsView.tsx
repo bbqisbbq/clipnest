@@ -1,3 +1,4 @@
+import UsageStats from "./UsageStats";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ClipService } from "../lib/api";
 import type { AppInfo, Settings, SyncPanel, SyncStatus, UpdateInfo } from "../lib/api";
@@ -477,6 +478,11 @@ export default function SettingsView(props: Props) {
               </span>
             </div>
           </Section>
+
+          <Section title="使用统计" desc="GitHub 公布的安装包下载次数，用来粗略判断有没有人在用；本地读取，不上传任何东西。">
+            <UsageStats appVersion={appInfo?.version ?? "1.0.0"} />
+          </Section>
+
 
           <Section title="数据与关于" desc="所有数据都在本机（SQLite 数据库），不同步时不会产生任何网络请求。">
             <dl className="kv is-wide">
