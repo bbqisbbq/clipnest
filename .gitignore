@@ -29,3 +29,6 @@ scratch/probe.txt
 # 签名用的自签名证书与私钥（绝不入库）
 build/signing/
 
+
+# wails3 生成绑定时产生的临时目录
+frontend/.bindings-tmp-*/
