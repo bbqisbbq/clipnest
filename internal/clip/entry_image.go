@@ -1,19 +1,15 @@
 package clip
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
+	"bytes"
 	"errors"
 	"image"
 	"image/png"
-	"bytes"
-	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 )
 
-// 备忘附件：混合存储。
+// 条目附件：混合存储。
 //
 // 为什么不全部进数据库：SQLite 的 BLOB 适合小对象，几 MB 的图片会把 WAL、
 // 备份、同步包一起拖大，而且每次读都要整块进内存。所以：
@@ -41,12 +37,13 @@ type MemoImageMeta struct {
 	Mime    string `json:"mime"`
 	Size    int64  `json:"size"`
 	Storage string `json:"storage"` // db | file
-	Path    string `json:"path"`     // 相对 dataDir（file 存储时有值）
+	Path    string `json:"path"`    // 相对 dataDir（file 存储时有值）
 }
 
-// SaveMemoImage stores an image (data URL or bare base64) and returns the token
-// to put inside Markdown: memoimg:<hash>.
-func (s *ClipService) SaveMemoImage(dataB64 string) (string, error) {
+// SaveImage stores an image (data URL or bare base64) and returns the token to
+// put in Markdown: memoimg:<hash>. Content-addressed, so the same picture is
+// stored once.
+func (s *ClipService) SaveImage(dataB64 string) (string, error) {
 	mime, payload, err := decodeImagePayload(dataB64)
 	if err != nil {
 		return "", err
@@ -54,120 +51,25 @@ func (s *ClipService) SaveMemoImage(dataB64 string) (string, error) {
 	if len(payload) == 0 {
 		return "", errors.New("图片内容为空")
 	}
-	sum := sha256.Sum256(payload)
-	hash := hex.EncodeToString(sum[:])[:24]
-	ext := extForMime(mime)
-
-	storage := "db"
-	relPath := ""
-	if len(payload) > memoInlineMax {
-		// 大文件落盘：只有元数据进库
-		relPath = filepath.Join("memo_files", hash+"."+ext)
-		abs := filepath.Join(s.store.Dir(), relPath)
-		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
-			return "", err
-		}
-		if err := os.WriteFile(abs, payload, 0o644); err != nil {
-			return "", err
-		}
-		storage = "file"
-	}
-
-	var blob []byte
-	if storage == "db" {
-		blob = payload
-	}
-	if _, err := s.store.db.Exec(`
-		INSERT INTO memo_blobs (hash, ext, mime, data, storage, size, path)
-		VALUES (?,?,?,?,?,?,?)
-		ON CONFLICT(hash) DO UPDATE SET
-			mime = excluded.mime, size = excluded.size,
-			storage = excluded.storage, path = excluded.path,
-			data = CASE WHEN excluded.storage = 'db' THEN excluded.data ELSE memo_blobs.data END`,
-		hash, ext, mime, blob, storage, len(payload), relPath); err != nil {
-		return "", err
-	}
-	Logf(s.store.Dir(), "memo image saved: %s (%s, %s, %d bytes)", hash, mime, storage, len(payload))
-	return memoImagePrefix + hash, nil
+	return s.store.SaveEntryBlob(payload, extForMime(mime))
 }
 
-// GetMemoImage returns a data URL for display. Oversized images come back as a
+// GetImage returns a data URL for display. Oversized images come back as a
 // downscaled PNG so a 20 MB screenshot does not become a 27 MB string.
-func (s *ClipService) GetMemoImage(hash string) (string, error) {
-	meta, payload, err := s.loadMemoImage(hash)
+func (s *ClipService) GetImage(hash string) (string, error) {
+	payload, mime, err := s.store.LoadEntryBlob(hash)
 	if err != nil {
 		return "", err
 	}
-	if meta.Mime == "" {
-		meta.Mime = "image/png"
+	if mime == "" {
+		mime = "image/png"
 	}
-	if meta.Size > memoRenderMax {
+	if len(payload) > memoRenderMax {
 		if thumb, err := downscalePNG(payload, memoThumbEdge); err == nil && len(thumb) > 0 {
 			return "data:image/png;base64," + encodeBase64(thumb), nil
 		}
 	}
-	return "data:" + meta.Mime + ";base64," + encodeBase64(payload), nil
-}
-
-// GetMemoImageInfo reports where an attachment lives (used by the UI to show
-// size / storage kind, and to open the original file).
-func (s *ClipService) GetMemoImageInfo(hash string) (MemoImageMeta, error) {
-	meta, payload, err := s.loadMemoImage(hash)
-	if err != nil {
-		return MemoImageMeta{}, err
-	}
-	if meta.Size == 0 {
-		meta.Size = int64(len(payload))
-	}
-	return meta, nil
-}
-
-// OpenMemoImage opens the original file in the system viewer (large ones only
-// live on disk, so there is always a real file for them).
-func (s *ClipService) OpenMemoImage(hash string) error {
-	meta, payload, err := s.loadMemoImage(hash)
-	if err != nil {
-		return err
-	}
-	if meta.Storage != "file" || meta.Path == "" {
-		// 小图只在库里：导出成临时文件再打开
-		tmp := filepath.Join(os.TempDir(), "clipnest-"+meta.Hash+"."+meta.Ext)
-		if err := os.WriteFile(tmp, payload, 0o644); err != nil {
-			return err
-		}
-		return shellOpen(tmp)
-	}
-	return shellOpen(filepath.Join(s.store.Dir(), meta.Path))
-}
-
-func (s *ClipService) loadMemoImage(hash string) (MemoImageMeta, []byte, error) {
-	hash = strings.TrimPrefix(strings.TrimSpace(hash), memoImagePrefix)
-	if hash == "" {
-		return MemoImageMeta{}, nil, errors.New("缺少图片标识")
-	}
-	var (
-		meta MemoImageMeta
-		data []byte
-		path string
-	)
-	err := s.store.db.QueryRow(
-		`SELECT hash, ext, mime, data, storage, size, path FROM memo_blobs WHERE hash = ?`, hash).
-		Scan(&meta.Hash, &meta.Ext, &meta.Mime, &data, &meta.Storage, &meta.Size, &path)
-	if err != nil {
-		return MemoImageMeta{}, nil, err
-	}
-	meta.Path = path
-	if meta.Storage == "file" && path != "" {
-		buf, err := os.ReadFile(filepath.Join(s.store.Dir(), path))
-		if err != nil {
-			return MemoImageMeta{}, nil, err
-		}
-		return meta, buf, nil
-	}
-	if meta.Size == 0 {
-		meta.Size = int64(len(data))
-	}
-	return meta, data, nil
+	return "data:" + mime + ";base64," + encodeBase64(payload), nil
 }
 
 // downscalePNG shrinks an image so its longest edge is at most edge pixels.

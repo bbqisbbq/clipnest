@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Events } from "@wailsio/runtime";
-import { ClipService, type Item, type Snippet } from "./lib/api";
+import { ClipService, type Entry, type Snippet } from "./lib/api";
 import { formatBytes, formatRelative } from "./lib/format";
 import { IconSearch, kindIcon } from "./components/Icons";
 
@@ -25,10 +25,10 @@ const SNIPPET_ACTION: Record<string, string> = {
   command: "执行",
 };
 
-type Row = { kind: "item"; item: Item } | { kind: "snippet"; snippet: Snippet };
+type Row = { kind: "entry"; entry: Entry } | { kind: "snippet"; snippet: Snippet };
 
 export default function Picker() {
-  const [items, setItems] = useState<Item[]>([]);
+  const [items, setItems] = useState<Entry[]>([]);
   const [snippets, setSnippets] = useState<Snippet[]>([]);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
@@ -43,12 +43,12 @@ export default function Picker() {
 
   const rows: Row[] = useMemo(() => {
     if (snippetMode) return snippets.map((snippet) => ({ kind: "snippet", snippet }));
-    return items.map((item) => ({ kind: "item", item }));
+    return items.map((entry) => ({ kind: "entry", entry }));
   }, [snippetMode, snippets, items]);
 
   const loadItems = useCallback(async () => {
     try {
-      const list = await ClipService.GetItems({ query: "", kind: "", pinned: false, limit: 60, offset: 0 });
+      const list = await ClipService.GetEntries({ action: "clipboard", limit: 60, tail: true } as never);
       setItems(list ?? []);
     } catch (err) {
       setStatus(`读取失败：${String(err)}`);
@@ -101,7 +101,7 @@ export default function Picker() {
   useEffect(() => {
     const wanted = items
       .slice(0, 10)
-      .filter((it) => it.kind === "image" && it.imageFile && !thumbs[it.id]);
+      .filter((it) => it.kind === "image" && !thumbs[it.id]);
     if (wanted.length === 0) return;
     let alive = true;
     void (async () => {
@@ -125,7 +125,7 @@ export default function Picker() {
       const msg =
         row.kind === "snippet"
           ? await ClipService.PickSnippet(row.snippet.id, paste)
-          : await ClipService.PickItem(row.item.id, paste);
+          : await ClipService.PickEntry(row.entry.id, paste);
       if (msg) setStatus(msg);
     } catch (err) {
       setStatus(`失败：${String(err)}`);
@@ -227,7 +227,7 @@ export default function Picker() {
               );
             }
 
-            const item = row.item;
+            const item = row.entry;
             const Icon = kindIcon(item.kind);
             const thumb = item.kind === "image" ? thumbs[item.id] : undefined;
             return (
@@ -242,10 +242,10 @@ export default function Picker() {
                   {thumb ? <img className="picker-thumb" src={thumb} alt="" /> : <Icon size={15} />}
                 </div>
                 <div className="picker-main">
-                  <span className="picker-preview">{item.preview || "（空）"}</span>
+                  <span className="picker-preview">{(item.content || "") || "（空）"}</span>
                   <span className="picker-meta">
                     {item.sourceApp ? `${item.sourceApp} · ` : ""}
-                    {formatBytes(item.size)} · {formatRelative(item.updatedAt)}
+                    {formatBytes((item.content || "").length)} · {formatRelative(item.updatedAt)}
                   </span>
                 </div>
                 {index < 9 ? <span className="picker-num">{index + 1}</span> : null}

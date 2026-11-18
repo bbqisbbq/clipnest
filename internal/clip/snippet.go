@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -22,7 +21,7 @@ type SnippetKind string
 const (
 	SnippetText     SnippetKind = "text"     // 文本 / Markdown
 	SnippetPassword SnippetKind = "password" // 敏感文本（掩码显示，但仍参与同步）
-	SnippetImage    SnippetKind = "image"    // 图片（存在 snippet_blobs）
+	SnippetImage    SnippetKind = "image"    // 图片（正文用 memoimg: 引用 entry_blobs）
 	SnippetFile     SnippetKind = "file"     // 文件或文件夹路径
 	SnippetURL      SnippetKind = "url"      // 网址
 	SnippetApp      SnippetKind = "app"      // 启动程序（可带参数）
@@ -74,167 +73,13 @@ func NormalizeTrigger(t string) string {
 
 // ---- store --------------------------------------------------------------
 
-// snippetColumns must match scanSnippet. The blob extension rides along in the
-// same row: the store uses a single connection, so querying it per row while the
-// result set is open would deadlock.
-const snippetColumns = `s.id, s.kind, s.title, s.trigger_key, s.group_name, s.body, s.hash,
-	s.size, s.created_at, s.updated_at, s.use_count, s.pinned, COALESCE(b.ext, ''),
-	s.case_sensitive, s.keep_trigger, s.apps, s.exclude_apps`
-
-const selectSnippets = `SELECT ` + snippetColumns +
-	` FROM snippets s LEFT JOIN snippet_blobs b ON b.snippet_id = s.id`
-
-func scanSnippet(sc scannable) (Snippet, error) {
-	var (
-		sp                   Snippet
-		kind                 string
-		createdAt, updatedAt string
-		pinned               int
-		blobExt              string
-		caseSensitive        int
-		keepTrigger          int
-		apps                 string
-		excludeApps          string
-	)
-	if err := sc.Scan(&sp.ID, &kind, &sp.Title, &sp.Trigger, &sp.Group, &sp.Body, &sp.Hash,
-		&sp.Size, &createdAt, &updatedAt, &sp.UseCount, &pinned, &blobExt,
-		&caseSensitive, &keepTrigger, &apps, &excludeApps); err != nil {
-		return Snippet{}, err
-	}
-	sp.Kind = SnippetKind(kind)
-	sp.CreatedAt = decodeTime(createdAt)
-	sp.UpdatedAt = decodeTime(updatedAt)
-	sp.Pinned = pinned != 0
-	sp.CaseSensitive = caseSensitive != 0
-	sp.KeepTrigger = keepTrigger != 0
-	sp.Apps = splitList(apps)
-	sp.ExcludeApps = splitList(excludeApps)
-	if blobExt != "" {
-		sp.ImageFile = sp.ID + blobExt
-	}
-	return sp, nil
-}
-
-
-// SaveSnippet inserts or updates a snippet (matched by id, then by content hash).
-func (s *Store) SaveSnippet(in Snippet) (Snippet, error) {
-	in.Kind = SnippetKind(strings.TrimSpace(string(in.Kind)))
-	if in.Kind == "" {
-		in.Kind = SnippetText
-	}
-	in.Title = strings.TrimSpace(in.Title)
-	in.Trigger = strings.TrimSpace(in.Trigger)
-	in.Group = strings.TrimSpace(in.Group)
-	if in.Body == "" && in.Kind != SnippetImage {
-		return Snippet{}, errors.New("内容不能为空")
-	}
-	if in.Title == "" {
-		in.Title = snippetDefaultTitle(in)
-	}
-	in.Hash = snippetHash(in.Kind, in.Trigger, in.Body)
-	in.Size = len(in.Body)
-	now := nowUTC()
-
-	// Same meaning already stored under another id? Update that row instead of
-	// creating a duplicate.
-	if in.ID == "" {
-		var existing string
-		if err := s.db.QueryRow(`SELECT id FROM snippets WHERE hash = ?`, in.Hash).Scan(&existing); err == nil {
-			in.ID = existing
-		}
-	}
-
-	if in.ID == "" {
-		in.ID = newID()
-		in.CreatedAt = now
-		in.UpdatedAt = now
-		if _, err := s.db.Exec(`
-			INSERT INTO snippets (id, kind, title, trigger_key, group_name, body, hash, size,
-			                      created_at, updated_at, use_count, pinned)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-			in.ID, string(in.Kind), in.Title, in.Trigger, in.Group, in.Body, in.Hash, in.Size,
-			encodeTime(in.CreatedAt), encodeTime(in.UpdatedAt), in.UseCount, boolInt(in.Pinned),
-		); err != nil {
-			return Snippet{}, err
-		}
-		s.setSnippetOptions(in.ID, in)
-		out, ok := s.GetSnippet(in.ID)
-		if !ok {
-			return Snippet{}, errors.New("保存后读取失败")
-		}
-		return out, nil
-	}
-
-	if _, err := s.db.Exec(`
-		UPDATE snippets SET kind=?, title=?, trigger_key=?, group_name=?, body=?, hash=?,
-		                    size=?, updated_at=?
-		 WHERE id=?`,
-		string(in.Kind), in.Title, in.Trigger, in.Group, in.Body, in.Hash, in.Size,
-		encodeTime(now), in.ID,
-	); err != nil {
-		return Snippet{}, err
-	}
-	out, ok := s.GetSnippet(in.ID)
-	if !ok {
-		return Snippet{}, errors.New("片段不存在")
-	}
-	return out, nil
-}
-
-func snippetDefaultTitle(sp Snippet) string {
-	switch sp.Kind {
-	case SnippetURL:
-		return sp.Body
-	case SnippetImage:
-		return "图片片段"
-	case SnippetApp:
-		return filepath.Base(strings.Fields(sp.Body + " ")[0])
-	case SnippetCommand:
-		return sp.Body
-	case SnippetPassword:
-		return "密码"
-	}
-	text := strings.TrimSpace(strings.SplitN(sp.Body, "\n", 2)[0])
-	if r := []rune(text); len(r) > 24 {
-		return string(r[:24]) + "…"
-	}
-	if text == "" {
-		return "文本片段"
-	}
-	return text
-}
-
-// GetSnippet returns one snippet.
-// GetSnippet returns one snippet. 数据源是 entries：片段就是带 snippet action
-// 的条目；只有老库里残留的行才会落到 snippets 表（回滚用）。
+// GetSnippet returns one snippet (an entry carrying the snippet action).
 func (s *Store) GetSnippet(id string) (Snippet, bool) {
-	if e, ok := s.GetEntry(id); ok {
-		return snippetFromEntry(e), true
-	}
-	row := s.db.QueryRow(selectSnippets+` WHERE s.id = ?`, id)
-	sp, err := scanSnippet(row)
-	if err != nil {
+	e, ok := s.GetEntry(id)
+	if !ok {
 		return Snippet{}, false
 	}
-	return sp, true
-}
-
-func (s *Store) querySnippets(query string, args ...any) []Snippet {
-	rows, err := s.db.Query(query, args...)
-	if err != nil {
-		Logf(s.dir, "snippet query failed: %v", err)
-		return nil
-	}
-	defer rows.Close()
-	out := make([]Snippet, 0, 32)
-	for rows.Next() {
-		sp, err := scanSnippet(rows)
-		if err != nil {
-			return out
-		}
-			out = append(out, sp)
-	}
-	return out
+	return snippetFromEntry(e), true
 }
 
 // ListSnippets searches title/trigger/body/group, newest edit first.
@@ -351,63 +196,30 @@ func (s *Store) SnippetGroups() []string {
 	return out
 }
 
-// FindSnippetByTrigger returns the snippet whose trigger equals key (case-insensitive).
+// FindSnippetByTrigger returns the snippet whose trigger equals key.
 func (s *Store) FindSnippetByTrigger(key string) (Snippet, bool) {
 	key = NormalizeTrigger(key)
 	if key == "" {
 		return Snippet{}, false
 	}
-	row := s.db.QueryRow(selectSnippets+` WHERE lower(s.trigger_key) = ?`, key)
-	sp, err := scanSnippet(row)
-	if err != nil {
+	e, ok := s.FindEntryByTrigger(key, false)
+	if !ok {
 		return Snippet{}, false
 	}
-	return sp, true
+	return snippetFromEntry(e), true
 }
 
-// DeleteSnippet removes a snippet (and leaves a tombstone so peers drop theirs).
+// DeleteSnippet removes a snippet entry and records a tombstone.
 func (s *Store) DeleteSnippet(id string) bool {
-	// 数据源是 entries：删掉条目本身
-	if ok := s.DeleteEntry(id); ok {
-		return true
+	if e, ok := s.GetEntry(id); ok && e.Hash != "" {
+		s.AddTombstoneScoped("entry", e.Hash, nowUTC(), hostName())
 	}
-	var hash string
-	_ = s.db.QueryRow(`SELECT hash FROM snippets WHERE id = ?`, id).Scan(&hash)
-	res, err := s.db.Exec(`DELETE FROM snippets WHERE id = ?`, id)
-	if err != nil {
-		return false
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return false
-	}
-	_, _ = s.db.Exec(`DELETE FROM snippet_blobs WHERE snippet_id = ?`, id)
-	if hash != "" {
-		s.AddTombstoneScoped("snippet", hash, nowUTC(), hostName())
-	}
-	return true
+	return s.DeleteEntry(id)
 }
 
-// MarkSnippetUsed bumps the usage counter.
+// MarkSnippetUsed bumps the use counter of a snippet entry.
 func (s *Store) MarkSnippetUsed(id string) {
-	_, _ = s.db.Exec(`UPDATE snippets SET use_count = use_count + 1 WHERE id = ?`, id)
-}
-
-// SaveSnippetBlob stores an image payload for a snippet.
-func (s *Store) SaveSnippetBlob(id, ext string, data []byte) error {
-	_, err := s.db.Exec(
-		`INSERT INTO snippet_blobs (snippet_id, ext, data) VALUES (?,?,?)
-		 ON CONFLICT(snippet_id) DO UPDATE SET ext = excluded.ext, data = excluded.data`,
-		id, ext, data)
-	return err
-}
-
-// SnippetBlob returns the payload of an image snippet.
-func (s *Store) SnippetBlob(id string) ([]byte, error) {
-	var data []byte
-	if err := s.db.QueryRow(`SELECT data FROM snippet_blobs WHERE snippet_id = ?`, id).Scan(&data); err != nil {
-		return nil, err
-	}
-	return data, nil
+	_, _ = s.db.Exec(`UPDATE entries SET use_count = use_count + 1 WHERE id = ?`, id)
 }
 
 // UpsertRemoteSnippet merges a snippet arriving from a peer (by hash).
@@ -448,103 +260,12 @@ func (s *Store) UpsertRemoteSnippet(in Snippet) (isNew bool, changed bool) {
 	return true, true
 }
 
-// upsertRemoteSnippetLegacy 只给回滚用：写旧的 snippets 表。
-func (s *Store) upsertRemoteSnippetLegacy(in Snippet) (isNew bool, changed bool) {
-	if in.Hash == "" {
-		return false, false
-	}
-	var localID string
-	var localUpdated string
-	err := s.db.QueryRow(`SELECT id, updated_at FROM snippets WHERE hash = ?`, in.Hash).
-		Scan(&localID, &localUpdated)
-	if err == nil && localID != "" {
-		if in.UpdatedAt.After(decodeTime(localUpdated)) {
-			if _, err := s.db.Exec(
-				`UPDATE snippets SET title=?, trigger_key=?, group_name=?, body=?, size=?, updated_at=? WHERE id=?`,
-				in.Title, in.Trigger, in.Group, in.Body, in.Size, encodeTime(in.UpdatedAt), localID,
-			); err != nil {
-				return false, false
-			}
-			changed = true
-		}
-		var use int
-		var pinned int
-		_ = s.db.QueryRow(`SELECT use_count, pinned FROM snippets WHERE id = ?`, localID).Scan(&use, &pinned)
-		if in.UseCount > use {
-			_, _ = s.db.Exec(`UPDATE snippets SET use_count = ? WHERE id = ?`, in.UseCount, localID)
-			changed = true
-		}
-		if in.Pinned && pinned == 0 {
-			_, _ = s.db.Exec(`UPDATE snippets SET pinned = 1 WHERE id = ?`, localID)
-			changed = true
-		}
-		return false, changed
-	}
-
-	sp := in
-	if sp.ID == "" {
-		sp.ID = newID()
-	}
-	if sp.CreatedAt.IsZero() {
-		sp.CreatedAt = nowUTC()
-	}
-	if sp.UpdatedAt.IsZero() {
-		sp.UpdatedAt = nowUTC()
-	}
-	if _, err := s.db.Exec(`
-		INSERT INTO snippets (id, kind, title, trigger_key, group_name, body, hash, size,
-		                      created_at, updated_at, use_count, pinned)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-		sp.ID, string(sp.Kind), sp.Title, sp.Trigger, sp.Group, sp.Body, sp.Hash, sp.Size,
-		encodeTime(sp.CreatedAt), encodeTime(sp.UpdatedAt), sp.UseCount, boolInt(sp.Pinned),
-	); err != nil {
-		return false, false
-	}
-	s.setSnippetOptions(sp.ID, sp)
-	return true, true
-}
-
-// findSnippetByHash looks a snippet up by its merge key.
-func (s *Store) findSnippetByHash(hash string) (Snippet, bool) {
-	if hash == "" {
-		return Snippet{}, false
-	}
-	row := s.db.QueryRow(selectSnippets+` WHERE s.hash = ?`, hash)
-	sp, err := scanSnippet(row)
-	if err != nil {
-		return Snippet{}, false
-	}
-	return sp, true
-}
-
 // snippetBlobExt is the payload extension a snippet carries ("" when none).
 func snippetBlobExt(sp Snippet) string {
 	if sp.ImageFile != "" {
 		return ".png"
 	}
 	return ""
-}
-
-// snippetManifest renders snippets for the sync package index.
-func (s *Store) snippetManifest() []manifestItem {
-	// 用 ListSnippets（按 action 查）而不是 AllSnippets（按 trigger 查）：
-	// 没有缩写的图片/文件片段也要参与同步。
-	all := s.ListSnippets("", "", 500)
-	out := make([]manifestItem, 0, len(all))
-	for _, sp := range all {
-		ext := snippetBlobExt(sp)
-		out = append(out, manifestItem{
-			Hash:      sp.Hash,
-			ID:        sp.ID,
-			Kind:      Kind(sp.Kind),
-			Preview:   truncateRunes(sp.Title, 120),
-			UpdatedAt: sp.UpdatedAt,
-			Blob:      ext,
-			Pinned:    sp.Pinned,
-			CopyCount: sp.UseCount,
-		})
-	}
-	return out
 }
 
 // ---- service API --------------------------------------------------------
@@ -562,30 +283,6 @@ func (s *ClipService) GetSnippetGroups() []string { return s.store.SnippetGroups
 func (s *ClipService) SaveSnippet(sp Snippet, imageDataB64 string) (Snippet, error) {
 	// 数据源是 entries：片段就是带 snippet 能力的条目
 	return s.SaveSnippetToEntries(sp, imageDataB64)
-}
-
-// saveSnippetLegacy 只给回滚用：写旧的 snippets 表。
-func (s *ClipService) saveSnippetLegacy(sp Snippet, imageDataB64 string) (Snippet, error) {
-	saved, err := s.store.SaveSnippet(sp)
-	if err != nil {
-		return Snippet{}, err
-	}
-	if strings.TrimSpace(imageDataB64) != "" && saved.Kind == SnippetImage {
-		raw, decErr := decodeBase64Image(imageDataB64)
-		if decErr != nil {
-			return saved, fmt.Errorf("图片数据无效: %w", decErr)
-		}
-		if err := s.store.SaveSnippetBlob(saved.ID, ".png", raw); err != nil {
-			return saved, err
-		}
-		saved.ImageFile = saved.ID + ".png"
-	}
-	s.refreshTriggers()
-	out, ok := s.store.GetSnippet(saved.ID)
-	if !ok {
-		return Snippet{}, errors.New("片段保存后读取失败")
-	}
-	return out, nil
 }
 
 // DeleteSnippet removes one snippet.
@@ -611,11 +308,7 @@ func (s *ClipService) GetSnippetImage(id string) (string, error) {
 			}
 		}
 	}
-	payload, err := s.store.SnippetBlob(id)
-	if err != nil {
-		return "", err
-	}
-	return "data:image/png;base64," + encodeBase64(payload), nil
+	return "", errors.New("这条没有图片")
 }
 
 // SnippetAction reports what Enter will do for this snippet — the UI shows it so
@@ -702,15 +395,6 @@ func joinList(list []string) string {
 		}
 	}
 	return strings.Join(cleaned, ",")
-}
-// setSnippetOptions stores the trigger behaviour flags. Kept as a separate write
-// so adding a new option never means touching the big INSERT/UPDATE statements.
-func (s *Store) setSnippetOptions(id string, sp Snippet) {
-	_, _ = s.db.Exec(
-		`UPDATE snippets SET case_sensitive=?, keep_trigger=?, apps=?, exclude_apps=? WHERE id=?`,
-		boolInt(sp.CaseSensitive), boolInt(sp.KeepTrigger),
-		joinList(sp.Apps), joinList(sp.ExcludeApps), id,
-	)
 }
 // SaveSnippetToEntries writes a snippet as an entry carrying the snippet action.
 // 片段表已废弃：片段就是带 snippet 能力的条目，这里做一次形状转换。

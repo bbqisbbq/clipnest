@@ -3,8 +3,6 @@
 // the service types that the webview binds to.
 package clip
 
-import "time"
-
 // Kind is the content type of a clipboard entry.
 type Kind string
 
@@ -25,60 +23,6 @@ type FileRef struct {
 	Size   int64  `json:"size"`
 	IsDir  bool   `json:"isDir"`
 	Exists bool   `json:"exists"`
-}
-
-// Item is one clipboard entry.
-type Item struct {
-	ID        string    `json:"id"`
-	Kind      Kind      `json:"kind"`
-	Text      string    `json:"text"`
-	Preview   string    `json:"preview"`
-	Hash      string    `json:"hash"`
-	Size      int       `json:"size"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
-	SeenCount int       `json:"seenCount"`
-	CopyCount int       `json:"copyCount"`
-	Pinned    bool      `json:"pinned"`
-	SourceApp string    `json:"sourceApp,omitempty"`
-
-	// Image entries: PNG blob name inside the store's blob directory.
-	ImageFile string `json:"imageFile,omitempty"`
-	Width     int    `json:"width,omitempty"`
-	Height    int    `json:"height,omitempty"`
-
-	// Rich text entries keep the HTML fragment or the RTF payload; Text holds
-	// the plain version.
-	HTML string `json:"html,omitempty"`
-	RTF  string `json:"rtf,omitempty"`
-
-	// Custom (otherwise unknown) formats: the raw bytes live in a blob file and
-	// the original clipboard format is kept so the entry can be put back
-	// exactly as it was.
-	BinaryFile string `json:"binaryFile,omitempty"`
-	FormatName string `json:"formatName,omitempty"`
-	FormatID   uint32 `json:"formatId,omitempty"`
-
-	// File entries.
-	Files []FileRef `json:"files,omitempty"`
-}
-
-// Filter describes a list query.
-type Filter struct {
-	Query  string `json:"query"`
-	Kind   string `json:"kind"`   // "" = all
-	Pinned bool   `json:"pinned"` // only pinned
-	Limit  int    `json:"limit"`
-	Offset int    `json:"offset"`
-}
-
-// Stats is the summary shown in the UI header.
-type Stats struct {
-	Total        int            `json:"total"`
-	Pinned       int            `json:"pinned"`
-	ByKind       map[string]int `json:"byKind"`
-	StorageBytes int64          `json:"storageBytes"`
-	LastCapture  string         `json:"lastCapture"`
 }
 
 // Captured is what the clipboard layer hands to the capture pipeline.

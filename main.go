@@ -26,9 +26,9 @@ var appIcon []byte
 
 func init() {
 	// Typed events: the binding generator turns these into TS event payloads.
-	application.RegisterEvent[clip.Item]("clip:new")
-	application.RegisterEvent[clip.Item]("clip:bumped")
-	application.RegisterEvent[clip.Item]("clip:updated")
+	application.RegisterEvent[clip.Entry]("clip:new")
+	application.RegisterEvent[clip.Entry]("clip:bumped")
+	application.RegisterEvent[clip.Entry]("clip:updated")
 	application.RegisterEvent[string]("clip:deleted")
 	application.RegisterEvent[int]("clip:cleared")
 	application.RegisterEvent[clip.Stats]("clip:stats")
@@ -399,7 +399,7 @@ func main() {
 		}()
 	})
 	menu.Add("清空未收藏的历史").OnClick(func(_ *application.Context) {
-		_, _ = svc.DeleteWhere(clip.Filter{})
+		_, _ = svc.DeleteAll()
 	})
 	sub := menu.AddSubmenu("更多")
 	sub.Add("打开数据目录").OnClick(func(_ *application.Context) {

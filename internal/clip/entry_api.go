@@ -90,6 +90,7 @@ func (s *ClipService) DemoteFromSnippet(id string) (Entry, error) {
 		return Entry{}, errors.New("条目不存在")
 	}
 	e.TriggerKey = ""
+	e.SetAction(ActionSnippet, false)
 	return s.store.SaveEntry(e)
 }
 

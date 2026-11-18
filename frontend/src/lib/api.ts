@@ -4,12 +4,10 @@ import * as EventNames from "../../bindings/events";
 
 export { ClipService, Models, EventNames };
 
-export type Item = Models.Item;
 export type FileRef = Models.FileRef;
 export type Settings = Models.Settings;
 export type Stats = Models.Stats;
 export type AppInfo = Models.AppInfo;
-export type Filter = Models.Filter;
 export type SyncStatus = Models.SyncStatus;
 export type UpdateInfo = Models.UpdateInfo;
 export type SyncPanel = Models.SyncPanel;
@@ -32,11 +30,6 @@ export const KIND_LABEL: Record<string, string> = {
   rich: "富文本",
   custom: "其它格式",
 };
-
-// newFilter builds the Filter payload the Go side expects.
-export function newFilter(query = "", kind = "", pinned = false, limit = 400): Filter {
-  return { query, kind, pinned, limit, offset: 0 };
-}
 
 export function emptySettings(): Settings {
   return {

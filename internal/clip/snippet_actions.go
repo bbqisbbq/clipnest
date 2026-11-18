@@ -19,61 +19,6 @@ func init() {
 	}
 }
 
-// snippetFromItem maps a history entry onto an unsaved snippet (kind + body).
-func snippetFromItem(it Item) (Snippet, error) {
-	sp := Snippet{Title: truncateRunes(it.Preview, 24)}
-	switch it.Kind {
-	case KindText, KindRichText:
-		sp.Kind = SnippetText
-		sp.Body = it.Text
-	case KindLink:
-		sp.Kind = SnippetURL
-		sp.Body = it.Text
-	case KindFiles:
-		sp.Kind = SnippetFile
-		paths := make([]string, 0, len(it.Files))
-		for _, f := range it.Files {
-			paths = append(paths, f.Path)
-		}
-		sp.Body = strings.Join(paths, "\n")
-	case KindImage:
-		sp.Kind = SnippetImage
-		sp.Body = it.Preview
-	default:
-		return Snippet{}, errors.New("这个类型暂不支持做成片段")
-	}
-	return sp, nil
-}
-// SaveItemAsSnippet turns a clipboard-history entry into a snippet ("存为片段"),
-// so something you just copied can become a reusable phrase with a trigger.
-func (s *ClipService) SaveItemAsSnippet(itemID string) (Snippet, error) {
-	it, ok := s.store.Get(itemID)
-	if !ok {
-		return Snippet{}, errors.New("条目不存在")
-	}
-	sp, err := snippetFromItem(it)
-	if err != nil {
-		return Snippet{}, err
-	}
-
-	saved, err := s.store.SaveSnippet(sp)
-	if err != nil {
-		return Snippet{}, err
-	}
-	if it.Kind == KindImage {
-		if payload, err := s.store.LoadBlobByName(it.ImageFile); err == nil && len(payload) > 0 {
-			_ = s.store.SaveSnippetBlob(saved.ID, ".png", payload)
-		}
-	}
-	s.refreshTriggers()
-	Logf(s.store.Dir(), "snippet from history: item=%s -> snippet=%s (%s)", it.ID, saved.ID, saved.Kind)
-	out, ok := s.store.GetSnippet(saved.ID)
-	if !ok {
-		return Snippet{}, errors.New("片段保存失败")
-	}
-	return out, nil
-}
-
 // decodeBase64Image accepts a "data:image/png;base64,…" URL or bare base64.
 func decodeBase64Image(s string) ([]byte, error) {
 	s = strings.TrimSpace(s)
@@ -132,8 +77,8 @@ func (s *ClipService) runSnippet(sp Snippet, paste bool, target uintptr) (string
 		return "已复制富文本", nil
 
 	case SnippetImage:
-		payload, err := s.store.SnippetBlob(sp.ID)
-		if err != nil {
+		payload, _, err := s.store.LoadEntryBlob(memoImageToken(sp.Body))
+		if err != nil || len(payload) == 0 {
 			return "", errors.New("这个片段没有图片数据")
 		}
 		if err := WriteImageToClipboard(payload); err != nil {
@@ -339,29 +284,15 @@ type SnippetDraft struct {
 	ImageData string `json:"imageData,omitempty"`
 }
 
-// DraftSnippetFromItem maps a history entry into an unsaved snippet draft.
-func (s *ClipService) DraftSnippetFromItem(itemID string) (SnippetDraft, error) {
-	it, ok := s.store.Get(itemID)
-	if !ok {
-		return SnippetDraft{}, errors.New("条目不存在")
-	}
-	sp, err := snippetFromItem(it)
-	if err != nil {
-		return SnippetDraft{}, err
-	}
-	draft := SnippetDraft{Snippet: sp}
-	if it.Kind == KindImage && it.ImageFile != "" {
-		if payload, err := s.store.LoadBlobByName(it.ImageFile); err == nil && len(payload) > 0 {
-			draft.ImageData = "data:image/png;base64," + encodeBase64(payload)
-		}
-	}
-	return draft, nil
-}
 // pasteImageInline writes an image snippet to the clipboard and pastes it into
 // whatever window has focus — the expander's path, since an image has no text
 // form that could be typed.
 func (s *ClipService) pasteImageInline(id string) error {
-	payload, err := s.store.SnippetBlob(id)
+	e, ok := s.store.GetEntry(id)
+	if !ok {
+		return errors.New("片段不存在")
+	}
+	payload, _, err := s.store.LoadEntryBlob(memoImageToken(e.Content))
 	if err != nil || len(payload) == 0 {
 		return errors.New("这个片段没有图片数据")
 	}

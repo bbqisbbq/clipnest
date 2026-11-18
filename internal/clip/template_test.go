@@ -42,30 +42,37 @@ func TestRenderTemplate(t *testing.T) {
 	}
 }
 
-func TestSaveItemAsSnippet(t *testing.T) {
+func TestPromoteEntryToSnippet(t *testing.T) {
 	svc := newTestService(t, t.TempDir())
 
-	textItem, _, err := svc.store.Add(Captured{Kind: KindText, Text: "合同审查要点：一、…", Preview: "合同审查要点：一、…", Hash: "h-text", Size: 20})
+	// 采集一条，然后把它升格成片段：同一条条目，加上缩写和 snippet 能力
+	e, _, err := svc.store.SaveCapture(Captured{Kind: KindText, Text: "合同审查要点：一、…", Preview: "合同审查要点：一、…", Hash: "h-text", Size: 20})
 	if err != nil {
 		t.Fatal(err)
 	}
-	sn, err := svc.SaveItemAsSnippet(textItem.ID)
+	promoted, err := svc.PromoteToSnippet(e.ID, "ht-")
 	if err != nil {
-		t.Fatalf("SaveItemAsSnippet(text): %v", err)
+		t.Fatalf("PromoteToSnippet: %v", err)
 	}
-	if sn.Kind != SnippetText || sn.Body != textItem.Text {
-		t.Errorf("unexpected snippet: %+v", sn)
+	if promoted.ID != e.ID {
+		t.Errorf("升格不应该换一条：%s vs %s", promoted.ID, e.ID)
+	}
+	if promoted.TriggerKey != "ht-" {
+		t.Errorf("trigger = %q", promoted.TriggerKey)
+	}
+	if !promoted.HasAction(ActionSnippet) || !promoted.HasAction(ActionClipboard) {
+		t.Errorf("应该同时具备两种能力: %v", promoted.Actions)
+	}
+	if promoted.Content != e.Content {
+		t.Errorf("内容被改动了")
 	}
 
-	linkItem, _, _ := svc.store.Add(Captured{Kind: KindLink, Text: "https://example.com", Preview: "https://example.com", Hash: "h-link", Size: 19})
-	if sn, err := svc.SaveItemAsSnippet(linkItem.ID); err != nil || sn.Kind != SnippetURL {
-		t.Errorf("link → %+v err=%v", sn, err)
+	// 取消片段能力
+	demoted, err := svc.DemoteFromSnippet(e.ID)
+	if err != nil {
+		t.Fatal(err)
 	}
-
-	imgItem, _, _ := svc.store.Add(Captured{Kind: KindImage, PNG: tinyPNG(t), Width: 2, Height: 2, Preview: "2 × 2 图像", Hash: "h-img", Size: 100})
-	if sn, err := svc.SaveItemAsSnippet(imgItem.ID); err != nil {
-		t.Fatalf("image → %v", err)
-	} else if payload, err := svc.store.SnippetBlob(sn.ID); err != nil || len(payload) == 0 {
-		t.Errorf("image payload not copied: %v", err)
+	if demoted.TriggerKey != "" || demoted.HasAction(ActionSnippet) {
+		t.Errorf("取消失败: %+v", demoted)
 	}
 }

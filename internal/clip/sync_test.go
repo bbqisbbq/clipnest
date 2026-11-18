@@ -87,10 +87,10 @@ func TestSyncPackagesEverythingIntoOneFile(t *testing.T) {
 	base, dir, stats := newTestDAV(t)
 
 	a := syncedService(t, base)
-	if _, _, err := a.store.Add(Captured{Kind: KindText, Text: "hello from A", Preview: "hello from A", Hash: "hash-a", Size: 12, SourceApp: "a.exe"}); err != nil {
+	if _, _, err := a.store.SaveCapture(Captured{Kind: KindText, Text: "hello from A", Preview: "hello from A", Hash: "hash-a", Size: 12, SourceApp: "a.exe"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := a.store.Add(Captured{Kind: KindImage, PNG: tinyPNG(t), Width: 2, Height: 2, Preview: "2 × 2 图像", Hash: "hash-img", Size: 100}); err != nil {
+	if _, _, err := a.store.SaveCapture(Captured{Kind: KindImage, PNG: tinyPNG(t), Width: 2, Height: 2, Preview: "2 × 2 图像", Hash: "hash-img", Size: 100}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := a.SyncNow(); err != nil {
@@ -117,8 +117,8 @@ func TestSyncPackagesEverythingIntoOneFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse package: %v", err)
 	}
-	if len(parsed.items) != 2 {
-		t.Errorf("package holds %d records, want 2", len(parsed.items))
+	if len(parsed.entries) != 2 {
+		t.Errorf("package holds %d records, want 2", len(parsed.entries))
 	}
 	if len(parsed.blobs) != 1 {
 		t.Errorf("package holds %d blobs, want 1 (the image)", len(parsed.blobs))
@@ -137,11 +137,11 @@ func TestSyncPackagesEverythingIntoOneFile(t *testing.T) {
 		t.Errorf("B made %d GETs, want 1 (single peer package)", got)
 	}
 
-	items := b.store.All()
+	items := b.store.ListEntries(EntryQuery{})
 	if len(items) != 2 {
-		t.Fatalf("B items = %d, want 2", len(items))
+		t.Fatalf("B entries = %d, want 2", len(items))
 	}
-	var imageItem *Item
+	var imageItem *Entry
 	for i := range items {
 		if items[i].Kind == KindImage {
 			imageItem = &items[i]
@@ -150,7 +150,7 @@ func TestSyncPackagesEverythingIntoOneFile(t *testing.T) {
 	if imageItem == nil {
 		t.Fatal("image entry did not arrive")
 	}
-	if payload, err := b.store.LoadBlobByID(imageItem.ID); err != nil || len(payload) == 0 {
+	if payload, _, err := b.store.LoadEntryBlob(memoImageToken(imageItem.Content)); err != nil || len(payload) == 0 {
 		t.Errorf("image blob not restored: %v", err)
 	}
 }
@@ -161,10 +161,10 @@ func TestSyncTwoDevicesConvergeWithoutOverwriting(t *testing.T) {
 	a := syncedService(t, base)
 	b := syncedService(t, base)
 
-	if _, _, err := a.store.Add(Captured{Kind: KindText, Text: "only-a", Preview: "only-a", Hash: "only-a", Size: 6}); err != nil {
+	if _, _, err := a.store.SaveCapture(Captured{Kind: KindText, Text: "only-a", Preview: "only-a", Hash: "only-a", Size: 6}); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := b.store.Add(Captured{Kind: KindText, Text: "only-b", Preview: "only-b", Hash: "only-b", Size: 6}); err != nil {
+	if _, _, err := b.store.SaveCapture(Captured{Kind: KindText, Text: "only-b", Preview: "only-b", Hash: "only-b", Size: 6}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -195,8 +195,8 @@ func TestSyncTwoDevicesConvergeWithoutOverwriting(t *testing.T) {
 			t.Fatalf("%s: %v", f.Name(), err)
 		}
 		// Whatever a peer already published, our own item must never be missing.
-		hashes := make(map[string]bool, len(pkg.items))
-		for _, it := range pkg.items {
+		hashes := make(map[string]bool, len(pkg.entries))
+		for _, it := range pkg.entries {
 			hashes[it.Hash] = true
 		}
 		if !hashes["only-a"] && !hashes["only-b"] {
@@ -212,11 +212,11 @@ func TestSyncTwoDevicesConvergeWithoutOverwriting(t *testing.T) {
 		t.Fatalf("B resync: %v", err)
 	}
 	for name, svc := range map[string]*ClipService{"A": a, "B": b} {
-		if got := len(svc.store.All()); got != 2 {
-			t.Errorf("%s items = %d, want 2 (union)", name, got)
+		if got := svc.store.CountEntries(); got != 2 {
+			t.Errorf("%s entries = %d, want 2 (union)", name, got)
 		}
 		for _, hash := range []string{"only-a", "only-b"} {
-			if _, ok := svc.store.findByHash(hash); !ok {
+			if _, ok := svc.store.findEntryByHash(hash); !ok {
 				t.Errorf("%s lost %s", name, hash)
 			}
 		}
@@ -226,8 +226,8 @@ func TestSyncTwoDevicesConvergeWithoutOverwriting(t *testing.T) {
 	for _, f := range files {
 		raw, _ := os.ReadFile(filepath.Join(string(*dir), syncDevicesDir, f.Name()))
 		pkg, _ := parsePackage(raw)
-		if len(pkg.items) != 2 {
-			t.Errorf("%s holds %d records after convergence, want 2", f.Name(), len(pkg.items))
+		if len(pkg.entries) != 2 {
+			t.Errorf("%s holds %d records after convergence, want 2", f.Name(), len(pkg.entries))
 		}
 	}
 }
@@ -236,20 +236,21 @@ func TestSyncMergesFlagsAndRepublishesOnce(t *testing.T) {
 	base, _, stats := newTestDAV(t)
 
 	a := syncedService(t, base)
-	shared, _, _ := a.store.Add(Captured{Kind: KindText, Text: "shared", Preview: "shared", Hash: "same-hash", Size: 6})
-	a.store.SetPinned(shared.ID, true)
+	shared, _, _ := a.store.SaveCapture(Captured{Kind: KindText, Text: "shared", Preview: "shared", Hash: "same-hash", Size: 6})
+	shared.Pinned = true
+	_, _ = a.store.SaveEntry(*shared)
 	if _, err := a.SyncNow(); err != nil {
 		t.Fatalf("A sync: %v", err)
 	}
 
 	b := syncedService(t, base)
-	if _, _, err := b.store.Add(Captured{Kind: KindText, Text: "shared", Preview: "shared", Hash: "same-hash", Size: 6}); err != nil {
+	if _, _, err := b.store.SaveCapture(Captured{Kind: KindText, Text: "shared", Preview: "shared", Hash: "same-hash", Size: 6}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := b.SyncNow(); err != nil {
 		t.Fatalf("B sync: %v", err)
 	}
-	got, ok := b.store.findByHash("same-hash")
+	got, ok := b.store.findEntryByHash("same-hash")
 	if !ok {
 		t.Fatal("shared entry missing on B")
 	}
@@ -271,8 +272,8 @@ func TestSyncPropagatesDeletion(t *testing.T) {
 	base, _, _ := newTestDAV(t)
 
 	a := syncedService(t, base)
-	item, _, _ := a.store.Add(Captured{Kind: KindText, Text: "delete me", Preview: "delete me", Hash: "del-hash", Size: 9})
-	if _, _, err := a.store.Add(Captured{Kind: KindText, Text: "keep me", Preview: "keep me", Hash: "keep-hash", Size: 7}); err != nil {
+	item, _, _ := a.store.SaveCapture(Captured{Kind: KindText, Text: "delete me", Preview: "delete me", Hash: "del-hash", Size: 9})
+	if _, _, err := a.store.SaveCapture(Captured{Kind: KindText, Text: "keep me", Preview: "keep me", Hash: "keep-hash", Size: 7}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := a.SyncNow(); err != nil {
@@ -283,11 +284,11 @@ func TestSyncPropagatesDeletion(t *testing.T) {
 	if _, err := b.SyncNow(); err != nil {
 		t.Fatalf("B pull: %v", err)
 	}
-	if got := len(b.store.All()); got != 2 {
+	if got := b.store.CountEntries(); got != 2 {
 		t.Fatalf("B should have both entries, got %d", got)
 	}
 
-	if !a.store.Delete(item.ID) {
+	if !a.store.DeleteEntry(item.ID) {
 		t.Fatal("delete failed")
 	}
 	if _, err := a.SyncNow(); err != nil {
@@ -298,13 +299,13 @@ func TestSyncPropagatesDeletion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("B resync: %v", err)
 	}
-	if got := len(b.store.All()); got != 1 {
+	if got := b.store.CountEntries(); got != 1 {
 		t.Fatalf("B items = %d after deletion sync, want 1", got)
 	}
 	if !strings.Contains(status.LastResult, "删除 1 条") {
 		t.Errorf("status should mention the deletion: %q", status.LastResult)
 	}
-	if _, ok := b.store.findByHash("del-hash"); ok {
+	if _, ok := b.store.findEntryByHash("del-hash"); ok {
 		t.Error("deleted entry came back on B")
 	}
 
@@ -312,7 +313,7 @@ func TestSyncPropagatesDeletion(t *testing.T) {
 	if _, err := a.SyncNow(); err != nil {
 		t.Fatalf("A third sync: %v", err)
 	}
-	if got := len(a.store.All()); got != 1 {
+	if got := a.store.CountEntries(); got != 1 {
 		t.Fatalf("A items = %d after round trip, want 1", got)
 	}
 }
@@ -321,23 +322,23 @@ func TestSyncRecopyAfterDeleteResurrects(t *testing.T) {
 	base, _, _ := newTestDAV(t)
 
 	a := syncedService(t, base)
-	item, _, _ := a.store.Add(Captured{Kind: KindText, Text: "zombie", Preview: "zombie", Hash: "zombie-hash", Size: 6})
+	item, _, _ := a.store.SaveCapture(Captured{Kind: KindText, Text: "zombie", Preview: "zombie", Hash: "zombie-hash", Size: 6})
 	if _, err := a.SyncNow(); err != nil {
 		t.Fatalf("A upload: %v", err)
 	}
-	a.store.Delete(item.ID)
+	a.store.DeleteEntry(item.ID)
 	if _, err := a.SyncNow(); err != nil {
 		t.Fatalf("A delete sync: %v", err)
 	}
 
 	time.Sleep(5 * time.Millisecond)
-	if _, _, err := a.store.Add(Captured{Kind: KindText, Text: "zombie", Preview: "zombie", Hash: "zombie-hash", Size: 6}); err != nil {
+	if _, _, err := a.store.SaveCapture(Captured{Kind: KindText, Text: "zombie", Preview: "zombie", Hash: "zombie-hash", Size: 6}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := a.SyncNow(); err != nil {
 		t.Fatalf("A recopy sync: %v", err)
 	}
-	if _, ok := a.store.findByHash("zombie-hash"); !ok {
+	if _, ok := a.store.findEntryByHash("zombie-hash"); !ok {
 		t.Fatal("re-copied entry was deleted by its own older tombstone")
 	}
 }
@@ -348,9 +349,8 @@ func TestSyncSettingsTravelWithTheNewestStamp(t *testing.T) {
 	a := syncedService(t, base)
 	stA := a.store.Settings()
 	stA.SyncSettings = true
-	stA.MaxItems = 321
-	stA.IgnoreApps = []string{"keepass.exe"}
-	_ = a.store.SaveSettings(stA)
+	stA.MaxTextLength = 321
+	_, _ = a.SaveSettings(stA)
 	if _, err := a.SyncNow(); err != nil {
 		t.Fatalf("A sync: %v", err)
 	}
@@ -365,12 +365,10 @@ func TestSyncSettingsTravelWithTheNewestStamp(t *testing.T) {
 	}
 
 	gotB := b.store.Settings()
-	if gotB.MaxItems != 321 {
-		t.Errorf("B MaxItems = %d, want 321 from A", gotB.MaxItems)
+	if gotB.MaxTextLength != 321 {
+		t.Errorf("B MaxTextLength = %d, want 321 from A", gotB.MaxTextLength)
 	}
-	if len(gotB.IgnoreApps) != 1 || gotB.IgnoreApps[0] != "keepass.exe" {
-		t.Errorf("B IgnoreApps = %v, want A's list", gotB.IgnoreApps)
-	}
+
 	if gotB.SyncURL != base {
 		t.Errorf("B SyncURL = %q, machine-only fields must not be overwritten", gotB.SyncURL)
 	}
@@ -379,7 +377,7 @@ func TestSyncSettingsTravelWithTheNewestStamp(t *testing.T) {
 func TestTestSyncReportsDevices(t *testing.T) {
 	base, _, _ := newTestDAV(t)
 	a := syncedService(t, base)
-	if _, _, err := a.store.Add(Captured{Kind: KindText, Text: "x", Preview: "x", Hash: "h", Size: 1}); err != nil {
+	if _, _, err := a.store.SaveCapture(Captured{Kind: KindText, Text: "x", Preview: "x", Hash: "h", Size: 1}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := a.SyncNow(); err != nil {
@@ -421,7 +419,7 @@ func racePush(t *testing.T, svc *ClipService) {
 	if err := cfg.mkcol(syncDevicesDir); err != nil {
 		t.Fatalf("mkcol: %v", err)
 	}
-	payload, _, err := svc.buildOwnPackage(nil, nil, nil, svc.store.Settings())
+	payload, _, err := svc.buildOwnPackage(nil, nil, svc.store.Settings())
 	if err != nil {
 		t.Fatalf("buildOwnPackage: %v", err)
 	}

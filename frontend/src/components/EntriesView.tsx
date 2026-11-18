@@ -168,7 +168,7 @@ export default function EntriesView({ filter, day, onNotify, onChanged }: Props)
       const next: Record<string, string> = {};
       for (const h of missing) {
         try {
-          next[h] = await ClipService.GetMemoImage(h);
+          next[h] = await ClipService.GetImage(h);
         } catch {
           /* 附件已清理 */
         }
@@ -498,7 +498,7 @@ export default function EntriesView({ filter, day, onNotify, onChanged }: Props)
               onImagePaste={(dataUrl) => {
                 void (async () => {
                   try {
-                    const token = await ClipService.SaveMemoImage(dataUrl);
+                    const token = await ClipService.SaveImage(dataUrl);
                     setDraft((prev) => prev + (prev && !prev.endsWith("\n") ? "\n" : "") + `![](${token})\n`);
                   } catch (err) {
                     setError(String(err));

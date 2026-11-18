@@ -16,7 +16,7 @@ import (
 )
 
 // Version is shown in the UI and written to the log on start.
-const Version = "1.9.0"
+const Version = "2.0.0"
 
 // AppInfo is static information the frontend needs for the about/settings view.
 type AppInfo struct {
@@ -181,9 +181,8 @@ func (s *ClipService) refreshFilesLoop() {
 		case <-s.stopCh:
 			return
 		case <-ticker.C:
-			items := s.store.List(Filter{Kind: string(KindFiles), Limit: 500})
-			for _, it := range items {
-				if updated, ok := s.store.RefreshFiles(it.ID); ok {
+			for _, e := range s.store.ListEntries(EntryQuery{Kind: string(KindFiles), Limit: 500}) {
+				if updated, ok := s.store.RefreshEntryFiles(e.ID); ok {
 					s.emit("clip:updated", updated)
 				}
 			}
@@ -269,28 +268,21 @@ func (s *ClipService) handleClipboardChange() {
 		return
 	}
 
-	item, isNew, err := s.store.Add(*cap)
+	entry, isNew, err := s.store.SaveCapture(*cap)
 	if err != nil {
 		return
 	}
 	// 不再自动清理：用户要求「以保留为主，手动删除」。Prune 保留实现但不再调用。
 
 	if isNew {
-		s.emit("clip:new", *item)
+		s.emit("clip:new", *entry)
 	} else {
-		s.emit("clip:bumped", *item)
+		s.emit("clip:bumped", *entry)
 	}
 	s.emit("clip:stats", s.store.Stats())
 }
 
 func (s *ClipService) shouldIgnore(cap *Captured, st Settings, patterns []*regexp.Regexp) bool {
-	app := strings.ToLower(cap.SourceApp)
-	for _, ignore := range st.IgnoreApps {
-		ignore = strings.ToLower(strings.TrimSpace(ignore))
-		if ignore != "" && app == ignore {
-			return true
-		}
-	}
 	if len(patterns) == 0 {
 		return false
 	}
@@ -310,151 +302,115 @@ func (s *ClipService) shouldIgnore(cap *Captured, st Settings, patterns []*regex
 
 // ---- frontend API -------------------------------------------------------
 
-// GetItems returns the history page for the UI.
-func (s *ClipService) GetItems(filter Filter) ([]Item, error) {
-	return s.store.List(filter), nil
-}
-
-// GetItem returns a single entry (including refreshed file state).
-func (s *ClipService) GetItem(id string) (Item, error) {
-	it, ok := s.store.Get(id)
-	if !ok {
-		return Item{}, errors.New("条目不存在")
-	}
-	if it.Kind == KindFiles {
-		if refreshed, ok := s.store.RefreshFiles(id); ok {
-			return refreshed, nil
-		}
-	}
-	return it, nil
-}
-
-// GetStats returns counters for the header.
+// GetStats returns counters for the header / settings.
 func (s *ClipService) GetStats() Stats { return s.store.Stats() }
 
-// GetImageData returns a data: URL for an image entry.
+// GetImageData returns a data: URL for an entry whose body references an image.
 func (s *ClipService) GetImageData(id string) (string, error) {
-	it, ok := s.store.Get(id)
-	if !ok || it.ImageFile == "" {
+	e, ok := s.store.GetEntry(id)
+	if !ok {
+		return "", errors.New("条目不存在")
+	}
+	token := memoImageToken(e.Content)
+	if token == "" {
 		return "", errors.New("没有图像数据")
 	}
-	return s.store.ReadBlobData(it.ImageFile)
+	payload, mime, err := s.store.LoadEntryBlob(token)
+	if err != nil {
+		return "", err
+	}
+	if mime == "" {
+		mime = "image/png"
+	}
+	return "data:" + mime + ";base64," + encodeBase64(payload), nil
 }
 
-// CopyItem writes an entry back to the Windows clipboard.
-func (s *ClipService) CopyItem(id string) error {
-	it, ok := s.store.Get(id)
+// CopyEntry writes an entry back to the Windows clipboard.
+func (s *ClipService) CopyEntry(id string) error {
+	e, ok := s.store.GetEntry(id)
 	if !ok {
 		return errors.New("条目不存在")
 	}
-	if err := s.writeToClipboard(it); err != nil {
+	if err := s.writeEntryToClipboard(e); err != nil {
 		return err
 	}
-	s.store.MarkCopied(id)
+	_ = s.store.BumpCopyCount(id)
 	s.emit("clip:stats", s.store.Stats())
 	return nil
 }
 
-// writeToClipboard puts an entry on the clipboard and suppresses the capture
-// echo that the clipboard listener would otherwise turn into a new entry.
-func (s *ClipService) writeToClipboard(it Item) error {
+// writeEntryToClipboard puts an entry on the clipboard and suppresses the
+// capture echo that the listener would otherwise turn into a new entry.
+func (s *ClipService) writeEntryToClipboard(e Entry) error {
 	s.mu.Lock()
-	s.suppressHash = it.Hash
+	s.suppressHash = e.Hash
 	s.suppressAt = time.Now()
 	s.mu.Unlock()
 
-	switch it.Kind {
+	switch e.Kind {
 	case KindImage:
-		data, err := s.store.LoadBlobByName(it.ImageFile)
+		token := memoImageToken(e.Content)
+		data, _, err := s.store.LoadEntryBlob(token)
 		if err != nil {
 			return err
 		}
 		return WriteImageToClipboard(data)
 	case KindFiles:
-		paths := make([]string, 0, len(it.Files))
-		for _, f := range it.Files {
+		paths := make([]string, 0, len(e.Files))
+		for _, f := range e.Files {
 			paths = append(paths, f.Path)
 		}
 		return WriteFilesToClipboard(paths)
 	case KindRichText:
-		if it.RTF != "" {
-			return WriteRTFToClipboard(it.RTF, it.Text)
+		if e.RTF != "" {
+			return WriteRTFToClipboard(e.RTF, e.Content)
 		}
-		return WriteHTMLToClipboard(it.HTML, it.Text)
+		return WriteHTMLToClipboard(e.HTML, e.Content)
 	case KindCustom:
-		data, err := s.store.LoadBlobByName(it.BinaryFile)
+		data, _, err := s.store.LoadEntryBlob(memoImageToken(e.Content))
 		if err != nil {
-			return err
+			return fmt.Errorf("「%s」的原始数据已不可用", e.FormatName)
 		}
-		return WriteRawToClipboard(it.FormatID, it.FormatName, data)
+		return WriteRawToClipboard(e.FormatID, e.FormatName, data)
 	default:
-		return WriteTextToClipboard(it.Text)
+		return WriteTextToClipboard(e.Content)
 	}
 }
 
-// DeleteItem removes one entry.
-func (s *ClipService) DeleteItem(id string) error {
-	if !s.store.Delete(id) {
-		return errors.New("条目不存在")
-	}
-	s.emit("clip:deleted", id)
-	s.emit("clip:stats", s.store.Stats())
-	return nil
-}
-
-// DeleteWhere removes non-pinned entries matching the filter and reports how
-// many disappeared.
-func (s *ClipService) DeleteWhere(filter Filter) (int, error) {
-	n := s.store.DeleteWhere(filter)
+// DeleteAll removes every non-pinned entry and reports how many went away.
+func (s *ClipService) DeleteAll() (int, error) {
+	n := s.store.DeleteAllUnpinned()
 	s.emit("clip:cleared", n)
 	s.emit("clip:stats", s.store.Stats())
 	return n, nil
 }
 
-// SetPinned toggles the favourite flag.
-func (s *ClipService) SetPinned(id string, pinned bool) (Item, error) {
-	it, ok := s.store.SetPinned(id, pinned)
-	if !ok {
-		return Item{}, errors.New("条目不存在")
-	}
-	return it, nil
-}
-
-// RefreshItem re-checks a file entry's references.
-func (s *ClipService) RefreshItem(id string) (Item, error) {
-	if it, ok := s.store.RefreshFiles(id); ok {
-		return it, nil
-	}
-	return Item{}, errors.New("条目不存在")
-}
-
-// OpenItem launches the entry with its default handler (link in browser, file
-// in Explorer, image in the default viewer).
-func (s *ClipService) OpenItem(id string) error {
-	it, ok := s.store.Get(id)
+// OpenEntry launches an entry with its default handler.
+func (s *ClipService) OpenEntry(id string) error {
+	e, ok := s.store.GetEntry(id)
 	if !ok {
 		return errors.New("条目不存在")
 	}
-	switch it.Kind {
+	switch e.Kind {
 	case KindLink:
-		return shellOpen(it.Text)
+		return shellOpen(e.Content)
 	case KindFiles:
-		if len(it.Files) == 0 {
+		if len(e.Files) == 0 {
 			return errors.New("没有文件")
 		}
-		return revealInExplorer(it.Files[0].Path)
+		return revealInExplorer(e.Files[0].Path)
 	case KindImage:
-		data, err := s.store.LoadBlobByName(it.ImageFile)
+		data, _, err := s.store.LoadEntryBlob(memoImageToken(e.Content))
 		if err != nil {
 			return err
 		}
-		tmp := filepath.Join(os.TempDir(), fmt.Sprintf("clipnest-%s.png", it.ID))
+		tmp := filepath.Join(os.TempDir(), fmt.Sprintf("clipnest-%s.png", e.ID))
 		if err := os.WriteFile(tmp, data, 0o644); err != nil {
 			return err
 		}
 		return shellOpen(tmp)
 	case KindCustom:
-		return fmt.Errorf("「%s」是自定义剪贴板格式，只能复制回剪贴板", it.FormatName)
+		return fmt.Errorf("「%s」是自定义剪贴板格式，只能复制回剪贴板", e.FormatName)
 	default:
 		return errors.New("该类型不支持直接打开")
 	}
@@ -472,6 +428,11 @@ func (s *ClipService) SaveSettings(st Settings) (Settings, error) {
 	}
 	if st.Hotkey == "" {
 		st.Hotkey = prev.Hotkey
+	}
+	// 可同步的字段变了才 bump 时间戳——否则设置永远同步不出去，
+	// 或者每次保存都无谓地覆盖别的机器。
+	if shareableStamp(st) != shareableStamp(prev) {
+		st.SyncUpdatedAt = nowUTC()
 	}
 	if err := s.store.SaveSettings(st); err != nil {
 		return prev, err
@@ -754,41 +715,28 @@ func (s *ClipService) HidePicker() {
 // PickItem copies an entry and, when paste is true, pastes it into the window
 // that was focused when the popup opened. It returns a short status string the
 // popup can show while it closes.
-func (s *ClipService) PickItem(id string, paste bool) (string, error) {
-	it, ok := s.store.Get(id)
+func (s *ClipService) PickEntry(id string, paste bool) (string, error) {
+	e, ok := s.store.GetEntry(id)
 	if !ok {
 		return "", errors.New("条目不存在")
 	}
-	if err := s.writeToClipboard(it); err != nil {
-		return "", err
-	}
-	s.store.MarkCopied(id)
-
 	s.mu.Lock()
 	target := s.targetHwnd
 	s.mu.Unlock()
-
-	if s.hooks.HidePicker != nil {
-		s.hooks.HidePicker()
+	if target == 0 {
+		target = ForegroundWindowHandle()
 	}
+
+	// 先放回剪贴板（保留格式），需要时再合成 Ctrl+V
+	if err := s.writeEntryToClipboard(e); err != nil {
+		return "", err
+	}
+	if paste && s.store.Settings().PasteOnPick {
+		s.pasteAndLog(target, "entry")
+	}
+	_ = s.store.BumpCopyCount(e.ID)
 	s.emit("clip:stats", s.store.Stats())
-	Logf(s.store.Dir(), "picker pick: id=%s kind=%s paste=%v target=%#x", it.ID, it.Kind, paste, target)
-
-	if !paste {
-		if target != 0 {
-			go ActivateWindow(target)
-		}
-		return "已复制", nil
-	}
-	go func() {
-		if err := PasteInto(target); err != nil {
-			Logf(s.store.Dir(), "picker paste failed: %v", err)
-			s.emit("picker:paste-failed", err.Error())
-			return
-		}
-		Logf(s.store.Dir(), "picker paste sent: target=%#x", target)
-	}()
-	return "已粘贴", nil
+	return e.Content, nil
 }
 
 // PickerHotkey returns the accelerator that opens the picker ("" = disabled).

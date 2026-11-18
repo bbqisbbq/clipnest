@@ -392,8 +392,12 @@ func (s *Store) findEntryByHash(hash string) (Entry, bool) {
 	return e, true
 }
 
-// DeleteEntry removes an entry and its index row.
+// DeleteEntry removes an entry and its index row, and leaves a tombstone so
+// peers drop their copy too.
 func (s *Store) DeleteEntry(id string) bool {
+	if e, ok := s.GetEntry(id); ok && e.Hash != "" {
+		s.AddTombstoneScoped("entry", e.Hash, nowUTC(), hostName())
+	}
 	res, err := s.db.Exec(`DELETE FROM entries WHERE id = ?`, id)
 	if err != nil {
 		return false
@@ -763,4 +767,147 @@ func splitTagSpec(spec string) []string {
 func contentHash(content string) string {
 	sum := sha256.Sum256([]byte(strings.TrimSpace(content)))
 	return hex.EncodeToString(sum[:])[:16]
+}
+
+// SaveCapture stores a clipboard capture as an entry carrying the clipboard
+// action. De-duplicates by content hash (bumping seen_count) so copying the same
+// thing twice does not create two rows.
+func (s *Store) SaveCapture(c Captured) (*Entry, bool, error) {
+	if c.Hash != "" {
+		if existing, ok := s.findEntryByHash(c.Hash); ok {
+			if _, err := s.db.Exec(
+				`UPDATE entries SET seen_count = seen_count + 1, updated_at = ? WHERE id = ?`,
+				encodeTime(nowUTC()), existing.ID); err != nil {
+				return nil, false, err
+			}
+			e, _ := s.GetEntry(existing.ID)
+			return &e, false, nil
+		}
+	}
+
+	content := strings.TrimSpace(c.Text)
+	if len(c.PNG) > 0 {
+		if token, err := s.SaveEntryBlob(c.PNG, "png"); err == nil {
+			content = "![](" + token + ")"
+		}
+	}
+	if content == "" {
+		content = placeholderForKind(c.Kind)
+	}
+	if content == "" {
+		return nil, false, errors.New("没有可保存的内容")
+	}
+
+	saved, err := s.SaveEntry(Entry{
+		Content:    content,
+		Kind:       c.Kind,
+		Source:     SourceClipboard,
+		Actions:    []string{ActionClipboard},
+		Hash:       c.Hash,
+		SeenCount:  1,
+		SourceApp:  c.SourceApp,
+		Width:      c.Width,
+		Height:     c.Height,
+		HTML:       c.HTML,
+		RTF:        c.RTF,
+		FormatName: c.FormatName,
+		FormatID:   c.FormatID,
+		Files:      c.Files,
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	return &saved, true, nil
+}
+
+// BumpCopyCount records that an entry was pasted/copied again.
+func (s *Store) BumpCopyCount(id string) error {
+	_, err := s.db.Exec(`UPDATE entries SET copy_count = copy_count + 1 WHERE id = ?`, id)
+	return err
+}
+
+// DeleteAllUnpinned clears the history but keeps pinned entries.
+func (s *Store) DeleteAllUnpinned() int {
+	rows, err := s.db.Query(`SELECT id FROM entries WHERE pinned = 0`)
+	if err != nil {
+		return 0
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if rows.Scan(&id) == nil {
+			ids = append(ids, id)
+		}
+	}
+	rows.Close()
+	for _, id := range ids {
+		s.DeleteEntry(id)
+	}
+	return len(ids)
+}
+
+// RefreshEntryFiles re-stats the file references of one entry.
+func (s *Store) RefreshEntryFiles(id string) (Entry, bool) {
+	e, ok := s.GetEntry(id)
+	if !ok || len(e.Files) == 0 {
+		return Entry{}, false
+	}
+	for i := range e.Files {
+		e.Files[i] = statFile(e.Files[i])
+	}
+	if _, err := s.SaveEntry(e); err != nil {
+		return e, false
+	}
+	return e, true
+}
+
+// blobExtForKind is the file extension used for an entry's attachment.
+func blobExtForKind(k Kind) string {
+	if k == KindImage {
+		return ".png"
+	}
+	return ""
+}
+
+// CountEntries is the number of live (non-archived) entries.
+func (s *Store) CountEntries() int {
+	var n int
+	_ = s.db.QueryRow(`SELECT COUNT(*) FROM entries WHERE archived = 0`).Scan(&n)
+	return n
+}
+
+// mergeEntry upserts a remote entry EXACTLY as received, preserving its
+// timestamps. SaveEntry would stamp updated_at = now, which makes the local copy
+// look newer than a peer's tombstone and silently resurrects deleted entries.
+func (s *Store) mergeEntry(e Entry) error {
+	if e.ID == "" || e.Hash == "" {
+		return errors.New("条目缺少 id/hash")
+	}
+	if _, err := s.db.Exec(`
+		INSERT INTO entries (`+entryColumns+`)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		ON CONFLICT(id) DO UPDATE SET
+			content=excluded.content, kind=excluded.kind, source=excluded.source,
+			tags=excluded.tags, actions=excluded.actions,
+			pinned=excluded.pinned, archived=excluded.archived,
+			hash=excluded.hash, source_app=excluded.source_app,
+			width=excluded.width, height=excluded.height,
+			html=excluded.html, rtf=excluded.rtf,
+			format_name=excluded.format_name, format_id=excluded.format_id,
+			files=excluded.files,
+			trigger_key=excluded.trigger_key, case_sensitive=excluded.case_sensitive,
+			keep_trigger=excluded.keep_trigger, apps=excluded.apps,
+			exclude_apps=excluded.exclude_apps, group_name=excluded.group_name,
+			expires_at=excluded.expires_at, updated_at=excluded.updated_at`,
+		e.ID, e.Content, string(e.Kind), string(e.Source),
+		TagSpec(e.Tags), actionSpec(e.Actions), boolInt(e.Pinned), boolInt(e.Archived),
+		e.Hash, e.SeenCount, e.CopyCount, e.SourceApp, e.Width, e.Height,
+		e.HTML, e.RTF, e.FormatName, e.FormatID, encodeFiles(e.Files),
+		e.TriggerKey, boolInt(e.CaseSensitive), boolInt(e.KeepTrigger),
+		joinList(e.Apps), joinList(e.ExcludeApps), e.GroupName, e.UseCount,
+		encodeTimePtr(e.ExpiresAt), encodeTime(e.CreatedAt), encodeTime(e.UpdatedAt),
+	); err != nil {
+		return err
+	}
+	return s.indexEntry(e)
 }

@@ -94,7 +94,7 @@ export default function Capture() {
           onImagePaste={(dataUrl) => {
             void (async () => {
               try {
-                const token = await ClipService.SaveMemoImage(dataUrl);
+                const token = await ClipService.SaveImage(dataUrl);
                 const sep = textRef.current && !textRef.current.endsWith("\n") ? "\n" : "";
                 setText(textRef.current + sep + "![](" + token + ")\n");
               } catch (err) {

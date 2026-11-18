@@ -177,7 +177,7 @@ func TestRTFCapture(t *testing.T) {
 	}
 }
 
-func TestStoreAddDedupeAndPrune(t *testing.T) {
+func TestCaptureDedupeKeepsEverything(t *testing.T) {
 	dir := t.TempDir()
 	st, err := Open(dir)
 	if err != nil {
@@ -186,62 +186,48 @@ func TestStoreAddDedupeAndPrune(t *testing.T) {
 	defer st.Close()
 
 	c := Captured{Kind: KindText, Text: "hello", Preview: "hello", Hash: "h1", Size: 5}
-	item, isNew, err := st.Add(c)
+	first, isNew, err := st.SaveCapture(c)
 	if err != nil || !isNew {
-		t.Fatalf("first Add: item=%v new=%v err=%v", item, isNew, err)
+		t.Fatalf("first SaveCapture: entry=%v new=%v err=%v", first, isNew, err)
 	}
-	again, isNew, err := st.Add(c)
+	if !first.HasAction(ActionClipboard) {
+		t.Errorf("采集条目应该带 clipboard 能力: %v", first.Actions)
+	}
+
+	again, isNew, err := st.SaveCapture(c)
 	if err != nil || isNew {
-		t.Fatalf("second Add: new=%v err=%v", isNew, err)
+		t.Fatalf("second SaveCapture: new=%v err=%v", isNew, err)
 	}
-	if again.ID != item.ID {
-		t.Fatalf("dedupe created a new id: %s vs %s", again.ID, item.ID)
+	if again.ID != first.ID {
+		t.Fatalf("dedupe created a new id: %s vs %s", again.ID, first.ID)
 	}
 	if again.SeenCount != 2 {
 		t.Fatalf("seenCount = %d, want 2", again.SeenCount)
 	}
 
 	for i := 0; i < 5; i++ {
-		if _, _, err := st.Add(Captured{
-			Kind:    KindText,
-			Text:    string(rune('a' + i)),
-			Preview: string(rune('a' + i)),
-			Hash:    "h" + string(rune('a'+i)),
-			Size:    1,
+		if _, _, err := st.SaveCapture(Captured{
+			Kind: KindText, Text: string(rune('a' + i)),
+			Preview: string(rune('a' + i)), Hash: "h" + string(rune('a'+i)), Size: 1,
 		}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if got := len(st.List(Filter{})); got != 6 {
-		t.Fatalf("list length = %d, want 6", got)
+	// 不再有自动清理：写多少就该留多少
+	if got := st.CountEntries(); got != 6 {
+		t.Fatalf("entries = %d, want 6（不做自动清理）", got)
 	}
-	st.Prune(3, 0)
-	if got := len(st.List(Filter{})); got != 3 {
-		t.Fatalf("after prune = %d, want 3", got)
-	}
-	if _, ok := st.Get(item.ID); ok {
-		t.Error("oldest entry survived pruning")
-	}
-
-	// Pinned entries are exempt.
-	pinned, _, _ := st.Add(Captured{Kind: KindText, Text: "keep", Preview: "keep", Hash: "pin", Size: 4})
-	st.SetPinned(pinned.ID, true)
-	for i := 0; i < 5; i++ {
-		_, _, _ = st.Add(Captured{Kind: KindText, Text: "x" + string(rune('0'+i)), Preview: "x", Hash: "x" + string(rune('0'+i)), Size: 1})
-	}
-	st.Prune(2, 0)
-	if _, ok := st.Get(pinned.ID); !ok {
-		t.Error("pinned entry was pruned")
+	if _, ok := st.GetEntry(first.ID); !ok {
+		t.Error("最早的一条被删掉了——策略是保留为主")
 	}
 }
-
 func TestStorePersistsAcrossReopen(t *testing.T) {
 	dir := t.TempDir()
 	st, err := Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := st.Add(Captured{Kind: KindLink, Text: "https://example.com", Preview: "example", Hash: "z", Size: 19}); err != nil {
+	if _, _, err := st.SaveCapture(Captured{Kind: KindLink, Text: "https://example.com", Preview: "example", Hash: "z", Size: 19}); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.Close(); err != nil {
@@ -253,8 +239,8 @@ func TestStorePersistsAcrossReopen(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer st2.Close()
-	list := st2.List(Filter{})
-	if len(list) != 1 || list[0].Text != "https://example.com" {
+	list := st2.ListEntries(EntryQuery{})
+	if len(list) != 1 || list[0].Content != "https://example.com" {
 		t.Fatalf("reloaded list = %+v", list)
 	}
 }

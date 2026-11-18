@@ -12,12 +12,12 @@ import type * as clip$0 from "../../../../bbqisbbq/clipnest/internal/clip/models
 declare module "@wailsio/runtime" {
     namespace Events {
         interface CustomEvents {
-            "clip:bumped": clip$0.Item;
+            "clip:bumped": clip$0.Entry;
             "clip:cleared": number;
             "clip:deleted": string;
-            "clip:new": clip$0.Item;
+            "clip:new": clip$0.Entry;
             "clip:stats": clip$0.Stats;
-            "clip:updated": clip$0.Item;
+            "clip:updated": clip$0.Entry;
             "picker:opened": string;
             "picker:paste-failed": string;
             "settings:changed": clip$0.Settings;

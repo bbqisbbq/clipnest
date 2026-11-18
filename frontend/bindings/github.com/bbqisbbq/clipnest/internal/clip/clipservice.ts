@@ -55,10 +55,17 @@ export function CommandOutput(t: expand$0.Trigger): $CancellablePromise<string> 
 }
 
 /**
- * CopyItem writes an entry back to the Windows clipboard.
+ * CopyEntry writes an entry back to the Windows clipboard.
  */
-export function CopyItem(id: string): $CancellablePromise<void> {
-    return $Call.ByID(3881788323, id);
+export function CopyEntry(id: string): $CancellablePromise<void> {
+    return $Call.ByID(3479851616, id);
+}
+
+/**
+ * DeleteAll removes every non-pinned entry and reports how many went away.
+ */
+export function DeleteAll(): $CancellablePromise<number> {
+    return $Call.ByID(3864956089);
 }
 
 /**
@@ -76,25 +83,10 @@ export function DeleteFilter(id: string): $CancellablePromise<boolean> {
 }
 
 /**
- * DeleteItem removes one entry.
- */
-export function DeleteItem(id: string): $CancellablePromise<void> {
-    return $Call.ByID(2416362009, id);
-}
-
-/**
  * DeleteSnippet removes one snippet.
  */
 export function DeleteSnippet(id: string): $CancellablePromise<boolean> {
     return $Call.ByID(3956258923, id);
-}
-
-/**
- * DeleteWhere removes non-pinned entries matching the filter and reports how
- * many disappeared.
- */
-export function DeleteWhere(filter: $models.Filter): $CancellablePromise<number> {
-    return $Call.ByID(2544233545, filter);
 }
 
 /**
@@ -109,13 +101,6 @@ export function DemoteFromSnippet(id: string): $CancellablePromise<$models.Entry
  */
 export function DownloadUpdate(): $CancellablePromise<string> {
     return $Call.ByID(912302016);
-}
-
-/**
- * DraftSnippetFromItem maps a history entry into an unsaved snippet draft.
- */
-export function DraftSnippetFromItem(itemID: string): $CancellablePromise<$models.SnippetDraft> {
-    return $Call.ByID(3529849242, itemID);
 }
 
 /**
@@ -200,40 +185,18 @@ export function GetFilters(): $CancellablePromise<$models.EntryFilter[] | null> 
 }
 
 /**
- * GetImageData returns a data: URL for an image entry.
+ * GetImage returns a data URL for display. Oversized images come back as a
+ * downscaled PNG so a 20 MB screenshot does not become a 27 MB string.
+ */
+export function GetImage(hash: string): $CancellablePromise<string> {
+    return $Call.ByID(1768274388, hash);
+}
+
+/**
+ * GetImageData returns a data: URL for an entry whose body references an image.
  */
 export function GetImageData(id: string): $CancellablePromise<string> {
     return $Call.ByID(554181340, id);
-}
-
-/**
- * GetItem returns a single entry (including refreshed file state).
- */
-export function GetItem(id: string): $CancellablePromise<$models.Item> {
-    return $Call.ByID(2089249064, id);
-}
-
-/**
- * GetItems returns the history page for the UI.
- */
-export function GetItems(filter: $models.Filter): $CancellablePromise<$models.Item[] | null> {
-    return $Call.ByID(1680529985, filter);
-}
-
-/**
- * GetMemoImage returns a data URL for display. Oversized images come back as a
- * downscaled PNG so a 20 MB screenshot does not become a 27 MB string.
- */
-export function GetMemoImage(hash: string): $CancellablePromise<string> {
-    return $Call.ByID(3179218926, hash);
-}
-
-/**
- * GetMemoImageInfo reports where an attachment lives (used by the UI to show
- * size / storage kind, and to open the original file).
- */
-export function GetMemoImageInfo(hash: string): $CancellablePromise<$models.MemoImageMeta> {
-    return $Call.ByID(3299525390, hash);
 }
 
 /**
@@ -265,7 +228,7 @@ export function GetSnippets(query: string, group: string): $CancellablePromise<$
 }
 
 /**
- * GetStats returns counters for the header.
+ * GetStats returns counters for the header / settings.
  */
 export function GetStats(): $CancellablePromise<$models.Stats> {
     return $Call.ByID(4267798722);
@@ -367,19 +330,10 @@ export function OpenDataDir(): $CancellablePromise<void> {
 }
 
 /**
- * OpenItem launches the entry with its default handler (link in browser, file
- * in Explorer, image in the default viewer).
+ * OpenEntry launches an entry with its default handler.
  */
-export function OpenItem(id: string): $CancellablePromise<void> {
-    return $Call.ByID(661447306, id);
-}
-
-/**
- * OpenMemoImage opens the original file in the system viewer (large ones only
- * live on disk, so there is always a real file for them).
- */
-export function OpenMemoImage(hash: string): $CancellablePromise<void> {
-    return $Call.ByID(396819236, hash);
+export function OpenEntry(id: string): $CancellablePromise<void> {
+    return $Call.ByID(1572321951, id);
 }
 
 /**
@@ -401,8 +355,8 @@ export function PasteImage(t: expand$0.Trigger): $CancellablePromise<void> {
  * that was focused when the popup opened. It returns a short status string the
  * popup can show while it closes.
  */
-export function PickItem(id: string, paste: boolean): $CancellablePromise<string> {
-    return $Call.ByID(1064293167, id, paste);
+export function PickEntry(id: string, paste: boolean): $CancellablePromise<string> {
+    return $Call.ByID(2779856916, id, paste);
 }
 
 /**
@@ -472,13 +426,6 @@ export function ReconcileAutoStart(): $CancellablePromise<void> {
 }
 
 /**
- * RefreshItem re-checks a file entry's references.
- */
-export function RefreshItem(id: string): $CancellablePromise<$models.Item> {
-    return $Call.ByID(4280532019, id);
-}
-
-/**
  * Render substitutes template variables for text-like triggers and reports the
  * {{cursor}} offset.
  */
@@ -502,19 +449,12 @@ export function SaveFilter(f: $models.EntryFilter): $CancellablePromise<$models.
 }
 
 /**
- * SaveItemAsSnippet turns a clipboard-history entry into a snippet ("存为片段"),
- * so something you just copied can become a reusable phrase with a trigger.
+ * SaveImage stores an image (data URL or bare base64) and returns the token to
+ * put in Markdown: memoimg:<hash>. Content-addressed, so the same picture is
+ * stored once.
  */
-export function SaveItemAsSnippet(itemID: string): $CancellablePromise<$models.Snippet> {
-    return $Call.ByID(2119030672, itemID);
-}
-
-/**
- * SaveMemoImage stores an image (data URL or bare base64) and returns the token
- * to put inside Markdown: memoimg:<hash>.
- */
-export function SaveMemoImage(dataB64: string): $CancellablePromise<string> {
-    return $Call.ByID(3262841519, dataB64);
+export function SaveImage(dataB64: string): $CancellablePromise<string> {
+    return $Call.ByID(1647545261, dataB64);
 }
 
 /**
@@ -561,13 +501,6 @@ export function SetCapture(enabled: boolean): $CancellablePromise<$models.Settin
  */
 export function SetOwnWindowCheck(fn: any): $CancellablePromise<void> {
     return $Call.ByID(2318530103, fn);
-}
-
-/**
- * SetPinned toggles the favourite flag.
- */
-export function SetPinned(id: string, pinned: boolean): $CancellablePromise<$models.Item> {
-    return $Call.ByID(301380581, id, pinned);
 }
 
 /**

@@ -193,71 +193,6 @@ export interface FileRef {
 }
 
 /**
- * Filter describes a list query.
- */
-export interface Filter {
-    "query": string;
-
-    /**
-     * "" = all
-     */
-    "kind": string;
-
-    /**
-     * only pinned
-     */
-    "pinned": boolean;
-    "limit": number;
-    "offset": number;
-}
-
-/**
- * Item is one clipboard entry.
- */
-export interface Item {
-    "id": string;
-    "kind": Kind;
-    "text": string;
-    "preview": string;
-    "hash": string;
-    "size": number;
-    "createdAt": string;
-    "updatedAt": string;
-    "seenCount": number;
-    "copyCount": number;
-    "pinned": boolean;
-    "sourceApp"?: string;
-
-    /**
-     * Image entries: PNG blob name inside the store's blob directory.
-     */
-    "imageFile"?: string;
-    "width"?: number;
-    "height"?: number;
-
-    /**
-     * Rich text entries keep the HTML fragment or the RTF payload; Text holds
-     * the plain version.
-     */
-    "html"?: string;
-    "rtf"?: string;
-
-    /**
-     * Custom (otherwise unknown) formats: the raw bytes live in a blob file and
-     * the original clipboard format is kept so the entry can be put back
-     * exactly as it was.
-     */
-    "binaryFile"?: string;
-    "formatName"?: string;
-    "formatId"?: number;
-
-    /**
-     * File entries.
-     */
-    "files"?: FileRef[] | null;
-}
-
-/**
  * Kind is the content type of a clipboard entry.
  */
 export enum Kind {
@@ -292,26 +227,6 @@ export enum Kind {
      */
     KindCustom = "custom",
 };
-
-/**
- * MemoImageMeta 描述一条附件在哪、多大。
- */
-export interface MemoImageMeta {
-    "hash": string;
-    "ext": string;
-    "mime": string;
-    "size": number;
-
-    /**
-     * db | file
-     */
-    "storage": string;
-
-    /**
-     * 相对 dataDir（file 存储时有值）
-     */
-    "path": string;
-}
 
 /**
  * Settings controls capture behaviour and the UI. It is persisted as JSON next
@@ -525,19 +440,6 @@ export interface Snippet {
 }
 
 /**
- * SnippetDraft is a pre-filled (unsaved) snippet: the editor opening with the
- * content of a clipboard entry, so what was collected can be edited into a phrase.
- */
-export interface SnippetDraft {
-    "snippet": Snippet;
-
-    /**
-     * ImageData is a data URL for image entries (the editor needs the bytes).
-     */
-    "imageData"?: string;
-}
-
-/**
  * SnippetKind describes what the body means and which action applies.
  */
 export enum SnippetKind {
@@ -557,7 +459,7 @@ export enum SnippetKind {
     SnippetPassword = "password",
 
     /**
-     * 图片（存在 snippet_blobs）
+     * 图片（正文用 memoimg: 引用 entry_blobs）
      */
     SnippetImage = "image",
 
@@ -613,7 +515,7 @@ export enum Source {
 };
 
 /**
- * Stats is the summary shown in the UI header.
+ * Stats is the summary the UI shows in settings (storage usage etc.).
  */
 export interface Stats {
     "total": number;
