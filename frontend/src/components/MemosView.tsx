@@ -14,6 +14,21 @@ type Props = {
   onNotify: (message: string) => void;
 };
 
+// overlay 自检：两层的排版度量必须一致，否则光标与字形对不上（历史上就栽在这）。
+function checkOverlayMetrics(front: HTMLElement | null, back: HTMLElement | null) {
+  if (!front || !back) return;
+  const pick = (el: HTMLElement) => {
+    const s = getComputedStyle(el);
+    return [
+      s.fontFamily, s.fontSize, s.fontWeight, s.fontStyle, s.lineHeight,
+      s.letterSpacing, s.paddingTop, s.paddingLeft, s.borderLeftWidth, s.whiteSpace,
+    ].join("|");
+  };
+  if (pick(front) !== pick(back)) {
+    console.error("memo overlay metrics differ: front=" + pick(front) + " back=" + pick(back));
+  }
+}
+
 // toSavePayload 去掉空时间戳：绑定层会把 "" 当成 RFC3339 解析并报错。
 function toSavePayload(m: Memo): Memo {
   const now = new Date().toISOString();
@@ -61,6 +76,7 @@ export default function MemosView(props: Props) {
   const [draft, setDraft] = useState<Memo>(EMPTY);
   const [preview, setPreview] = useState(false);
   const backRef = useRef<HTMLDivElement>(null);
+  const frontRef = useRef<HTMLTextAreaElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -91,6 +107,10 @@ export default function MemosView(props: Props) {
     }
     return out;
   }, [visible]);
+
+  useEffect(() => {
+    checkOverlayMetrics(frontRef.current, backRef.current);
+  }, [preview, draft.id]);
 
   const previewHtml = useMemo(() => {
     const raw = marked.parse(draft.content ?? "", { async: false }) as string;
@@ -274,7 +294,7 @@ export default function MemosView(props: Props) {
         ) : (
           <div className="md-live">
             <div
-              className="md-live-back"
+              className="input is-area memo-input md-live-back"
               ref={backRef}
               aria-hidden="true"
               dangerouslySetInnerHTML={{ __html: highlightMarkdown(draft.content) }}

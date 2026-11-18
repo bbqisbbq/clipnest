@@ -2147,15 +2147,12 @@ textarea:focus-visible {
 .is-mono { font-family: var(--font-mono); font-size: 12px; }
 /* 实时 Markdown 高亮（overlay：底层彩色副本 + 上层透明 textarea） */
 .md-live { position: relative; flex: 1; min-height: 220px; display: flex; }
+/* overlay 两层：字体/行高/内边距/边框/圆角 MUST 完全一致。
+   做法是让两层共用同一套 class（input is-area memo-input），这里只负责
+   定位、透明、滚动条占位——绝不在这里声明 font-* / padding / border，
+   否则任何一处 `.input.is-area`（0,2,0）都能压过（0,1,0）造成错位。 */
 .md-live-back,
 .md-live-front {
-  font-family: var(--font-mono);
-  font-size: 12.8px;
-  line-height: 1.7;
-  letter-spacing: 0;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   word-break: break-word;
@@ -2166,15 +2163,19 @@ textarea:focus-visible {
 .md-live-back {
   position: absolute;
   inset: 0;
+  width: 100%;          /* .input 的 width:200px 会赢，必须显式盖掉 */
   overflow: hidden;
   background: var(--surface);
   color: var(--text);
   pointer-events: none;
+  resize: none;
 }
+.md-live-back i { font-style: normal; }
 .md-live-front {
   position: relative;
   flex: 1;
-  background: transparent;
+  min-height: 220px;
+  background: transparent !important;
   color: transparent;
   caret-color: var(--text);
   resize: none;
@@ -2186,7 +2187,7 @@ textarea:focus-visible {
 
 /* 注意：这里只能用颜色/背景/下划线，禁止 padding / font-weight / font-style /
    letter-spacing —— 那会改变字宽，让彩色副本与 textarea 错位、光标跑偏。 */
-.md-line { min-height: 1.7em; }
+.md-line { min-height: 0; }   /* 行高交给 line-height，别用 em 另算 */
 .md-line i { font-style: normal; }         /* 用 <i> 只是为了少写标签，别真斜体 */
 .md-h { color: var(--accent); }
 .md-quote { color: var(--text-2); }

@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<link rel="stylesheet" href="styles.css">
+<style>body{margin:0;padding:20px}</style>
+</head><body>
+<div class="md-live" style="width:420px;display:flex">
+  <div id="back" class="input is-area memo-input md-live-back" aria-hidden="true">
+    <div class="md-line"><i class="md-mark">#</i> <i class="md-h">dfsaf</i></div>
+  </div>
+  <textarea id="front" class="input is-area memo-input md-live-front" rows="6"># dfsaf</textarea>
+</div>
+<pre id="out">pending</pre>
+<script>
+const front = document.getElementById("front");
+const back = document.getElementById("back");
+const props = ["fontFamily","fontSize","fontWeight","fontStyle","lineHeight","letterSpacing","paddingTop","paddingRight","paddingBottom","paddingLeft","borderTopWidth","borderLeftWidth","borderTopLeftRadius","whiteSpace","wordBreak","overflowWrap","boxSizing","width","tabSize"];
+const snap = (el) => { const s = getComputedStyle(el); const o = {}; for (const p of props) o[p] = s[p]; return o; };
+const a = snap(front), b = snap(back);
+const diff = {};
+for (const p of props) if (a[p] !== b[p]) diff[p] = { front: a[p], back: b[p] };
+const fr = front.getBoundingClientRect(), br = back.getBoundingClientRect();
+document.getElementById("out").textContent = JSON.stringify({
+  differs: diff,
+  rectFront: { w: Math.round(fr.width), h: Math.round(fr.height) },
+  rectBack: { w: Math.round(br.width), h: Math.round(br.height) },
+  fontSize: a.fontSize, lineHeight: a.lineHeight
+}, null, 2);
+</script>
+</body></html>
