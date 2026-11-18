@@ -621,6 +621,14 @@ export function SaveSnippet(sp: $models.Snippet, imageDataB64: string): $Cancell
 }
 
 /**
+ * SaveSnippetToEntries writes a snippet as an entry carrying the snippet action.
+ * 片段表已废弃：片段就是带 snippet 能力的条目，这里做一次形状转换。
+ */
+export function SaveSnippetToEntries(sp: $models.Snippet, imageDataB64: string): $CancellablePromise<$models.Snippet> {
+    return $Call.ByID(3974063084, sp, imageDataB64);
+}
+
+/**
  * SetAutoStart toggles the logon entry (tray menu / settings both use it).
  */
 export function SetAutoStart(enabled: boolean): $CancellablePromise<$models.Settings> {

@@ -4,21 +4,25 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
-	"os"
-	"path/filepath"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 )
 
-// 统一条目（Entry）—— 剪贴板采集、片段、手写备忘都是同一个类型，
-// 用 Source / AutoTags / TriggerKey / ExpiresAt 这些"属性"区分用途，
-// 而不是用不同的表。设计说明见 docs/UNIFIED-ENTRY.md。
+// 统一条目（Entry）—— 被动收集的剪贴板内容、片段、手写备忘都是同一个类型。
 //
-// 为什么能合：三者的差异都是属性差异（怎么进来的、会不会过期、有没有缩写），
-// 不是结构差异。合并后导航靠日历 + 自定义筛选器，不再需要三个并列页面。
+// 模型（简单版，刻意不做插件系统）：
+//
+//	内容    文本 / 图片 / 文件引用
+//	tag     正文里的 #tag，纯用户语义，系统不往里塞东西
+//	action  能力，只有两个：clipboard（出现在快速粘贴列表）/ snippet（可配缩写）
+//
+// 早期版本用 auto_tags 表达「剪贴板/片段」，那是把能力塞进分类，模型不正；
+// 现在 actions 单独一列。Source 只记录「怎么进来的」，不承担能力语义。
 
 // Source says how an entry got here.
 type Source string
@@ -29,20 +33,20 @@ const (
 	SourceImport    Source = "import"    // 从外部导入
 )
 
-// 系统标签：自动加，用户改正文不会丢。
+// 能力名（只有两个，不做插件式扩展）
 const (
-	AutoTagClipboard = "剪贴板"
-	AutoTagSnippet   = "片段"
+	ActionClipboard = "clipboard" // 出现在快速粘贴列表
+	ActionSnippet   = "snippet"   // 可配缩写，打字时展开
 )
 
 // Entry is the single content type of the app.
 type Entry struct {
-	ID       string   `json:"id"`
-	Content  string   `json:"content"`
-	Kind     Kind     `json:"kind"`
-	Source   Source   `json:"source"`
-	Tags     []string `json:"tags"`     // 从正文 #tag 派生
-	AutoTags []string `json:"autoTags"` // 系统标签（剪贴板 / 片段）
+	ID      string   `json:"id"`
+	Content string   `json:"content"`
+	Kind    Kind     `json:"kind"`
+	Source  Source   `json:"source"`
+	Tags    []string `json:"tags"`    // 从正文 #tag 派生
+	Actions []string `json:"actions"` // clipboard / snippet
 
 	Pinned   bool `json:"pinned"`
 	Archived bool `json:"archived"`
@@ -69,18 +73,18 @@ type Entry struct {
 	GroupName     string   `json:"groupName,omitempty"`
 	UseCount      int      `json:"useCount,omitempty"`
 
-	// 生命周期：nil = 永久（手写）；采集条目默认 +30 天
+	// 生命周期：nil = 永久。现在所有条目都不自动过期（以保留为主）。
 	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
 
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
-// AllTags merges derived and system tags for display / filtering.
+// AllTags returns the entry's tags (sorted, de-duplicated).
 func (e Entry) AllTags() []string {
 	seen := map[string]bool{}
-	out := make([]string, 0, len(e.Tags)+len(e.AutoTags))
-	for _, t := range append(append([]string{}, e.Tags...), e.AutoTags...) {
+	out := make([]string, 0, len(e.Tags))
+	for _, t := range e.Tags {
 		if t == "" || seen[strings.ToLower(t)] {
 			continue
 		}
@@ -91,18 +95,70 @@ func (e Entry) AllTags() []string {
 	return out
 }
 
+// HasAction reports whether the entry carries a capability.
+func (e Entry) HasAction(name string) bool {
+	for _, a := range e.Actions {
+		if a == name {
+			return true
+		}
+	}
+	return false
+}
+
+// SetAction adds or removes a capability.
+func (e *Entry) SetAction(name string, on bool) {
+	if on {
+		if !e.HasAction(name) {
+			e.Actions = append(e.Actions, name)
+		}
+		return
+	}
+	out := e.Actions[:0]
+	for _, a := range e.Actions {
+		if a != name {
+			out = append(out, a)
+		}
+	}
+	e.Actions = out
+}
+
 // IsSnippet reports whether the entry participates in abbreviation expansion.
-func (e Entry) IsSnippet() bool { return strings.TrimSpace(e.TriggerKey) != "" }
+func (e Entry) IsSnippet() bool {
+	return strings.TrimSpace(e.TriggerKey) != ""
+}
 
 // Preview returns a single-line excerpt for list rendering.
 func (e Entry) Preview() string {
-	s := strings.ReplaceAll(e.Content, "\n", " ")
-	s = strings.TrimSpace(s)
+	s := strings.TrimSpace(strings.ReplaceAll(e.Content, "\n", " "))
 	r := []rune(s)
 	if len(r) > 120 {
 		return string(r[:120]) + "…"
 	}
 	return s
+}
+
+// ---- action 集合的序列化 -------------------------------------------------
+
+// actionSpec renders ",clipboard,snippet," so filters can use LIKE.
+func actionSpec(actions []string) string {
+	if len(actions) == 0 {
+		return ""
+	}
+	return "," + strings.Join(actions, ",") + ","
+}
+
+func splitActionSpec(spec string) []string {
+	spec = strings.Trim(spec, ",")
+	if spec == "" {
+		return nil
+	}
+	out := make([]string, 0, 2)
+	for _, a := range strings.Split(spec, ",") {
+		if a = strings.TrimSpace(a); a != "" {
+			out = append(out, a)
+		}
+	}
+	return out
 }
 
 // ---- schema -------------------------------------------------------------
@@ -114,6 +170,7 @@ CREATE TABLE IF NOT EXISTS entries (
   kind         TEXT NOT NULL DEFAULT 'text',
   source       TEXT NOT NULL DEFAULT 'manual',
   tags         TEXT NOT NULL DEFAULT '',
+  actions      TEXT NOT NULL DEFAULT '',
   auto_tags    TEXT NOT NULL DEFAULT '',
   pinned       INTEGER NOT NULL DEFAULT 0,
   archived     INTEGER NOT NULL DEFAULT 0,
@@ -144,7 +201,6 @@ CREATE TABLE IF NOT EXISTS entries (
 );
 
 CREATE INDEX IF NOT EXISTS idx_entries_created ON entries(created_at);
-CREATE INDEX IF NOT EXISTS idx_entries_expires ON entries(expires_at);
 -- expander 每次按键都查这个索引，命中的永远是极少数条目
 CREATE INDEX IF NOT EXISTS idx_entries_trigger ON entries(trigger_key) WHERE trigger_key <> '';
 CREATE INDEX IF NOT EXISTS idx_entries_hash    ON entries(hash) WHERE hash <> '';
@@ -175,25 +231,25 @@ CREATE TABLE IF NOT EXISTS entry_filters (
 );
 `
 
-const entryColumns = `id, content, kind, source, tags, auto_tags, pinned, archived,
+const entryColumns = `id, content, kind, source, tags, actions, pinned, archived,
 	hash, seen_count, copy_count, source_app, width, height, html, rtf, format_name, format_id, files,
 	trigger_key, case_sensitive, keep_trigger, apps, exclude_apps, group_name, use_count,
 	expires_at, created_at, updated_at`
 
 func scanEntry(sc scannable) (Entry, error) {
 	var (
-		e                              Entry
-		kind, source                   string
-		tags, autoTags                 string
-		pinned, archived               int
-		formatID                       uint32
-		files                          string
-		caseSensitive, keepTrigger     int
-		apps, excludeApps              string
-		expiresAt                      string
-		createdAt, updatedAt           string
+		e                          Entry
+		kind, source               string
+		tags, actionsSpec          string
+		pinned, archived           int
+		formatID                   uint32
+		files                      string
+		caseSensitive, keepTrigger int
+		apps, excludeApps          string
+		expiresAt                  string
+		createdAt, updatedAt       string
 	)
-	err := sc.Scan(&e.ID, &e.Content, &kind, &source, &tags, &autoTags, &pinned, &archived,
+	err := sc.Scan(&e.ID, &e.Content, &kind, &source, &tags, &actionsSpec, &pinned, &archived,
 		&e.Hash, &e.SeenCount, &e.CopyCount, &e.SourceApp, &e.Width, &e.Height,
 		&e.HTML, &e.RTF, &e.FormatName, &formatID, &files,
 		&e.TriggerKey, &caseSensitive, &keepTrigger, &apps, &excludeApps, &e.GroupName, &e.UseCount,
@@ -204,7 +260,7 @@ func scanEntry(sc scannable) (Entry, error) {
 	e.Kind = Kind(kind)
 	e.Source = Source(source)
 	e.Tags = splitTagSpec(tags)
-	e.AutoTags = splitTagSpec(autoTags)
+	e.Actions = splitActionSpec(actionsSpec)
 	e.Pinned = pinned != 0
 	e.Archived = archived != 0
 	e.FormatID = formatID
@@ -233,12 +289,10 @@ func decodeFiles(raw string) []FileRef {
 	return out
 }
 
-
 // ---- store --------------------------------------------------------------
 
-// SaveEntry inserts or updates an entry (a real upsert: an explicit ID that does
-// not exist yet is inserted, which is what the migration needs), refreshing tags
-// and the FTS index.
+// SaveEntry inserts or updates an entry (a real upsert), refreshing tags and the
+// FTS index.
 func (s *Store) SaveEntry(in Entry) (Entry, error) {
 	in.Content = strings.TrimSpace(in.Content)
 	if in.Source == "" {
@@ -250,7 +304,7 @@ func (s *Store) SaveEntry(in Entry) (Entry, error) {
 	if in.Content == "" && in.Kind == KindText {
 		return Entry{}, errors.New("内容不能为空")
 	}
-	// 手写/导入的内容才有 #tag；采集内容保持原样，靠 auto_tags 分类
+	// 手写/导入的内容才有 #tag；采集内容保持原样
 	if in.Source == SourceManual || in.Source == SourceImport {
 		in.Tags = ExtractTags(in.Content)
 	}
@@ -271,7 +325,7 @@ func (s *Store) SaveEntry(in Entry) (Entry, error) {
 		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(id) DO UPDATE SET
 			content=excluded.content, kind=excluded.kind, source=excluded.source,
-			tags=excluded.tags, auto_tags=excluded.auto_tags,
+			tags=excluded.tags, actions=excluded.actions,
 			pinned=excluded.pinned, archived=excluded.archived,
 			hash=excluded.hash, source_app=excluded.source_app,
 			width=excluded.width, height=excluded.height,
@@ -283,7 +337,7 @@ func (s *Store) SaveEntry(in Entry) (Entry, error) {
 			exclude_apps=excluded.exclude_apps, group_name=excluded.group_name,
 			expires_at=excluded.expires_at, updated_at=excluded.updated_at`,
 		in.ID, in.Content, string(in.Kind), string(in.Source),
-		TagSpec(in.Tags), TagSpec(in.AutoTags), boolInt(in.Pinned), boolInt(in.Archived),
+		TagSpec(in.Tags), actionSpec(in.Actions), boolInt(in.Pinned), boolInt(in.Archived),
 		in.Hash, in.SeenCount, in.CopyCount, in.SourceApp, in.Width, in.Height,
 		in.HTML, in.RTF, in.FormatName, in.FormatID, encodeFiles(in.Files),
 		in.TriggerKey, boolInt(in.CaseSensitive), boolInt(in.KeepTrigger),
@@ -297,6 +351,7 @@ func (s *Store) SaveEntry(in Entry) (Entry, error) {
 	}
 	return in, nil
 }
+
 func encodeTimePtr(t *time.Time) string {
 	if t == nil {
 		return ""
@@ -323,6 +378,19 @@ func (s *Store) GetEntry(id string) (Entry, bool) {
 	return e, true
 }
 
+// findEntryByHash looks an entry up by content hash (used for snippet dedupe).
+func (s *Store) findEntryByHash(hash string) (Entry, bool) {
+	if hash == "" {
+		return Entry{}, false
+	}
+	row := s.db.QueryRow(`SELECT `+entryColumns+` FROM entries WHERE hash = ? LIMIT 1`, hash)
+	e, err := scanEntry(row)
+	if err != nil {
+		return Entry{}, false
+	}
+	return e, true
+}
+
 // DeleteEntry removes an entry and its index row.
 func (s *Store) DeleteEntry(id string) bool {
 	res, err := s.db.Exec(`DELETE FROM entries WHERE id = ?`, id)
@@ -334,24 +402,23 @@ func (s *Store) DeleteEntry(id string) bool {
 	return n > 0
 }
 
-// EntryQuery is the single filter language for the whole app: the sidebar's
-// saved filters, the calendar's day selection and the search box all compile
-// down to this.
+// EntryQuery is the single filter language: the sidebar's saved filters, the
+// calendar's day selection and the search box all compile down to this.
 type EntryQuery struct {
-	Text      string `json:"text"`
-	Tag       string `json:"tag"`
-	Source    string `json:"source"`    // manual | clipboard | import
-	AutoTag   string `json:"autoTag"`   // 剪贴板 | 片段
-	Kind      string `json:"kind"`
-	Snippets  bool   `json:"snippets"`  // 只看有缩写的
-	Pinned    bool   `json:"pinned"`
-	Archived  bool   `json:"archived"`
-	Day       string `json:"day"`       // YYYY-MM-DD：日历点某天
-	From      string `json:"from"`      // RFC3339（含）
-	To        string `json:"to"`        // RFC3339（不含）
-	Limit     int    `json:"limit"`
-	Before    string `json:"before"`    // 游标：created_at < 此值
-	Tail      bool   `json:"tail"`      // true = 取最新 N 条
+	Text     string `json:"text"`
+	Tag      string `json:"tag"`
+	Source   string `json:"source"` // manual | clipboard | import
+	Action   string `json:"action"` // clipboard | snippet
+	Kind     string `json:"kind"`
+	Snippets bool   `json:"snippets"` // 只看有缩写的
+	Pinned   bool   `json:"pinned"`
+	Archived bool   `json:"archived"`
+	Day      string `json:"day"`  // YYYY-MM-DD：日历点某天
+	From     string `json:"from"` // RFC3339（含）
+	To       string `json:"to"`   // RFC3339（不含）
+	Limit    int    `json:"limit"`
+	Before   string `json:"before"` // 游标：created_at < 此值
+	Tail     bool   `json:"tail"`   // true = 取最新 N 条
 }
 
 // ListEntries applies the query. Ordered chronologically (chat style).
@@ -367,13 +434,13 @@ func (s *Store) ListEntries(q EntryQuery) []Entry {
 		where = append(where, "source = ?")
 		args = append(args, v)
 	}
-	if v := strings.TrimSpace(q.AutoTag); v != "" {
-		where = append(where, "auto_tags LIKE ?")
+	if v := strings.TrimSpace(q.Action); v != "" {
+		where = append(where, "actions LIKE ?")
 		args = append(args, "%,"+v+",%")
 	}
 	if v := strings.TrimSpace(q.Tag); v != "" {
-		where = append(where, "(tags LIKE ? OR auto_tags LIKE ?)")
-		args = append(args, "%,"+v+",%", "%,"+v+",%")
+		where = append(where, "tags LIKE ?")
+		args = append(args, "%,"+v+",%")
 	}
 	if v := strings.TrimSpace(q.Kind); v != "" {
 		where = append(where, "kind = ?")
@@ -386,7 +453,6 @@ func (s *Store) ListEntries(q EntryQuery) []Entry {
 		where = append(where, "pinned = 1")
 	}
 	if v := strings.TrimSpace(q.Day); v != "" {
-		// 按天：把这一天的 [00:00, 次日 00:00) 换算成时间戳比较
 		if start, end, ok := dayBounds(v); ok {
 			where = append(where, "created_at >= ? AND created_at < ?")
 			args = append(args, start, end)
@@ -401,6 +467,7 @@ func (s *Store) ListEntries(q EntryQuery) []Entry {
 		args = append(args, v)
 	}
 	if v := strings.TrimSpace(q.Before); v != "" {
+		// created_at 是固定宽度 RFC3339（见 timeLayout），字符串序 == 时间序
 		where = append(where, "created_at < ?")
 		args = append(args, v)
 	}
@@ -412,8 +479,8 @@ func (s *Store) ListEntries(q EntryQuery) []Entry {
 			args = append(args, `"`+strings.ReplaceAll(text, `"`, `""`)+`"`)
 		} else {
 			like := "%" + escapeLike(text) + "%"
-			where = append(where, `(content LIKE ? ESCAPE '\' OR tags LIKE ? ESCAPE '\' OR auto_tags LIKE ? ESCAPE '\')`)
-			args = append(args, like, like, like)
+			where = append(where, `(content LIKE ? ESCAPE '\' OR tags LIKE ? ESCAPE '\')`)
+			args = append(args, like, like)
 		}
 	}
 
@@ -456,9 +523,8 @@ func dayBounds(day string) (string, string, bool) {
 	return encodeTime(t), encodeTime(t.AddDate(0, 0, 1)), true
 }
 
-// PruneExpired deletes entries past their own expiry. Permanent entries
-// (ExpiresAt == nil) are never touched, which is why the two lifecycles can
-// share one table.
+// PruneExpired deletes entries past their own expiry. Kept for completeness but
+// no longer called anywhere: the policy is "keep everything, delete manually".
 func (s *Store) PruneExpired() int {
 	now := encodeTime(nowUTC())
 	rows, err := s.db.Query(`SELECT id FROM entries WHERE expires_at <> '' AND expires_at < ?`, now)
@@ -498,7 +564,7 @@ func (s *Store) EntryStats() EntryStats {
 	}
 	q(&st.Total, `SELECT COUNT(*) FROM entries WHERE archived = 0`)
 	q(&st.Manual, `SELECT COUNT(*) FROM entries WHERE archived = 0 AND source = 'manual'`)
-	q(&st.Clipboard, `SELECT COUNT(*) FROM entries WHERE archived = 0 AND source = 'clipboard'`)
+	q(&st.Clipboard, `SELECT COUNT(*) FROM entries WHERE archived = 0 AND actions LIKE '%,clipboard,%'`)
 	q(&st.Snippets, `SELECT COUNT(*) FROM entries WHERE archived = 0 AND trigger_key <> ''`)
 	q(&st.Pinned, `SELECT COUNT(*) FROM entries WHERE archived = 0 AND pinned = 1`)
 	q(&st.Archived, `SELECT COUNT(*) FROM entries WHERE archived = 1`)
@@ -509,18 +575,18 @@ func (s *Store) EntryStats() EntryStats {
 
 // EntryTags lists the distinct tags in use, most used first.
 func (s *Store) EntryTags() []string {
-	rows, err := s.db.Query(`SELECT tags, auto_tags FROM entries WHERE archived = 0`)
+	rows, err := s.db.Query(`SELECT tags FROM entries WHERE archived = 0`)
 	if err != nil {
 		return nil
 	}
 	defer rows.Close()
 	counts := map[string]int{}
 	for rows.Next() {
-		var tags, autoTags string
-		if rows.Scan(&tags, &autoTags) != nil {
+		var tags string
+		if rows.Scan(&tags) != nil {
 			continue
 		}
-		for _, t := range append(splitTagSpec(tags), splitTagSpec(autoTags)...) {
+		for _, t := range splitTagSpec(tags) {
 			counts[t]++
 		}
 	}
@@ -584,8 +650,8 @@ func (s *Store) FindEntryByTrigger(key string, caseSensitive bool) (Entry, bool)
 // ---- 附件（内容寻址，剪贴板图片与备忘图片共用） --------------------------
 
 // SaveEntryBlob stores bytes under their content hash and returns the token used
-// in Markdown / the entry. Small blobs stay in SQLite; larger ones go to disk so
-// the database (and its WAL, and the sync package) stay small.
+// in Markdown. Small blobs stay in SQLite; larger ones go to disk so the
+// database (and its WAL, and the sync package) stay small.
 func (s *Store) SaveEntryBlob(payload []byte, ext string) (string, error) {
 	if len(payload) == 0 {
 		return "", errors.New("内容为空")

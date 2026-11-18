@@ -205,7 +205,12 @@ func snippetDefaultTitle(sp Snippet) string {
 }
 
 // GetSnippet returns one snippet.
+// GetSnippet returns one snippet. 数据源是 entries：片段就是带 snippet action
+// 的条目；只有老库里残留的行才会落到 snippets 表（回滚用）。
 func (s *Store) GetSnippet(id string) (Snippet, bool) {
+	if e, ok := s.GetEntry(id); ok {
+		return snippetFromEntry(e), true
+	}
 	row := s.db.QueryRow(selectSnippets+` WHERE s.id = ?`, id)
 	sp, err := scanSnippet(row)
 	if err != nil {
@@ -233,40 +238,105 @@ func (s *Store) querySnippets(query string, args ...any) []Snippet {
 }
 
 // ListSnippets searches title/trigger/body/group, newest edit first.
+// ListSnippets lists entries that carry the snippet action, newest first.
+//
+// 数据源是 entries：片段不再是独立表。注意这里按 action 查而不是按
+// trigger_key 查——图片/文件类片段可以没有缩写，只能从列表里挑。
 func (s *Store) ListSnippets(query, group string, limit int) []Snippet {
 	if limit <= 0 || limit > 500 {
 		limit = 200
 	}
-	where := make([]string, 0, 2)
-	args := make([]any, 0, 6)
-	if g := strings.TrimSpace(group); g != "" {
-		where = append(where, "s.group_name = ?")
-		args = append(args, g)
+	entries := s.ListEntries(EntryQuery{
+		Action:   ActionSnippet,
+		Limit:    limit * 2,
+		Tail:     true,
+	})
+	needle := strings.ToLower(strings.TrimSpace(query))
+	grp := strings.TrimSpace(group)
+	out := make([]Snippet, 0, len(entries))
+	for i := len(entries) - 1; i >= 0; i-- { // Tail 返回正序，这里要最新在前
+		e := entries[i]
+		sp := snippetFromEntry(e)
+		if grp != "" && sp.Group != grp {
+			continue
+		}
+		if needle != "" {
+			hay := strings.ToLower(sp.Title + " " + sp.Trigger + " " + sp.Body + " " + sp.Group)
+			if !strings.Contains(hay, needle) {
+				continue
+			}
+		}
+		out = append(out, sp)
+		if len(out) >= limit {
+			break
+		}
 	}
-	if q := strings.TrimSpace(query); q != "" {
-		like := "%" + escapeLike(strings.ToLower(q)) + "%"
-		where = append(where,
-			`(lower(title) LIKE ? ESCAPE '\' OR lower(trigger_key) LIKE ? ESCAPE '\'`+
-				` OR lower(body) LIKE ? ESCAPE '\' OR lower(group_name) LIKE ? ESCAPE '\')`)
-		args = append(args, like, like, like, like)
-	}
-	sql := selectSnippets
-	if len(where) > 0 {
-		sql += ` WHERE ` + strings.Join(where, " AND ")
-	}
-	sql += ` ORDER BY s.pinned DESC, s.updated_at DESC LIMIT ?`
-	args = append(args, limit)
-	return s.querySnippets(sql, args...)
+	return out
 }
 
-// AllSnippets returns every snippet (used by sync).
+// AllSnippets returns every entry that carries the snippet action, adapted to
+// the Snippet shape the trigger engine already understands.
+//
+// 片段不再是独立的一张表：它就是带 snippet action 的条目。保留 Snippet 类型
+// 只是作为引擎侧的适配层（expand.Trigger 的字段与之对应），数据源是 entries。
 func (s *Store) AllSnippets() []Snippet {
-	return s.querySnippets(selectSnippets + ` ORDER BY s.updated_at DESC`)
+	entries := s.EntryTriggers()
+	out := make([]Snippet, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, snippetFromEntry(e))
+	}
+	return out
+}
+
+// snippetFromEntry adapts an entry to the engine's Snippet view.
+func snippetFromEntry(e Entry) Snippet {
+	return Snippet{
+		ID:            e.ID,
+		Kind:          SnippetKind(e.Kind),
+		Title:         firstLineOf(e.Content),
+		Hash:          e.Hash,
+		Trigger:       e.TriggerKey,
+		Group:         e.GroupName,
+		Body:          e.Content,
+		Pinned:        e.Pinned,
+		CaseSensitive: e.CaseSensitive,
+		KeepTrigger:   e.KeepTrigger,
+		Apps:          e.Apps,
+		ExcludeApps:   e.ExcludeApps,
+		UseCount:      e.UseCount,
+		CreatedAt:     e.CreatedAt,
+		UpdatedAt:     e.UpdatedAt,
+		ImageFile:     memoImageToken(e.Content),
+	}
+}
+
+// memoImageToken pulls "memoimg:<hash>" out of an entry body ("" when absent).
+func memoImageToken(content string) string {
+	i := strings.Index(content, memoImagePrefix)
+	if i < 0 {
+		return ""
+	}
+	rest := content[i:]
+	if j := strings.IndexAny(rest, ") \n"); j > 0 {
+		return rest[:j]
+	}
+	return rest
+}
+
+func firstLineOf(s string) string {
+	line := strings.TrimSpace(strings.SplitN(s, "\n", 2)[0])
+	r := []rune(line)
+	if len(r) > 40 {
+		return string(r[:40]) + "…"
+	}
+	return line
 }
 
 // SnippetGroups lists the distinct group names.
+// SnippetGroups lists the distinct groups of snippet entries.
 func (s *Store) SnippetGroups() []string {
-	rows, err := s.db.Query(`SELECT group_name FROM snippets WHERE group_name <> '' GROUP BY group_name ORDER BY group_name`)
+	rows, err := s.db.Query(`SELECT DISTINCT group_name FROM entries
+		WHERE group_name <> '' AND archived = 0 ORDER BY group_name`)
 	if err != nil {
 		return nil
 	}
@@ -297,6 +367,10 @@ func (s *Store) FindSnippetByTrigger(key string) (Snippet, bool) {
 
 // DeleteSnippet removes a snippet (and leaves a tombstone so peers drop theirs).
 func (s *Store) DeleteSnippet(id string) bool {
+	// 数据源是 entries：删掉条目本身
+	if ok := s.DeleteEntry(id); ok {
+		return true
+	}
 	var hash string
 	_ = s.db.QueryRow(`SELECT hash FROM snippets WHERE id = ?`, id).Scan(&hash)
 	res, err := s.db.Exec(`DELETE FROM snippets WHERE id = ?`, id)
@@ -338,6 +412,44 @@ func (s *Store) SnippetBlob(id string) ([]byte, error) {
 
 // UpsertRemoteSnippet merges a snippet arriving from a peer (by hash).
 func (s *Store) UpsertRemoteSnippet(in Snippet) (isNew bool, changed bool) {
+	if in.Hash == "" {
+		return false, false
+	}
+	// 片段现在落在 entries：同步也走同一条路，否则拉下来的片段看不见
+	if existing, ok := s.findEntryByHash(in.Hash); ok {
+		if in.UpdatedAt.After(existing.UpdatedAt) {
+			existing.Content = in.Body
+			existing.TriggerKey = in.Trigger
+			existing.GroupName = in.Group
+			existing.Pinned = existing.Pinned || in.Pinned
+			existing.Actions = []string{ActionSnippet}
+			existing.Kind = Kind(in.Kind)
+			if _, err := s.SaveEntry(existing); err != nil {
+				return false, false
+			}
+			changed = true
+		}
+		return false, changed
+	}
+	if _, err := s.SaveEntry(Entry{
+		Content:    in.Body,
+		Kind:       Kind(in.Kind),
+		Source:     SourceManual,
+		Actions:    []string{ActionSnippet},
+		Pinned:     in.Pinned,
+		Hash:       in.Hash,
+		TriggerKey: in.Trigger,
+		GroupName:  in.Group,
+		CreatedAt:  in.CreatedAt,
+		UpdatedAt:  in.UpdatedAt,
+	}); err != nil {
+		return false, false
+	}
+	return true, true
+}
+
+// upsertRemoteSnippetLegacy 只给回滚用：写旧的 snippets 表。
+func (s *Store) upsertRemoteSnippetLegacy(in Snippet) (isNew bool, changed bool) {
 	if in.Hash == "" {
 		return false, false
 	}
@@ -415,13 +527,12 @@ func snippetBlobExt(sp Snippet) string {
 
 // snippetManifest renders snippets for the sync package index.
 func (s *Store) snippetManifest() []manifestItem {
-	all := s.AllSnippets()
+	// 用 ListSnippets（按 action 查）而不是 AllSnippets（按 trigger 查）：
+	// 没有缩写的图片/文件片段也要参与同步。
+	all := s.ListSnippets("", "", 500)
 	out := make([]manifestItem, 0, len(all))
 	for _, sp := range all {
-		ext := ""
-		if sp.ImageFile != "" {
-			ext = filepath.Ext(sp.ImageFile)
-		}
+		ext := snippetBlobExt(sp)
 		out = append(out, manifestItem{
 			Hash:      sp.Hash,
 			ID:        sp.ID,
@@ -449,6 +560,12 @@ func (s *ClipService) GetSnippetGroups() []string { return s.store.SnippetGroups
 // SaveSnippet creates or updates a snippet. Image snippets carry their PNG in
 // imageDataB64 (base64), because the webview cannot hand us a file handle.
 func (s *ClipService) SaveSnippet(sp Snippet, imageDataB64 string) (Snippet, error) {
+	// 数据源是 entries：片段就是带 snippet 能力的条目
+	return s.SaveSnippetToEntries(sp, imageDataB64)
+}
+
+// saveSnippetLegacy 只给回滚用：写旧的 snippets 表。
+func (s *ClipService) saveSnippetLegacy(sp Snippet, imageDataB64 string) (Snippet, error) {
 	saved, err := s.store.SaveSnippet(sp)
 	if err != nil {
 		return Snippet{}, err
@@ -482,6 +599,18 @@ func (s *ClipService) DeleteSnippet(id string) bool {
 
 // GetSnippetImage returns a data URL for an image snippet.
 func (s *ClipService) GetSnippetImage(id string) (string, error) {
+	// 片段图片现在存在 entry_blobs 里，正文用 memoimg: 引用
+	if e, ok := s.store.GetEntry(id); ok {
+		if token := memoImageToken(e.Content); token != "" {
+			payload, mime, err := s.store.LoadEntryBlob(token)
+			if err == nil && len(payload) > 0 {
+				if mime == "" {
+					mime = "image/png"
+				}
+				return "data:" + mime + ";base64," + encodeBase64(payload), nil
+			}
+		}
+	}
 	payload, err := s.store.SnippetBlob(id)
 	if err != nil {
 		return "", err
@@ -582,4 +711,51 @@ func (s *Store) setSnippetOptions(id string, sp Snippet) {
 		boolInt(sp.CaseSensitive), boolInt(sp.KeepTrigger),
 		joinList(sp.Apps), joinList(sp.ExcludeApps), id,
 	)
+}
+// SaveSnippetToEntries writes a snippet as an entry carrying the snippet action.
+// 片段表已废弃：片段就是带 snippet 能力的条目，这里做一次形状转换。
+func (s *ClipService) SaveSnippetToEntries(sp Snippet, imageDataB64 string) (Snippet, error) {
+	content := sp.Body
+	if strings.TrimSpace(imageDataB64) != "" && sp.Kind == SnippetImage {
+		raw, decErr := decodeBase64Image(imageDataB64)
+		if decErr != nil {
+			return Snippet{}, fmt.Errorf("图片数据无效: %w", decErr)
+		}
+		token, err := s.store.SaveEntryBlob(raw, "png")
+		if err != nil {
+			return Snippet{}, err
+		}
+		content = "![](" + token + ")"
+	}
+	hash := snippetHash(sp.Kind, strings.TrimSpace(sp.Trigger), content)
+	// 同一份内容+缩写只存一条：先按 hash 找已存在的条目
+	id := sp.ID
+	if id == "" {
+		if existing, ok := s.store.findEntryByHash(hash); ok {
+			id = existing.ID
+		}
+	}
+	e := Entry{
+		ID:            id,
+		Content:       content,
+		Kind:          Kind(sp.Kind),
+		Source:        SourceManual,
+		Actions:       []string{ActionSnippet},
+		Pinned:        sp.Pinned,
+		TriggerKey:    strings.TrimSpace(sp.Trigger),
+		CaseSensitive: sp.CaseSensitive,
+		KeepTrigger:   sp.KeepTrigger,
+		Apps:          sp.Apps,
+		ExcludeApps:   sp.ExcludeApps,
+		GroupName:     sp.Group,
+		Hash:          hash,
+		CreatedAt:     sp.CreatedAt,
+		UpdatedAt:     sp.UpdatedAt,
+	}
+	saved, err := s.store.SaveEntry(e)
+	if err != nil {
+		return Snippet{}, err
+	}
+	s.refreshTriggers()
+	return snippetFromEntry(saved), nil
 }

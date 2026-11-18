@@ -27,7 +27,7 @@ func BuiltinFilters() []EntryFilter {
 	return []EntryFilter{
 		{ID: "all", Name: "全部内容", Icon: "all", Builtin: true, Query: EntryQuery{}},
 		{ID: "mine", Name: "我写的", Icon: "memo", Builtin: true, Query: EntryQuery{Source: "manual"}},
-		{ID: "clipboard", Name: "剪贴板", Icon: "pin", Builtin: true, Query: EntryQuery{AutoTag: AutoTagClipboard}},
+		{ID: "clipboard", Name: "剪贴板", Icon: "pin", Builtin: true, Query: EntryQuery{Action: ActionClipboard}},
 		{ID: "snippets", Name: "片段", Icon: "snippet", Builtin: true, Query: EntryQuery{Snippets: true}},
 		{ID: "images", Name: "图片", Icon: "image", Builtin: true, Query: EntryQuery{Kind: string(KindImage)}},
 		{ID: "pinned", Name: "置顶", Icon: "star", Builtin: true, Query: EntryQuery{Pinned: true}},
@@ -79,7 +79,7 @@ func (s *ClipService) PromoteToSnippet(id, trigger string) (Entry, error) {
 		return Entry{}, errors.New("缩写不能为空")
 	}
 	e.TriggerKey = trigger
-	e.AutoTags = append(e.AutoTags, AutoTagSnippet)
+	e.SetAction(ActionSnippet, true)
 	return s.store.SaveEntry(e)
 }
 

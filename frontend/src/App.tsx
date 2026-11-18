@@ -12,12 +12,10 @@ import Sidebar, { type NavEntry } from "./components/Sidebar";
 import ItemRow from "./components/ItemRow";
 import DetailPanel from "./components/DetailPanel";
 import SettingsView from "./components/SettingsView";
-import SnippetsView from "./components/SnippetsView";
-import MemosView from "./components/MemosView";
 import EntriesView from "./components/EntriesView";
 import { IconSearch } from "./components/Icons";
 
-type View = "history" | "settings" | "snippets" | "memos" | "entries";
+type View = "history" | "settings" | "entries";
 
 // 一级菜单的默认形状；用户可改顺序、名称与图标（存在 settings 里）
 const DEFAULT_NAV: NavEntry[] = [
@@ -41,7 +39,6 @@ export default function App() {
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [snippets, setSnippets] = useState<Snippet[]>([]);
   const [snippetGroups, setSnippetGroups] = useState<string[]>([]);
-  const [snippetGroup, setSnippetGroup] = useState("");
   const [memoCount, setMemoCount] = useState(0);
   // 统一内容视图：筛选器 + 日历
   const [filters, setFilters] = useState<EntryFilter[]>([]);
@@ -58,9 +55,6 @@ export default function App() {
     pinned: false,
     archived: false,
   });
-  const [snippetDraft, setSnippetDraft] = useState<
-    { snippet: Snippet; imageData: string; seq: number } | null
-  >(null);
   const [updateBanner, setUpdateBanner] = useState(true);
   const [images, setImages] = useState<Record<string, string>>({});
   const [toast, setToast] = useState("");
@@ -167,7 +161,6 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (view === "snippets") void loadSnippets();
   }, [view, loadSnippets]);
 
   // 主题：配色预设 + 浅/深 scheme + 用户自定义 CSS（见 lib/themes.ts）
@@ -251,7 +244,7 @@ export default function App() {
     [filters, activeFilterId],
   );
 
-  // 只刷新侧栏需要的计数与标签；列表本身由 MemosView 分页拉取
+  // 只刷新侧栏需要的计数与标签；列表本身由 EntriesView 分页拉取
   const loadMemoMeta = useCallback(async () => {
     try {
       const stats = await ClipService.GetMemoStats();
@@ -263,7 +256,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (view === "memos") void loadMemoMeta();
+    void loadMemoMeta();
   }, [view, loadMemoMeta]);
 
   const editAsSnippet = useCallback(
@@ -272,10 +265,9 @@ export default function App() {
       try {
         const draft = await ClipService.DraftSnippetFromItem(item.id);
         if (!draft?.snippet) return;
-        setSnippetGroup("");
-        setSnippetDraft({ snippet: draft.snippet, imageData: draft.imageData ?? "", seq: Date.now() });
-        setView("snippets");
-        void loadSnippets();
+        setActiveFilterId("snippets");
+        setView("entries");
+        void loadEntryMeta();
       } catch (err) {
         notify(`打开为片段失败：${String(err)}`);
       }
@@ -462,7 +454,6 @@ export default function App() {
         return;
       }
       if (typing) return;
-      if (view === "memos") return; // 备忘页的快捷键由编辑器自己处理
       if (e.key === "ArrowDown") {
         e.preventDefault();
         moveSelection(1);
@@ -485,7 +476,7 @@ export default function App() {
   const syncActive = Boolean(settings?.syncEnabled);
 
   return (
-    <div className={`app ${view === "settings" ? "is-settings" : ""} ${view === "snippets" ? "is-snippets" : ""} ${view === "memos" ? "is-memos" : ""} ${view === "entries" ? "is-entries" : ""}`}>
+    <div className={`app ${view === "settings" ? "is-settings" : ""} ${view === "entries" ? "is-entries" : ""}`}>
       <TitleBar capturing={capturing} enabled={settings !== null} onToggleCapture={toggleCapture} />
 
       {updateInfo?.available && updateBanner ? (
@@ -513,7 +504,7 @@ export default function App() {
           view={view}
           kind={kind}
           pinnedOnly={pinnedOnly}
-          snippetGroup={snippetGroup}
+          snippetGroup=""
           snippetGroups={snippetGroups}
           stats={stats}
           snippetCount={snippets.length}
@@ -524,9 +515,9 @@ export default function App() {
             setKind(k);
             setPinnedOnly(pinned);
           }}
-          onSelectSnippets={(group) => {
-            setSnippetGroup(group);
-            setView("snippets");
+          onSelectSnippets={() => {
+            setActiveFilterId("snippets");
+            setView("entries");
           }}
           nav={nav}
           filterProps={{
@@ -564,7 +555,8 @@ export default function App() {
               pinned: filter.pinned ?? false,
               archived: filter.archived ?? false,
             });
-            setView("memos");
+            setActiveFilterId("mine");
+            setView("entries");
           }}
           onOpenSearch={() => {
             setView("history");
@@ -668,22 +660,6 @@ export default function App() {
             day={selectedDay}
             onNotify={notify}
             onChanged={() => void loadEntryMeta()}
-          />
-        ) : view === "memos" ? (
-          <MemosView
-            tags={memoTags}
-            filter={memoFilter}
-            onReload={loadMemoMeta}
-            onNotify={notify}
-          />
-        ) : view === "snippets" ? (
-          <SnippetsView
-            snippets={snippets}
-            groups={snippetGroups}
-            group={snippetGroup}
-            initial={snippetDraft}
-            onReload={loadSnippets}
-            onNotify={notify}
           />
         ) : (
           <SettingsView

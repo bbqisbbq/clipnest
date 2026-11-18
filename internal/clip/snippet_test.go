@@ -144,7 +144,8 @@ func TestSnippetSyncRoundTrip(t *testing.T) {
 	if imageID == "" {
 		t.Fatal("image snippet did not arrive")
 	}
-	if payload, err := b.store.SnippetBlob(imageID); err != nil || len(payload) == 0 {
+	// 图片现在存在 entry_blobs，正文用 memoimg: 引用
+	if dataURL, err := b.GetSnippetImage(imageID); err != nil || dataURL == "" {
 		t.Errorf("image payload not restored: %v", err)
 	}
 

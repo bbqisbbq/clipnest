@@ -175,6 +175,10 @@ func Open(dir string) (*Store, error) {
 	// Older databases predate the snippet tombstones: add the scope column in
 	// place. SQLite has no "ADD COLUMN IF NOT EXISTS", so the error is expected.
 	_, _ = db.Exec(`ALTER TABLE tombstones ADD COLUMN scope TEXT NOT NULL DEFAULT 'item'`)
+	// 统一条目的能力列（1.8.0 起）：entries 表可能建得比它早，
+	// CREATE TABLE IF NOT EXISTS 不会补列，这里显式加。
+	_, _ = db.Exec(`ALTER TABLE entries ADD COLUMN actions TEXT NOT NULL DEFAULT ''`)
+
 	// 备忘附件（1.5.0 起支持大文件落盘）：老库补齐列
 	for _, stmt := range []string{
 		`ALTER TABLE memo_blobs ADD COLUMN storage TEXT NOT NULL DEFAULT 'db'`,
@@ -522,7 +526,49 @@ func (s *Store) Add(c Captured) (*Item, bool, error) {
 			return nil, false, err
 		}
 	}
+	// 镜像到统一条目表：界面读的是 entries，捕获必须同时写进去，
+	// 否则新复制的内容在界面上看不见。采集来的条目自动带 clipboard 能力。
+	s.mirrorToEntry(&it, c)
 	return &it, true, nil
+}
+
+// mirrorToEntry keeps the unified entries table in step with a capture.
+// 这是过渡期的双写：items 仍是采集管线的落脚点，entries 是界面与引擎的真相。
+func (s *Store) mirrorToEntry(it *Item, c Captured) {
+	content := strings.TrimSpace(it.Text)
+	e := Entry{
+		ID:         it.ID,
+		Content:    content,
+		Kind:       it.Kind,
+		Source:     SourceClipboard,
+		Actions:    []string{ActionClipboard},
+		Pinned:     it.Pinned,
+		Hash:       it.Hash,
+		SeenCount:  it.SeenCount,
+		CopyCount:  it.CopyCount,
+		SourceApp:  it.SourceApp,
+		Width:      it.Width,
+		Height:     it.Height,
+		HTML:       it.HTML,
+		RTF:        it.RTF,
+		FormatName: it.FormatName,
+		FormatID:   it.FormatID,
+		Files:      it.Files,
+		CreatedAt:  it.CreatedAt,
+		UpdatedAt:  it.UpdatedAt,
+	}
+	// 图片：附件先进 entry_blobs，正文写成引用，列表才看得到图
+	if len(c.PNG) > 0 {
+		if token, err := s.SaveEntryBlob(c.PNG, "png"); err == nil {
+			e.Content = "![](" + token + ")"
+		}
+	}
+	if strings.TrimSpace(e.Content) == "" {
+		e.Content = placeholderForKind(it.Kind)
+	}
+	if _, err := s.SaveEntry(e); err != nil {
+		Logf(s.dir, "mirror capture to entries failed: %v", err)
+	}
 }
 
 func encodeFiles(files []FileRef) string {

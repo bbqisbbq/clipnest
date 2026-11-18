@@ -82,3 +82,79 @@ func (s *Store) ClearEntryExpiry() int {
 	}
 	return int(n)
 }
+
+const entriesActionBackfillKey = "entries.actionBackfill"
+
+// BackfillEntryActions derives the actions column for rows written by the older
+// model, which expressed capabilities as auto_tags ("剪贴板"/"片段") and a
+// trigger_key. One-shot and idempotent.
+func (s *Store) BackfillEntryActions() int {
+	if s.Meta(entriesActionBackfillKey) != "" {
+		return 0
+	}
+	// 列还不存在时直接返回，且不写完成标记——否则会留下"已完成"的假状态，
+	// 等列补上后回填就再也不会跑了（这个坑真踩过）。
+	if !s.hasColumn("entries", "actions") {
+		Logf(s.dir, "actions column missing, backfill deferred")
+		return 0
+	}
+	rows, err := s.db.Query(`SELECT id, auto_tags, trigger_key, source FROM entries`)
+	if err != nil {
+		return 0
+	}
+	type row struct {
+		id, autoTags, trigger, source string
+	}
+	var list []row
+	for rows.Next() {
+		var r row
+		if rows.Scan(&r.id, &r.autoTags, &r.trigger, &r.source) == nil {
+			list = append(list, r)
+		}
+	}
+	rows.Close()
+
+	fixed := 0
+	for _, r := range list {
+		var actions []string
+		if strings.Contains(r.autoTags, "剪贴板") || r.source == string(SourceClipboard) {
+			actions = append(actions, ActionClipboard)
+		}
+		if strings.Contains(r.autoTags, "片段") || strings.TrimSpace(r.trigger) != "" {
+			actions = append(actions, ActionSnippet)
+		}
+		if len(actions) == 0 {
+			continue
+		}
+		if _, err := s.db.Exec(`UPDATE entries SET actions = ? WHERE id = ?`,
+			actionSpec(actions), r.id); err != nil {
+			continue
+		}
+		fixed++
+	}
+	_ = s.SetMeta(entriesActionBackfillKey, "1")
+	if fixed > 0 {
+		Logf(s.dir, "backfilled actions on %d entries", fixed)
+	}
+	return fixed
+}
+
+// hasColumn reports whether a table already has the given column.
+func (s *Store) hasColumn(table, column string) bool {
+	rows, err := s.db.Query(`PRAGMA table_info(` + table + `)`)
+	if err != nil {
+		return false
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			cid, notnull, pk int
+			name, typ        string
+			dflt             any
+		)
+		if rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk) == nil && name == column {
+			return true
+		}
+	}
+	return false
+}

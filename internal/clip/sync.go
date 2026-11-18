@@ -847,10 +847,12 @@ func (s *ClipService) syncOnce(upload bool) (SyncStatus, error) {
 			} else if changed {
 				pulledUpd++
 			}
+			// 附件存进 entry_blobs（内容寻址）：正文里的 memoimg:<hash>
+			// 就是按内容算的，所以存进去后引用天然对得上。
 			if ext := snippetBlobExt(remote); ext != "" {
 				if payload, ok := res.pkg.blobs["snippet-"+remote.Hash+ext]; ok {
-					if local, ok := s.store.findSnippetByHash(remote.Hash); ok {
-						_ = s.store.SaveSnippetBlob(local.ID, ext, payload)
+					if _, err := s.store.SaveEntryBlob(payload, strings.TrimPrefix(ext, ".")); err != nil {
+						Logf(s.store.Dir(), "restore snippet blob %s: %v", remote.Hash, err)
 					}
 				}
 			}
@@ -1095,7 +1097,8 @@ func (s *ClipService) buildOwnPackage(peerHasBlob map[string]bool, peerTombstone
 	// ---- snippets ----
 	idx.Snippets = s.store.snippetManifest()
 	snippets := make([]snippetRecord, 0, len(idx.Snippets))
-	for _, sp := range s.store.AllSnippets() {
+	// 与 snippetManifest 用同一个数据源，否则清单说有 3 条、包里只写 2 条
+	for _, sp := range s.store.ListSnippets("", "", 500) {
 		snippets = append(snippets, snippetRecord{Version: syncPackageVersion, Snippet: sp})
 		ext := snippetBlobExt(sp)
 		if ext == "" || peerHasBlob["snippet-"+sp.Hash+ext] {
@@ -1105,7 +1108,14 @@ func (s *ClipService) buildOwnPackage(peerHasBlob map[string]bool, peerTombstone
 			idx.Truncated = true
 			continue
 		}
-		payload, err := s.store.SnippetBlob(sp.ID)
+		// 附件现在在 entry_blobs：正文里的 memoimg:<hash> 就是索引
+		var payload []byte
+		var err error
+		if token := memoImageToken(sp.Body); token != "" {
+			payload, _, err = s.store.LoadEntryBlob(token)
+		} else {
+			payload, err = s.store.SnippetBlob(sp.ID)
+		}
 		if err != nil || len(payload) == 0 || len(payload) > budget {
 			idx.Truncated = true
 			continue

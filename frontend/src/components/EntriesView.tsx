@@ -263,13 +263,18 @@ export default function EntriesView({ filter, day, onNotify, onChanged }: Props)
     [loadLatest, onChanged, onNotify],
   );
 
-  const makePermanent = useCallback(
+  // 切换 clipboard 能力：有它才会出现在快速粘贴列表里
+  const toggleClipboard = useCallback(
     async (e: Entry) => {
+      const has = (e.actions ?? []).includes("clipboard");
+      const next = has
+        ? (e.actions ?? []).filter((a) => a !== "clipboard")
+        : [...(e.actions ?? []), "clipboard"];
       try {
-        await ClipService.PromoteToManual(e.id);
+        await ClipService.SaveEntry({ ...e, actions: next } as never);
         await loadLatest();
         onChanged();
-        onNotify("已转为永久保存");
+        onNotify(has ? "已从粘贴列表移除" : "已加入粘贴列表");
       } catch (err) {
         onNotify(`失败：${String(err)}`);
       }
@@ -372,9 +377,9 @@ export default function EntriesView({ filter, day, onNotify, onChanged }: Props)
                       )}
                       <footer className="memo-meta">
                         <span>{timeLabel(e.createdAt)}</span>
-                        {(e.autoTags ?? []).map((t) => (
-                          <span key={t} className="entry-autotag">
-                            {t}
+                        {(e.actions ?? []).map((a) => (
+                          <span key={a} className="entry-autotag">
+                            {a === "clipboard" ? "剪贴板" : a === "snippet" ? "片段" : a}
                           </span>
                         ))}
                         {(e.tags ?? []).map((t) => (
@@ -419,17 +424,18 @@ export default function EntriesView({ filter, day, onNotify, onChanged }: Props)
                               设为片段
                             </button>
                           )}
-                          {e.source === "clipboard" ? (
-                            <button
-                              className="link-btn"
-                              onClick={(ev) => {
-                                ev.stopPropagation();
-                                void makePermanent(e);
-                              }}
-                            >
-                              永久保存
-                            </button>
-                          ) : null}
+                          <button
+                            className={
+                              (e.actions ?? []).includes("clipboard") ? "link-btn is-on" : "link-btn"
+                            }
+                            onClick={(ev) => {
+                              ev.stopPropagation();
+                              void toggleClipboard(e);
+                            }}
+                            title="有这项能力才会出现在快速粘贴列表里"
+                          >
+                            {(e.actions ?? []).includes("clipboard") ? "移出粘贴列表" : "加入粘贴列表"}
+                          </button>
                           <button
                             className="link-btn"
                             onClick={(ev) => {

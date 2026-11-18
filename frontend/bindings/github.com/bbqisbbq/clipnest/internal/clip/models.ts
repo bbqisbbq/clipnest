@@ -58,9 +58,9 @@ export interface Entry {
     "tags": string[] | null;
 
     /**
-     * 系统标签（剪贴板 / 片段）
+     * clipboard / snippet
      */
-    "autoTags": string[] | null;
+    "actions": string[] | null;
     "pinned": boolean;
     "archived": boolean;
 
@@ -91,7 +91,7 @@ export interface Entry {
     "useCount"?: number;
 
     /**
-     * 生命周期：nil = 永久（手写）；采集条目默认 +30 天
+     * 生命周期：nil = 永久。现在所有条目都不自动过期（以保留为主）。
      */
     "expiresAt"?: string | null;
     "createdAt": string;
@@ -115,9 +115,8 @@ export interface EntryFilter {
 }
 
 /**
- * EntryQuery is the single filter language for the whole app: the sidebar's
- * saved filters, the calendar's day selection and the search box all compile
- * down to this.
+ * EntryQuery is the single filter language: the sidebar's saved filters, the
+ * calendar's day selection and the search box all compile down to this.
  */
 export interface EntryQuery {
     "text": string;
@@ -129,9 +128,9 @@ export interface EntryQuery {
     "source": string;
 
     /**
-     * 剪贴板 | 片段
+     * clipboard | snippet
      */
-    "autoTag": string;
+    "action": string;
     "kind": string;
 
     /**

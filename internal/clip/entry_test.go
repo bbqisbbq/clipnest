@@ -30,7 +30,7 @@ func TestEntryUnifiedType(t *testing.T) {
 		Content:   "复制来的一段话",
 		Kind:      KindText,
 		Source:    SourceClipboard,
-		AutoTags:  []string{AutoTagClipboard},
+		Actions:   []string{ActionClipboard},
 		Hash:      "h-clip",
 		ExpiresAt: &exp,
 	})
@@ -40,15 +40,15 @@ func TestEntryUnifiedType(t *testing.T) {
 	if clipEntry.ExpiresAt == nil {
 		t.Error("采集条目应该有到期时间")
 	}
-	if got := clipEntry.AllTags(); len(got) != 1 || got[0] != AutoTagClipboard {
-		t.Errorf("auto tags = %v", got)
+	if !clipEntry.HasAction(ActionClipboard) {
+		t.Errorf("采集条目应该有 clipboard 能力: %v", clipEntry.Actions)
 	}
 
 	// 片段：有 trigger 才算片段
 	sp, err := svc.store.SaveEntry(Entry{
 		Content:    "您好，稍后回复您。",
 		Source:     SourceManual,
-		AutoTags:   []string{AutoTagSnippet},
+		Actions:    []string{ActionSnippet},
 		TriggerKey: "th-",
 	})
 	if err != nil {
@@ -71,7 +71,7 @@ func TestEntryUnifiedType(t *testing.T) {
 	if got := svc.store.ListEntries(EntryQuery{Snippets: true}); len(got) != 1 {
 		t.Errorf("snippets = %d 条", len(got))
 	}
-	if got := svc.store.ListEntries(EntryQuery{AutoTag: AutoTagSnippet}); len(got) != 1 {
+	if got := svc.store.ListEntries(EntryQuery{Action: ActionSnippet}); len(got) != 1 {
 		t.Errorf("auto tag 片段 = %d 条", len(got))
 	}
 	if got := svc.store.ListEntries(EntryQuery{Tag: "工作"}); len(got) != 1 {
@@ -86,7 +86,7 @@ func TestEntryExpiryOnlyTouchesCollected(t *testing.T) {
 	past := time.Now().UTC().Add(-time.Hour)
 	expired, _ := svc.store.SaveEntry(Entry{
 		Content: "早就过期的采集", Source: SourceClipboard,
-		AutoTags: []string{AutoTagClipboard}, Hash: "h-old", ExpiresAt: &past,
+		Actions:  []string{ActionClipboard}, Hash: "h-old", ExpiresAt: &past,
 	})
 
 	if n := svc.store.PruneExpired(); n != 1 {
@@ -140,7 +140,7 @@ func TestEntryDayFilterAndChatOrder(t *testing.T) {
 func TestEntryTriggerLookup(t *testing.T) {
 	svc := newTestService(t, t.TempDir())
 	if _, err := svc.store.SaveEntry(Entry{
-		Content: "办公地址内容", TriggerKey: "addr-", AutoTags: []string{AutoTagSnippet},
+		Content: "办公地址内容", TriggerKey: "addr-", Actions: []string{ActionSnippet},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -171,9 +171,10 @@ func TestMigrateToUnifiedEntries(t *testing.T) {
 	if _, err := svc.SaveMemo(Memo{Content: "手写的备忘 #笔记"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.SaveSnippet(Snippet{
+	// 故意走旧表：迁移测试要模拟"老版本留下的数据"
+	if _, err := svc.store.SaveSnippet(Snippet{
 		Kind: SnippetText, Title: "话术", Body: "您好", Trigger: "th-",
-	}, ""); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -192,8 +193,8 @@ func TestMigrateToUnifiedEntries(t *testing.T) {
 		switch {
 		case e.Source == SourceClipboard:
 			sawClip = true
-			if !strings.Contains(strings.Join(e.AllTags(), ","), AutoTagClipboard) {
-				t.Errorf("采集条目缺 #剪贴板: %v", e.AllTags())
+			if !e.HasAction(ActionClipboard) {
+				t.Errorf("采集条目应该有 clipboard 能力: %v", e.Actions)
 			}
 			// 按「以保留为主」：采集条目也不设过期，删不删由用户决定
 			if e.ExpiresAt != nil {
@@ -201,8 +202,8 @@ func TestMigrateToUnifiedEntries(t *testing.T) {
 			}
 		case e.TriggerKey == "th-":
 			sawSnippet = true
-			if !strings.Contains(strings.Join(e.AllTags(), ","), AutoTagSnippet) {
-				t.Errorf("片段缺 #片段: %v", e.AllTags())
+			if !e.HasAction(ActionSnippet) {
+				t.Errorf("片段应该有 snippet 能力: %v", e.Actions)
 			}
 		case strings.Contains(e.Content, "手写的备忘"):
 			sawMemo = true
