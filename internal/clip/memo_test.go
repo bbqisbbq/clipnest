@@ -344,3 +344,54 @@ func TestMemoTailPagination(t *testing.T) {
 		t.Errorf("cursor 翻页 = %d 条", len(older))
 	}
 }
+func TestLegacyMemoImageMigration(t *testing.T) {
+	svc := newTestService(t, t.TempDir())
+
+	// 造一条旧的图片剪贴板记录（blob 按 item_id 存）
+	const onePixel = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+	payload, err := decodeBase64Image(onePixel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, _, err := svc.store.Add(Captured{
+		Kind: KindImage, Preview: "图片", Hash: "legacy-img", Size: len(payload), PNG: payload,
+	})
+	if err != nil {
+		t.Fatalf("add image item: %v", err)
+	}
+
+	// 旧格式正文：裸文件名（= itemID + .png）
+	legacy := "![](" + item.ID + ".png)"
+	if _, err := svc.store.db.Exec(
+		`INSERT INTO memos (id, content, tags, hash, created_at, updated_at) VALUES (?,?,?,?,?,?)`,
+		"legacy1", legacy, "", "h-legacy", encodeTime(nowUTC()), encodeTime(nowUTC())); err != nil {
+		t.Fatal(err)
+	}
+
+	if n := svc.MigrateLegacyMemoImages(); n != 1 {
+		t.Fatalf("migrated = %d, want 1", n)
+	}
+
+	got, ok := svc.store.GetMemo("legacy1")
+	if !ok {
+		t.Fatal("memo missing")
+	}
+	if strings.Contains(got.Content, item.ID+".png") {
+		t.Errorf("legacy reference not rewritten: %q", got.Content)
+	}
+	if !strings.Contains(got.Content, "memoimg:") {
+		t.Errorf("no memoimg token: %q", got.Content)
+	}
+
+	// 迁移后的引用能真的取到图片
+	hash := got.Content[strings.Index(got.Content, "memoimg:")+len("memoimg:"):]
+	hash = strings.TrimRight(hash, ")")
+	if _, err := svc.GetMemoImage(hash); err != nil {
+		t.Errorf("GetMemoImage after migration: %v", err)
+	}
+
+	// 幂等：再跑一次不再改动
+	if n := svc.MigrateLegacyMemoImages(); n != 0 {
+		t.Errorf("second run migrated %d", n)
+	}
+}

@@ -368,6 +368,14 @@ export function MemoFromClipboard(): $CancellablePromise<$models.Memo> {
 }
 
 /**
+ * MigrateLegacyMemoImages rewrites bare-file image references in memo bodies.
+ * Idempotent: once rewritten they become memoimg: tokens and no longer match.
+ */
+export function MigrateLegacyMemoImages(): $CancellablePromise<number> {
+    return $Call.ByID(3693119265);
+}
+
+/**
  * OpenDataDir reveals the data directory in Explorer.
  */
 export function OpenDataDir(): $CancellablePromise<void> {

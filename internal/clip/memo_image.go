@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -297,4 +298,77 @@ func extForMime(mime string) string {
 	default:
 		return "png"
 	}
+}
+
+// ---- 旧数据迁移 ----------------------------------------------------------
+
+// legacyImageRef matches the references older builds wrote into memo bodies:
+//
+//	![](3a45ab6124e06b6d.png)
+//
+// i.e. a bare "<itemID><ext>" with no scheme. The webview cannot load those, so
+// such memos always showed a broken image. We resolve them against the clipboard
+// blobs table, copy the bytes into memo_blobs and rewrite the reference to
+// memoimg:<hash>.
+var legacyImageRef = regexp.MustCompile(`!\[([^\]]*)\]\(([0-9a-fA-F]{8,})(\.(?:png|jpg|jpeg|gif|webp|bmp))\)`)
+
+// MigrateLegacyMemoImages rewrites bare-file image references in memo bodies.
+// Idempotent: once rewritten they become memoimg: tokens and no longer match.
+func (s *ClipService) MigrateLegacyMemoImages() int {
+	rows, err := s.store.db.Query(`SELECT id, content FROM memos WHERE content LIKE '%](%.png)%'` +
+		` OR content LIKE '%](%.jpg)%' OR content LIKE '%](%.jpeg)%'` +
+		` OR content LIKE '%](%.gif)%' OR content LIKE '%](%.webp)%' OR content LIKE '%](%.bmp)%'`)
+	if err != nil {
+		return 0
+	}
+	type pending struct{ id, content string }
+	var items []pending
+	for rows.Next() {
+		var p pending
+		if rows.Scan(&p.id, &p.content) == nil {
+			items = append(items, p)
+		}
+	}
+	rows.Close()
+
+	fixed := 0
+	for _, m := range items {
+		content := m.content
+		changed := false
+		content = legacyImageRef.ReplaceAllStringFunc(content, func(match string) string {
+			sub := legacyImageRef.FindStringSubmatch(match)
+			if len(sub) < 4 {
+				return match
+			}
+			alt, itemID := sub[1], sub[2]
+			data, err := s.store.LoadBlobByID(itemID)
+			if err != nil || len(data) == 0 {
+				Logf(s.store.Dir(), "legacy memo image %s: blob missing, left as-is", itemID)
+				return match
+			}
+			token, err := s.SaveMemoImage(encodeBase64(data))
+			if err != nil {
+				Logf(s.store.Dir(), "legacy memo image %s: %v", itemID, err)
+				return match
+			}
+			changed = true
+			return "![" + alt + "](" + token + ")"
+		})
+		if !changed {
+			continue
+		}
+		if _, err := s.store.db.Exec(`UPDATE memos SET content = ? WHERE id = ?`, content, m.id); err != nil {
+			Logf(s.store.Dir(), "legacy memo %s update failed: %v", m.id, err)
+			continue
+		}
+		// 正文变了，重建这一条的全文索引
+		if mm, ok := s.store.GetMemo(m.id); ok {
+			_ = s.store.indexMemo(mm)
+		}
+		fixed++
+	}
+	if fixed > 0 {
+		Logf(s.store.Dir(), "migrated %d memo(s) with legacy image references", fixed)
+	}
+	return fixed
 }

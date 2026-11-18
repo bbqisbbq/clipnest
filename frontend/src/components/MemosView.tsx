@@ -34,9 +34,14 @@ const EMPTY: Memo = {
 
 const MEMO_IMG_RE = /memoimg:([0-9a-f]{8,})/g;
 
-// 把渲染结果里的 memoimg:<hash> 换成真实 data URL
+// 1x1 透明占位：图片还没加载完时先顶上，避免出现"破图"图标
+const BLANK_PIXEL =
+  "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+
+// 把渲染结果里的 memoimg:<hash> 换成真实 data URL；
+// 还没取到就用透明占位，等缓存填好后自动重渲染。
 function resolveMemoImages(html: string, cache: Record<string, string>): string {
-  return html.replace(MEMO_IMG_RE, (whole, hash: string) => cache[hash] ?? whole);
+  return html.replace(MEMO_IMG_RE, (_whole, hash: string) => cache[hash] ?? BLANK_PIXEL);
 }
 
 function collectMemoImageHashes(texts: string[]): string[] {
