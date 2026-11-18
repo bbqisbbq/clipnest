@@ -257,3 +257,65 @@ M1+M2 就是"日常可用的本地备忘"，M3 才需要云端，M4 完全可选
 3. 我们真正想要的只有「Markdown 备忘 + 标签 + 搜索 + 置顶」这四件事，用我们自己的 SQLite 表大约 200 行就够，而引入它是几千个文件
 
 结论：**借它的产品形态与 API 语义，不借它的代码。**
+
+## 十一、界面与主题：复刻到什么程度
+
+### Memos 的主题是怎么做的（读源码得出）
+
+- 颜色/圆角/字体全部是 CSS 变量，命名 `--mu-<name>`，共 **29 个颜色 token**（来自 `@usememos/ui` 包）
+- 主题就是「一整套 token 赋值」，通过 `<html data-theme="light|dark|paper">` 切换；**没有 `.dark` class**
+- `color-scheme` 由主题规则自己声明（所以原生控件、滚动条自动跟着走）
+- 偏好值存两处：账号设置 + localStorage，取值 `default` / `default-dark` / `paper` / `system`
+- 另有一个「Additional style」入口可以注入额外 CSS，官方要求它同样只操作这批 token 与 `mu-` 类
+- 它给 paper 主题写了单测：**29 个 token 必须全设，且每对文字/底色对比度 ≥ 4.5:1**
+
+### 我们已经有的地基
+
+| 能力 | ClipNest 现状 |
+| --- | --- |
+| 设计 token | ✅ `--bg/--surface/--text/--accent/...` 已全量 token 化（1.0.0 做的） |
+| `data-theme` 切换 | ✅ `<html data-theme="light|dark">` |
+| 跟随系统 | ✅ 设置里 system/dark/light + `prefers-color-scheme` 监听 |
+| `color-scheme` | ✅ 深/浅各声明一次，下拉框/滚动条已跟着走 |
+| 硬编码颜色 | ✅ 82 处已清零 |
+
+**结论：复刻不需要重写，只需要在现有 token 上"长出预设与自定义"。**
+
+### 要补的四件事
+
+1. **预设主题注册表**（约 1 小时）
+   ```ts
+   // themes/index.ts
+   export const THEMES = [
+     { id: "default",      name: "默认深色", scheme: "dark",  tokens: {…} },
+     { id: "default-light",name: "亮白",     scheme: "light", tokens: {…} },
+     { id: "paper",        name: "纸感",     scheme: "light", tokens: {…} },  // 暖白 + 墨色主色
+     { id: "ink",          name: "墨黑",     scheme: "dark",  tokens: {…} },
+   ];
+   ```
+   主题 = 一份 token 表；切换 = 把表写进 `document.documentElement.style` 的 CSS 变量。
+
+2. **自定义 CSS**（约 1 小时）
+   - 设置里一个等宽字体输入框，保存后注入 `<style id="clipnest-custom-css">`
+   - 作用域限定：只允许改 `:root`/`body`/类名，**禁止 `@import` 与远程 `url(http…)`**（避免变成外链追踪器），只放行 `data:` 与本地路径
+   - 提供「恢复默认」与「对比度自检」按钮
+
+3. **对比度自检**（约 0.5 小时）
+   - 对每对（正文/背景、次要文字/背景、强调色/背景）算 WCAG 比值，低于 4.5:1 就在设置页标红提示
+   - 相当于把 Memos 的那条单测变成运行时提示，避免用户调出自伤的配色
+
+4. **备忘时间线的"卡片感"**（约 2 小时，属于界面复刻而不是主题）
+   - 单列时间线、按天分组、卡片留白、hover 才出现操作
+   - Markdown 渲染复用现有 `marked` + 清理逻辑
+   - 这层只影响「备忘」视图，不动机现有的三栏布局
+
+### 不建议照抄的部分
+
+- **`@usememos/ui` 包本身**：它是 Tailwind 主题 + `mu-` 类名的体系，我们不用 Tailwind，硬接会把整套类名搬进来，收益为零
+- **29 个 token 的精确命名**：我们用语义化命名（`--surface-2`、`--text-3`）；只要能覆盖同样的语义层级即可，名字不必相同
+- **Paper 主题的原样配色**：可以借鉴「暖白 + 墨色主色」的调性，但色值要按我们深色为主的界面重算对比度
+
+### 一句话总结
+
+> Memos 的主题 = **token 表 + `data-theme` + 可选自定义 CSS**。
+> 这三件我们已经有两件半，补上「预设表 + 自定义 CSS + 对比度提示」就等于复刻，工作量约半天。
