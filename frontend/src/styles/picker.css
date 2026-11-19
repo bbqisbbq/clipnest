@@ -34,7 +34,7 @@
   inset: 0;
   display: grid;
   place-items: center;
-  background: rgba(5, 6, 9, 0.62);
+  background: var(--backdrop);
   z-index: 130;
 }
 
@@ -70,7 +70,8 @@ body.is-picker {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background: #0f1218;
+  /* 跟随主题：以前写死 #0f1218，暖白主题下弹窗仍是深色底（窗口本身已透明，四角才不露色） */
+  background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: var(--r-lg);
   overflow: hidden;
@@ -146,32 +147,32 @@ body.is-picker {
 
 .picker-icon.kind-text {
   color: var(--k-text);
-  background: rgba(142, 162, 255, 0.12);
+  background: color-mix(in srgb, currentColor 14%, transparent);
 }
 
 .picker-icon.kind-link {
   color: var(--k-link);
-  background: rgba(69, 201, 189, 0.12);
+  background: color-mix(in srgb, currentColor 14%, transparent);
 }
 
 .picker-icon.kind-image {
   color: var(--k-image);
-  background: rgba(234, 169, 79, 0.12);
+  background: color-mix(in srgb, currentColor 14%, transparent);
 }
 
 .picker-icon.kind-files {
   color: var(--k-files);
-  background: rgba(173, 139, 242, 0.12);
+  background: color-mix(in srgb, currentColor 14%, transparent);
 }
 
 .picker-icon.kind-rich {
   color: var(--k-rich);
-  background: rgba(236, 122, 164, 0.12);
+  background: color-mix(in srgb, currentColor 14%, transparent);
 }
 
 .picker-icon.kind-custom {
   color: var(--k-custom);
-  background: rgba(148, 161, 184, 0.12);
+  background: color-mix(in srgb, currentColor 14%, transparent);
 }
 
 .picker-main {
@@ -291,7 +292,7 @@ body.is-picker .btn-sm {
   height: 15px;
   padding: 0 3px;
   border-radius: 4px;
-  background: var(--surface-3, #232936);
+  background: var(--surface-3);
   color: var(--text-3, var(--text-3));
   font-size: 11px;
   line-height: 15px;

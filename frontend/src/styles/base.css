@@ -57,6 +57,8 @@
   --read-w: 700px;
   --read-pad: max(var(--gutter), calc((100% - var(--read-w)) / 2));
 
+  /* 模态/弹层背后的遮罩：深色主题压得重一点，浅色主题要轻，否则像贴了块黑玻璃 */
+  --backdrop: rgba(5, 6, 9, 0.62);
   --shadow-pop: 0 20px 44px rgba(0, 0, 0, 0.5);
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.22);
   /* 卡片"坐实"用的抬升：浅色主题在 theme-light.css 里换成更淡的扩散阴影。

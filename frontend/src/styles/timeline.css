@@ -14,9 +14,10 @@
 .memo-count { color: var(--text-3); font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 
 /* 时间线的左右留白直接用 --read-pad：滚动条占掉的 9px 只会缩短右侧，
-   左侧（卡片的左边缘）始终和搜索框、输入框对齐。 */
-.memo-timeline { flex: 1; overflow-y: auto; padding: 8px var(--read-pad) 28px; }
-
+   左侧（卡片的左边缘）始终和搜索框、输入框对齐。
+   顶部不留内边距：sticky 的日期条贴着滚动容器上沿停（top:0）；留 8px 的话卡片会
+   从这条缝里滑过去，看起来像上面有一条窄带露出后面的内容。 */
+.memo-timeline { flex: 1; overflow-y: auto; padding: 0 var(--read-pad) 28px; }
 /* 阅读列：卡片不再跟着窗口一起变宽。1120px 窗口下一张卡片上千像素宽，
    一行塞一百多字，读起来很难受；固定列宽后两侧留白，视线不用来回扫。 */
 .memo-day {
@@ -24,7 +25,7 @@
   width: 100%;
   max-width: var(--read-w);
 }
-.memo-day:first-child { margin-top: 6px; }
+.memo-day:first-child { margin-top: 10px; }
 .memo-card-title {
   margin: 0 0 6px;
   font-size: 13px;

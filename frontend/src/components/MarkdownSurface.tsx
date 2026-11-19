@@ -261,12 +261,15 @@ const MarkdownSurface = forwardRef<MarkdownSurfaceHandle, Props>(function Markdo
       } catch {
         /* 还没初始化完 */
       }
+      // 先把 ref 置空再去销毁：Vditor 的 destroy() 会把内部 options 置空，
+      // 这期间任何 setTheme（主题监听、重建工具栏）都会抛
+      // "Cannot read properties of undefined (reading 'options')"。
+      vditorRef.current = null;
       try {
         instance?.destroy();
       } catch {
         /* 还没初始化完就卸载 */
       }
-      vditorRef.current = null;
     };
     // 挂载时初始化；工具栏配置变了（toolbarRev）就重建一次。value 的外部变化由下面的 effect 同步
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -292,7 +295,12 @@ const MarkdownSurface = forwardRef<MarkdownSurfaceHandle, Props>(function Markdo
       const v = vditorRef.current;
       if (!v) return;
       const theme = currentScheme();
-      v.setTheme(theme, theme === "dark" ? "dark" : "light");
+      try {
+        v.setTheme(theme, theme === "dark" ? "dark" : "light");
+      } catch {
+        // 实例已被销毁（StrictMode 双挂载、或工具栏配置变化重建时的那一下）：
+        // Vditor 的 destroy() 之后 options 是 undefined，setTheme 会抛。丢掉即可。
+      }
     };
     const mo = new MutationObserver(apply);
     mo.observe(root, { attributes: true, attributeFilter: ["data-scheme", "data-theme"] });
