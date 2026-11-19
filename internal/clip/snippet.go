@@ -92,9 +92,9 @@ func (s *Store) ListSnippets(query, group string, limit int) []Snippet {
 		limit = 200
 	}
 	entries := s.ListEntries(EntryQuery{
-		Action:   ActionSnippet,
-		Limit:    limit * 2,
-		Tail:     true,
+		Action: ActionSnippet,
+		Limit:  limit * 2,
+		Tail:   true,
 	})
 	needle := strings.ToLower(strings.TrimSpace(query))
 	grp := strings.TrimSpace(group)
@@ -396,6 +396,7 @@ func joinList(list []string) string {
 	}
 	return strings.Join(cleaned, ",")
 }
+
 // SaveSnippetToEntries writes a snippet as an entry carrying the snippet action.
 // 片段表已废弃：片段就是带 snippet 能力的条目，这里做一次形状转换。
 func (s *ClipService) SaveSnippetToEntries(sp Snippet, imageDataB64 string) (Snippet, error) {

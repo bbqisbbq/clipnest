@@ -7,8 +7,8 @@ package clip
 type Kind string
 
 const (
-	KindText     Kind = "text"   // plain text
-	KindLink     Kind = "link"   // a single URL
+	KindText     Kind = "text" // plain text
+	KindLink     Kind = "link" // a single URL
 	KindImage    Kind = "image"
 	KindFiles    Kind = "files"  // CF_HDROP: file/folder paths (references only)
 	KindRichText Kind = "rich"   // HTML fragment or RTF + plain text fallback

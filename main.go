@@ -50,16 +50,16 @@ func main() {
 	clip.Logf(dataDir, "=== ClipNest %s starting (exe=%s) ===", clip.Version, exePath)
 
 	var (
-		app           *application.App
-		win           *application.WebviewWindow
-		picker        *application.WebviewWindow
-	capture       *application.WebviewWindow
-		pauseItem     *application.MenuItem
-		autoStartItem *application.MenuItem
-		currentHotkey string
-	currentCaptureHotkey string
-	applyCaptureHotkey   func(string) error
-		svc           *clip.ClipService
+		app                  *application.App
+		win                  *application.WebviewWindow
+		picker               *application.WebviewWindow
+		capture              *application.WebviewWindow
+		pauseItem            *application.MenuItem
+		autoStartItem        *application.MenuItem
+		currentHotkey        string
+		currentCaptureHotkey string
+		applyCaptureHotkey   func(string) error
+		svc                  *clip.ClipService
 	)
 
 	showWindow := func() {
@@ -232,10 +232,10 @@ func main() {
 		Quit:          quit,
 		ExePath:       exePath,
 		PlatformWorks: true,
-		ShowPickerAt:    showPickerAt,
-		ShowCaptureAt:   showCaptureAt,
-		HideCapture:     hideCapture,
-		ApplyChrome:     applyChrome,
+		ShowPickerAt:  showPickerAt,
+		ShowCaptureAt: showCaptureAt,
+		HideCapture:   hideCapture,
+		ApplyChrome:   applyChrome,
 		HidePicker:    hidePicker,
 		OpenURL:       clip.OpenExternal,
 		OnSettings: func(st clip.Settings) error {
@@ -246,7 +246,7 @@ func main() {
 				autoStartItem.SetChecked(st.AutoStart)
 			}
 			_ = applyCaptureHotkey(st.CaptureHotkey)
-		return applyHotkey(st.Hotkey)
+			return applyHotkey(st.Hotkey)
 		},
 	})
 	if err != nil {
@@ -291,7 +291,7 @@ func main() {
 		MinHeight: 560,
 		// --background (logon entry) always wins; --show forces a visible window
 		// even when the setting says "stay in the tray".
-		Hidden:    forceHidden || (!preSettings.ShowOnLaunch && !forceShow),
+		Hidden: forceHidden || (!preSettings.ShowOnLaunch && !forceShow),
 		// Frameless: the UI draws its own caption bar so the chrome matches the
 		// content. Resizing still works (the Wails runtime handles edge drags).
 		Frameless: true,

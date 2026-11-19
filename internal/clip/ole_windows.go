@@ -21,10 +21,10 @@ import (
 var (
 	ole32 = windows.NewLazySystemDLL("ole32.dll")
 
-	procOleGetClipboard   = ole32.NewProc("OleGetClipboard")
-	procReleaseStgMedium  = ole32.NewProc("ReleaseStgMedium")
-	procCoInitializeEx    = ole32.NewProc("CoInitializeEx")
-	procCoUninitialize    = ole32.NewProc("CoUninitialize")
+	procOleGetClipboard  = ole32.NewProc("OleGetClipboard")
+	procReleaseStgMedium = ole32.NewProc("ReleaseStgMedium")
+	procCoInitializeEx   = ole32.NewProc("CoInitializeEx")
+	procCoUninitialize   = ole32.NewProc("CoUninitialize")
 )
 
 const (

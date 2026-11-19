@@ -56,13 +56,13 @@ type Host interface {
 
 // Config is the user-facing tuning.
 type Config struct {
-	Enabled    bool
-	Suffix     string // legacy single terminator, kept working
-	EndChars   string // any of these finishes a trigger (space, tab, punctuation)
-	Debug      bool
-	IdleReset  time.Duration // buffer forgets after this long without keys
-	MaxBuffer  int
-	Logf       func(format string, args ...any)
+	Enabled   bool
+	Suffix    string // legacy single terminator, kept working
+	EndChars  string // any of these finishes a trigger (space, tab, punctuation)
+	Debug     bool
+	IdleReset time.Duration // buffer forgets after this long without keys
+	MaxBuffer int
+	Logf      func(format string, args ...any)
 }
 
 // Engine owns the keystroke buffer and performs expansions.
@@ -90,9 +90,9 @@ type Engine struct {
 // New creates an engine bound to a host.
 func New(host Host) *Engine {
 	return &Engine{
-		host:     host,
-		cfg:      Config{Suffix: "-", EndChars: " \t,.;:!?)]}", IdleReset: 2 * time.Second, MaxBuffer: 64},
-		stop:     make(chan struct{}),
+		host:       host,
+		cfg:        Config{Suffix: "-", EndChars: " \t,.;:!?)]}", IdleReset: 2 * time.Second, MaxBuffer: 64},
+		stop:       make(chan struct{}),
 		runeFor:    vkToRune,
 		typeTextFn: sendUnicodeText,
 	}

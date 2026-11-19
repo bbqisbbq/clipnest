@@ -26,7 +26,6 @@ type Settings struct {
 	// unlimited). Guards against pasting whole documents into the history.
 	MaxTextLength int `json:"maxTextLength"`
 
-
 	// Hotkey is a Wails accelerator, e.g. "Ctrl+Shift+V". Empty disables it.
 	// Pressing it pops the picker at the text caret and pastes the chosen entry
 	// straight into the focused application.
@@ -60,7 +59,7 @@ type Settings struct {
 	// UpdateCheck polls GitHub for a newer release shortly after startup.
 	UpdateCheck bool `json:"updateCheck"`
 	// AutoStart registers the app in HKCU\...\Run.
-	AutoStart bool `json:"autoStart"`
+	AutoStart bool   `json:"autoStart"`
 	Theme     string `json:"theme"` // "system" | "dark" | "light"
 
 	// WebDAV sync. SyncURL is a directory; SyncFile is the document name inside
@@ -85,34 +84,34 @@ type Settings struct {
 // DefaultSettings is used on first launch or when settings.json is missing.
 func DefaultSettings() Settings {
 	return Settings{
-		Capture:        true,
-		CaptureText:    true,
-		CaptureLink:    true,
-		CaptureImage:   true,
-		CaptureFiles:   true,
-		CaptureRich:    true,
-		CaptureCustom:  true,
-		MaxTextLength:  100_000,
-		Hotkey:         "Ctrl+Shift+V",
-		CaptureHotkey:   "Ctrl+Shift+N",
-		PasteOnPick:    true,
-		ShowOnLaunch:   false,
-		AutoStart:      false,
-		Theme:          "system",
+		Capture:       true,
+		CaptureText:   true,
+		CaptureLink:   true,
+		CaptureImage:  true,
+		CaptureFiles:  true,
+		CaptureRich:   true,
+		CaptureCustom: true,
+		MaxTextLength: 100_000,
+		Hotkey:        "Ctrl+Shift+V",
+		CaptureHotkey: "Ctrl+Shift+N",
+		PasteOnPick:   true,
+		ShowOnLaunch:  false,
+		AutoStart:     false,
+		Theme:         "system",
 
-		SyncEnabled:     false,
-		SyncURL:         "",
-		SyncUser:        "",
-		SyncPass:        "",
-		SyncFile:        DefaultSyncFile,
-		SyncIntervalMin: 30,
-		SyncSettings:    true,
+		SyncEnabled:      false,
+		SyncURL:          "",
+		SyncUser:         "",
+		SyncPass:         "",
+		SyncFile:         DefaultSyncFile,
+		SyncIntervalMin:  30,
+		SyncSettings:     true,
 		SnippetsInPicker: true,
 		ExpandEnabled:    false,
 		ExpandSuffix:     "-",
 		ExpandEndChars:   DefaultEndChars,
-		ThemePreset:     "default-dark",
-		ThemeCustomCSS:  "",
+		ThemePreset:      "default-dark",
+		ThemeCustomCSS:   "",
 		UpdateCheck:      true,
 	}
 }

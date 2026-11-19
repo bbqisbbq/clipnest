@@ -53,7 +53,7 @@ type msgT struct {
 }
 
 const (
-	hwndMessage = ^uintptr(2) // (HWND)-3
+	hwndMessage  = ^uintptr(2) // (HWND)-3
 	wsOverlapped = 0x00000000
 )
 

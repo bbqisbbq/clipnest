@@ -180,7 +180,6 @@ func firstLine(s string) string {
 	return ""
 }
 
-
 func (s *ClipService) pasteAndLog(target uintptr, what string) {
 	s.pasteAndLogAt(target, what, 0)
 }

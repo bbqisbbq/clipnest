@@ -47,12 +47,18 @@ func (h *fakeHost) Match(buf string) (Trigger, int, bool) {
 func (t Trigger) triggerKey() string { return t.ID }
 
 func (h *fakeHost) Render(t Trigger) (string, int) { return t.Body, -1 }
-func (h *fakeHost) CommandOutput(t Trigger) (string, error) { h.commands = append(h.commands, t.ID); return t.Body, nil }
-func (h *fakeHost) PasteImage(t Trigger) error       { h.images = append(h.images, t.ID); return nil }
-func (h *fakeHost) LaunchApp(t Trigger) error        { h.launched = append(h.launched, t.ID); return nil }
-func (h *fakeHost) FallbackPaste(text string) error  { h.fallbacks = append(h.fallbacks, text); return nil }
-func (h *fakeHost) ForegroundProcess() string        { return h.proc }
-func (h *fakeHost) IsOwnWindow() bool                { return h.ownWindow }
+func (h *fakeHost) CommandOutput(t Trigger) (string, error) {
+	h.commands = append(h.commands, t.ID)
+	return t.Body, nil
+}
+func (h *fakeHost) PasteImage(t Trigger) error { h.images = append(h.images, t.ID); return nil }
+func (h *fakeHost) LaunchApp(t Trigger) error  { h.launched = append(h.launched, t.ID); return nil }
+func (h *fakeHost) FallbackPaste(text string) error {
+	h.fallbacks = append(h.fallbacks, text)
+	return nil
+}
+func (h *fakeHost) ForegroundProcess() string { return h.proc }
+func (h *fakeHost) IsOwnWindow() bool         { return h.ownWindow }
 
 func (h *fakeHost) idle() bool { return true }
 
@@ -204,9 +210,9 @@ func TestLongestTriggerWins(t *testing.T) {
 
 func TestValidateTrigger(t *testing.T) {
 	cases := []struct {
-		trigger string
+		trigger  string
 		endChars string
-		want    string
+		want     string
 	}{
 		{"addr", " ", ""},
 		{"", " ", ""},

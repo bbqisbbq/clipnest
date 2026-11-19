@@ -19,28 +19,28 @@ func (w *Watcher) Changes() <-chan struct{} {
 }
 func (w *Watcher) Stop() {}
 
-func captureClipboard() (*Captured, error)                        { return nil, ErrNotSupported }
-func WriteTextToClipboard(string) error                          { return ErrNotSupported }
-func WriteHTMLToClipboard(string, string) error                  { return ErrNotSupported }
-func WriteRTFToClipboard(string, string) error                   { return ErrNotSupported }
-func WriteImageToClipboard([]byte) error                         { return ErrNotSupported }
-func WriteFilesToClipboard([]string) error                       { return ErrNotSupported }
-func WriteRawToClipboard(uint32, string, []byte) error           { return ErrNotSupported }
-func foregroundAppName() string                                  { return "" }
-func setAutoStart(bool, string) error                            { return ErrNotSupported }
-func autoStartEnabled() bool                                     { return false }
-func autoStartCommandValue() string                              { return "" }
-func shellOpen(string) error                                     { return ErrNotSupported }
-func OpenExternal(string) error                                  { return ErrNotSupported }
-func revealInExplorer(string) error                              { return ErrNotSupported }
-func clipboardOwnerApp() string                                  { return "" }
+func captureClipboard() (*Captured, error)             { return nil, ErrNotSupported }
+func WriteTextToClipboard(string) error                { return ErrNotSupported }
+func WriteHTMLToClipboard(string, string) error        { return ErrNotSupported }
+func WriteRTFToClipboard(string, string) error         { return ErrNotSupported }
+func WriteImageToClipboard([]byte) error               { return ErrNotSupported }
+func WriteFilesToClipboard([]string) error             { return ErrNotSupported }
+func WriteRawToClipboard(uint32, string, []byte) error { return ErrNotSupported }
+func foregroundAppName() string                        { return "" }
+func setAutoStart(bool, string) error                  { return ErrNotSupported }
+func autoStartEnabled() bool                           { return false }
+func autoStartCommandValue() string                    { return "" }
+func shellOpen(string) error                           { return ErrNotSupported }
+func OpenExternal(string) error                        { return ErrNotSupported }
+func revealInExplorer(string) error                    { return ErrNotSupported }
+func clipboardOwnerApp() string                        { return "" }
 
 // Picker plumbing is Win32 only.
-func ForegroundWindowHandle() uintptr                { return 0 }
-func CaretAnchor() (int, int)                        { return 0, 0 }
-func ClampToWorkArea(x, y, w, h int) (int, int)      { return x, y }
-func ActivateWindow(uintptr)                         {}
-func SendPaste() error                               { return ErrNotSupported }
-func PasteInto(uintptr) error                        { return ErrNotSupported }
+func ForegroundWindowHandle() uintptr           { return 0 }
+func CaretAnchor() (int, int)                   { return 0, 0 }
+func ClampToWorkArea(x, y, w, h int) (int, int) { return x, y }
+func ActivateWindow(uintptr)                    {}
+func SendPaste() error                          { return ErrNotSupported }
+func PasteInto(uintptr) error                   { return ErrNotSupported }
 
 var errNoOp = errors.New("not supported on this platform")

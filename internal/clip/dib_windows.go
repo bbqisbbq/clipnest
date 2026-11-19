@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	biRGB       = 0
-	biBitFields = 3
+	biRGB            = 0
+	biBitFields      = 3
 	biAlphaBitFields = 6
 )
 

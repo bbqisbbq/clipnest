@@ -18,19 +18,19 @@ import (
 var dwmapi = windows.NewLazySystemDLL("dwmapi.dll")
 
 var (
-	procGetGUIThreadInfo   = user32.NewProc("GetGUIThreadInfo")
-	procGetCursorPos       = user32.NewProc("GetCursorPos")
-	procClientToScreen     = user32.NewProc("ClientToScreen")
-	procMonitorFromPoint   = user32.NewProc("MonitorFromPoint")
-	procGetMonitorInfoW    = user32.NewProc("GetMonitorInfoW")
+	procGetGUIThreadInfo    = user32.NewProc("GetGUIThreadInfo")
+	procGetCursorPos        = user32.NewProc("GetCursorPos")
+	procClientToScreen      = user32.NewProc("ClientToScreen")
+	procMonitorFromPoint    = user32.NewProc("MonitorFromPoint")
+	procGetMonitorInfoW     = user32.NewProc("GetMonitorInfoW")
 	procSetForegroundWindow = user32.NewProc("SetForegroundWindow")
-	procBringWindowToTop   = user32.NewProc("BringWindowToTop")
-	procShowWindow         = user32.NewProc("ShowWindow")
-	procIsIconic           = user32.NewProc("IsIconic")
-	procAttachThreadInput  = user32.NewProc("AttachThreadInput")
-	procSetFocus           = user32.NewProc("SetFocus")
-	procGetCurrentThreadID = kernel32.NewProc("GetCurrentThreadId")
-	procSendInput          = user32.NewProc("SendInput")
+	procBringWindowToTop    = user32.NewProc("BringWindowToTop")
+	procShowWindow          = user32.NewProc("ShowWindow")
+	procIsIconic            = user32.NewProc("IsIconic")
+	procAttachThreadInput   = user32.NewProc("AttachThreadInput")
+	procSetFocus            = user32.NewProc("SetFocus")
+	procGetCurrentThreadID  = kernel32.NewProc("GetCurrentThreadId")
+	procSendInput           = user32.NewProc("SendInput")
 )
 
 const (
@@ -271,6 +271,7 @@ func PasteInto(hwnd uintptr) error {
 func sendOneInput(in inputT) {
 	procSendInput.Call(1, uintptr(unsafe.Pointer(&in)), unsafe.Sizeof(in))
 }
+
 // sendLeftArrows walks the caret left by n characters (used by {{cursor}}).
 func sendLeftArrows(n int) {
 	if n <= 0 {
@@ -337,6 +338,7 @@ func InjectBackspaces(n int) {
 	}
 	procSendInput.Call(uintptr(len(batch)), uintptr(unsafe.Pointer(&batch[0])), unsafe.Sizeof(batch[0]))
 }
+
 // ---- 原生窗口外观（跟随主题） -------------------------------------------
 
 const (

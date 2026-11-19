@@ -84,7 +84,7 @@ func TestEntryExpiresAtIsKeptNotPruned(t *testing.T) {
 	past := time.Now().UTC().Add(-time.Hour)
 	expired, _ := svc.store.SaveEntry(Entry{
 		Content: "早就过期的采集", Source: SourceClipboard,
-		Actions:  []string{ActionClipboard}, Hash: "h-old", ExpiresAt: &past,
+		Actions: []string{ActionClipboard}, Hash: "h-old", ExpiresAt: &past,
 	})
 
 	// 策略是「以保留为主，手动删除」：没有任何东西会自动清理条目，

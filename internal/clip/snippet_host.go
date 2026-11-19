@@ -184,6 +184,7 @@ var errEngineMissing = errors.New("触发器引擎未初始化")
 // DefaultEndChars are the characters that finish an abbreviation. Space and tab
 // cover "type the word, hit space"; the punctuation covers writing prose.
 const DefaultEndChars = " \t,.;:!?)]}"
+
 // suffixOf normalises the configured terminator ("-" when empty).
 func suffixOf(s string) string {
 	s = strings.TrimSpace(s)
