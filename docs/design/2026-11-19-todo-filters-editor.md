@@ -1,8 +1,8 @@
 # 设计：Todo 收集 / 筛选器重构 / 编辑框重构
 
 > 状态：待评审（2026-11-19）。三块可独立验收，批 1 → 批 2 → 批 3。
-> 已拍板：**todo 按清单项（解析正文 `- [ ]`）**、**编辑器用 Vditor IR + 全量拷贝 dist**、
-> **「全部内容」保留为不可删的根、「置顶」改为可删**、
+> 已拍板：**todo 按清单项（解析正文 `- [ ]`）**、**编辑器只保留一个：Vditor IR（全量拷贝 dist），
+> 按场景精简界面，CodeMirror 移除**、**「全部内容」保留为不可删的根、「置顶」改为可删**、
 > **完成状态以字段属性为主、tag 作为默认关闭的设置项**、**先出文档再写代码**。
 
 ---
@@ -326,19 +326,47 @@ toolbar: ["headings","bold","italic","strike","|","list","ordered-list","check",
 /* 边框全部去掉：我们不要"低档边框"，用底色分层 */
 ```
 
-### 3.3 两个编辑器并存（明确边界）
+### 3.3 只有一个编辑器：Vditor，按场景精简界面
 
-| 用在哪 | 用什么 | 原因 |
-| --- | --- | --- |
-| 详情视图（编辑一条已有内容） | **Vditor IR** | 要工具栏、要即时渲染、要长文体验 |
-| 底部 Composer、picker、capture、隐写 HUD | **CodeMirror 6**（保留现有） | 轻量、启动快、已有 `#tag` 高亮与 Ctrl+Enter，浮窗不需要工具栏 |
+**全应用统一用 Vditor**，不再保留 CodeMirror。差别只在「给多少界面」：
 
-`MarkdownEditor.tsx` 不删，职责注释里加一句「轻量输入场景专用」。
+| 场景 | 组件 | mode | 工具栏 | 高度/外观 | 键盘 |
+| --- | --- | --- | --- | --- | --- |
+| 详情视图 `EntryDetailView` | `MarkdownSurface preset="detail"` | `ir` | **完整**（见下） | 撑满右栏 | `⌘S` 保存、`Esc` 返回 |
+| 底部「记一条」`Composer` | `preset="composer"` | `ir` | **精简 6 项**：粗体 / 斜体 / 列表 / 任务 / 行内代码 / 链接 | 3 行起，内容多了自动长到 40vh 封顶 | `⌘Enter` 存下、`Esc` 清空焦点 |
+| 快速输入窗 `Capture`（热键唤起） | `preset="capture"` | `ir` | **隐藏**（`toolbarConfig.hide`） | 无边框、无内边距，透明底接窗卡 | `⌘Enter` 存下、`Esc` 关窗 |
+| 隐写窗 `Stealth` | **保持现在的 `<textarea>`** | — | — | 全透明 | — |
+
+为什么隐写窗不换：它故意不用富文本 —— 那一窗的要求是「看不见、但 IME 必须正常」，
+textarea 是刻意的正确选择（`Stealth.tsx` 顶部注释就是写这件事）。它不是「编辑器」，是盲输入。
+
+实现：一个薄包装 `components/MarkdownSurface.tsx`，
+
+```ts
+type SurfacePreset = "detail" | "composer" | "capture";
+// preset 只决定：toolbar 数组 / toolbarConfig.hide / height / classes / cache.enable / 占位文案
+```
+
+对外暴露 `MarkdownSurfaceHandle`：`getValue / setValue / focus / insertImageToken`，
+替换掉现在 `MarkdownEditorHandle` 的 `insert / wrap / focus`。
+`MarkdownEditor.tsx`（CodeMirror 封装）**删除**，`package.json` 里 6 个
+`@codemirror/*` + `@lezer/highlight` 一起移除（`styles/timeline.css` 里 `.md-editor .cm-*`
+的规则改成 Vditor 的选择器，深色/浅色都走我们的 token）。
+
+**统一带来的取舍，明确记下来**：
+
+- `#tag` 在编辑器内不再高亮（CodeMirror 里那个 `cm-md-tag` 装饰器没有 Vditor 等价挂点）。
+  tag 在卡片、详情属性面板、收集页照常显示。想找回只能走 Lute 自定义 renderer，属于后续探索。
+- 浮窗的启动成本变高：热键唤起 `Capture` 时也要初始化 Vditor（lute 3.6MB + IR 初始化）。
+  对策见 3.4 的预热方案；**这是批 3 必须先量的一件事**（热键按下到能打字，目标 < 150ms）。
 
 ### 3.4 体积与加载
 
-- `lute.min.js` 3.6MB + `index.min.js` 280KB 是**按需**加载：详情视图首次打开时
-  `const { default: Vditor } = await import("vditor")`，并显示「编辑器加载中…」骨架。
+- `lute.min.js` 3.6MB + `index.min.js` 280KB 是**按需**加载：任一 surface 首次挂载时
+  `const { default: Vditor } = await import("vditor")`，先渲染一个等高的骨架，不闪白。
+- **预热**：主窗 `App` 挂载后 idle 阶段（`requestIdleCallback`）就执行一次 `import("vditor")`，
+  让模块与 lute 提前进内存；`Capture` / `Stealth` 这类独立窗口在 `main.tsx` 分流时就预热
+  （它们的窗口在热键前已经存在，预热不占用户可感知的时间）。
 - 安装包增大约 22MB（public 里全量 `vditor/dist`）。这是明确选择：**买下「公式/流程图/思维导图/图表都能渲染」**，
   而不是把 15MB 花在"反正用不上"的猜测上。若日后体积成为问题，再按需裁剪并加构建白名单。
 
@@ -376,15 +404,18 @@ toolbar: ["headings","bold","italic","strike","|","list","ordered-list","check",
 **验收**：新建「有未完成待办 且 带 #工作 标签」的筛选器 → 命中数非零且与页面条数一致；
 日历圆点点进去能看到同样的条目；删掉「置顶」重启后仍在隐藏态；点「恢复默认」后回来。
 
-### 批 3 · 编辑框
+### 批 3 · 编辑框（一个编辑器）
 
-1. Vditor 资源落地 + 构建校验 + `VditorEditor.tsx`（懒加载、主题、上传 handler、ctrlEnter）
-2. `view: "detail"` 路由、`EntryDetailView.tsx`、面包屑返回、未保存拦截、属性面板
-3. 移除 `EntryEditor` 浮层（`styles/editor.css` 里删 `.editor-*` 浮层规则，`Lightbox`/`capture` 保留）
-4. 验证：`pwsh scripts/visual-check/check-css.ps1` 出图对比深浅两套主题
+1. Vditor 资源落地（全量 dist）+ 构建校验 + `MarkdownSurface.tsx`（懒加载、预热、主题、上传 handler、ctrlEnter/esc）
+2. 三个 surface 逐个换装：`EntryDetailView`（新建，完整工具栏）→ `Composer`（精简 6 项）→ `Capture`（隐藏工具栏）
+3. 删除 `MarkdownEditor.tsx`（CodeMirror）与 `@codemirror/*` 依赖、`EntryEditor.tsx` 浮层、`styles/editor.css` 的 `.editor-*` 规则；把 `.md-editor .cm-*` 样式改成 Vditor 选择器
+4. 量热键唤起延迟（`Capture` 从按键到可打字），按 3.4 调预热；超 150ms 就查 lute 初始化而不是退回去加第二个编辑器
+5. 验证：`pwsh scripts/visual-check/check-css.ps1` 出图对比深浅两套主题
 
 **验收**：双击卡片 → 右侧整区打开编辑（无浮层、有工具栏），列表滚动位置在返回后不变；
-粘贴截图 → 正文出现 `![](memoimg:…)` 且卡片渲染出图；断开网络启动 → 编辑器仍可用（证明零 CDN 依赖）。
+底部「记一条」只有精简工具栏、高度自适应；热键唤起的输入窗没有工具栏但能正常打字；
+三处粘贴截图都出现 `![](memoimg:…)` 且卡片渲染出图；断开网络启动 → 三个入口都能编辑（零 CDN 依赖）；
+`package.json` 里不再有 `@codemirror/*`。
 
 ### 验证命令（每批都跑）
 
@@ -403,7 +434,8 @@ pwsh -File scripts\visual-check\check-css.ps1     # 批 3 必跑
 | --- | --- |
 | Vditor 的 lute 从 `cdn` 加载，Wails 自定义 scheme 可能拦 | 批 3 第一件事就是最小验证；失败退路写在 3.2 |
 | lute 3.6MB + 全量 dist 22MB 拉大安装包 | 已明确接受：换「公式/流程图/思维导图/图表可渲染」；资源按需加载，编辑器仍是懒加载 |
-| IR 模式 IME | 批 3 装机实测中文输入；不行就退 `mode:"sv"`（分屏）或保留 CodeMirror |
+| IR 模式 IME | 批 3 装机实测中文输入（详情、Composer、Capture 三处都要试）；不行就退 `mode:"sv"`；不再退回 CodeMirror（已定单编辑器） |
+| 热键唤起的输入窗要秒开，但 Vditor 初始化有成本 | 模块 + lute 预热（3.4）+ 等高骨架；把「按键 → 可打字」当硬指标量出来，不靠感觉 |
 | 编辑器内 `#tag` 不高亮 | 明确取舍，tag 在卡片与详情属性面板里照常可见 |
 | 同步版本混跑把派生列抹掉 | `mergeEntry` 一律本端重算派生列（1.4） |
 | 老旧筛选器规则非法（id 不存在等） | `DeleteFilter` 幂等；`where()` 遇到未知 field/op 直接丢弃该条件并 `Logf` 一行 |
