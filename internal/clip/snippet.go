@@ -3,7 +3,6 @@ package clip
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -38,7 +37,6 @@ type Snippet struct {
 	Group     string      `json:"group,omitempty"`
 	Body      string      `json:"body"`
 	Hash      string      `json:"hash"`
-	Size      int         `json:"size"`
 	CreatedAt time.Time   `json:"createdAt"`
 	UpdatedAt time.Time   `json:"updatedAt"`
 	UseCount  int         `json:"useCount"`
@@ -210,12 +208,6 @@ func (s *Store) FindSnippetByTrigger(key string) (Snippet, bool) {
 }
 
 // DeleteSnippet removes a snippet entry and records a tombstone.
-func (s *Store) DeleteSnippet(id string) bool {
-	if e, ok := s.GetEntry(id); ok && e.Hash != "" {
-		s.AddTombstoneScoped("entry", e.Hash, nowUTC(), hostName())
-	}
-	return s.DeleteEntry(id)
-}
 
 // MarkSnippetUsed bumps the use counter of a snippet entry.
 func (s *Store) MarkSnippetUsed(id string) {
@@ -223,116 +215,25 @@ func (s *Store) MarkSnippetUsed(id string) {
 }
 
 // UpsertRemoteSnippet merges a snippet arriving from a peer (by hash).
-func (s *Store) UpsertRemoteSnippet(in Snippet) (isNew bool, changed bool) {
-	if in.Hash == "" {
-		return false, false
-	}
-	// 片段现在落在 entries：同步也走同一条路，否则拉下来的片段看不见
-	if existing, ok := s.findEntryByHash(in.Hash); ok {
-		if in.UpdatedAt.After(existing.UpdatedAt) {
-			existing.Content = in.Body
-			existing.TriggerKey = in.Trigger
-			existing.GroupName = in.Group
-			existing.Pinned = existing.Pinned || in.Pinned
-			existing.Actions = []string{ActionSnippet}
-			existing.Kind = Kind(in.Kind)
-			if _, err := s.SaveEntry(existing); err != nil {
-				return false, false
-			}
-			changed = true
-		}
-		return false, changed
-	}
-	if _, err := s.SaveEntry(Entry{
-		Content:    in.Body,
-		Kind:       Kind(in.Kind),
-		Source:     SourceManual,
-		Actions:    []string{ActionSnippet},
-		Pinned:     in.Pinned,
-		Hash:       in.Hash,
-		TriggerKey: in.Trigger,
-		GroupName:  in.Group,
-		CreatedAt:  in.CreatedAt,
-		UpdatedAt:  in.UpdatedAt,
-	}); err != nil {
-		return false, false
-	}
-	return true, true
-}
+
+// 片段现在落在 entries：同步也走同一条路，否则拉下来的片段看不见
 
 // snippetBlobExt is the payload extension a snippet carries ("" when none).
-func snippetBlobExt(sp Snippet) string {
-	if sp.ImageFile != "" {
-		return ".png"
-	}
-	return ""
-}
 
 // ---- service API --------------------------------------------------------
 
 // GetSnippets returns snippets for the manager view / picker.
-func (s *ClipService) GetSnippets(query, group string) []Snippet {
-	return s.store.ListSnippets(query, group, 300)
-}
 
 // GetSnippetGroups lists distinct groups.
-func (s *ClipService) GetSnippetGroups() []string { return s.store.SnippetGroups() }
-
-// SaveSnippet creates or updates a snippet. Image snippets carry their PNG in
-// imageDataB64 (base64), because the webview cannot hand us a file handle.
-func (s *ClipService) SaveSnippet(sp Snippet, imageDataB64 string) (Snippet, error) {
-	// 数据源是 entries：片段就是带 snippet 能力的条目
-	return s.SaveSnippetToEntries(sp, imageDataB64)
-}
 
 // DeleteSnippet removes one snippet.
-func (s *ClipService) DeleteSnippet(id string) bool {
-	ok := s.store.DeleteSnippet(id)
-	if ok {
-		s.refreshTriggers()
-	}
-	return ok
-}
 
 // GetSnippetImage returns a data URL for an image snippet.
-func (s *ClipService) GetSnippetImage(id string) (string, error) {
-	// 片段图片现在存在 entry_blobs 里，正文用 memoimg: 引用
-	if e, ok := s.store.GetEntry(id); ok {
-		if token := memoImageToken(e.Content); token != "" {
-			payload, mime, err := s.store.LoadEntryBlob(token)
-			if err == nil && len(payload) > 0 {
-				if mime == "" {
-					mime = "image/png"
-				}
-				return "data:" + mime + ";base64," + encodeBase64(payload), nil
-			}
-		}
-	}
-	return "", errors.New("这条没有图片")
-}
+
+// 片段图片现在存在 entry_blobs 里，正文用 memoimg: 引用
 
 // SnippetAction reports what Enter will do for this snippet — the UI shows it so
 // "copy" and "launch" never get confused.
-func SnippetAction(sp Snippet) string {
-	switch sp.Kind {
-	case SnippetURL:
-		return "打开网址"
-	case SnippetApp:
-		return "启动程序"
-	case SnippetCommand:
-		return "执行命令"
-	case SnippetFile:
-		if strings.HasSuffix(sp.Body, `\`) || isDirPath(sp.Body) {
-			return "打开文件夹"
-		}
-		return "复制文件"
-	case SnippetImage:
-		return "复制图片"
-	case SnippetPassword:
-		return "复制密码"
-	}
-	return "复制文本"
-}
 
 func isDirPath(p string) bool {
 	info, err := osStat(p)
@@ -397,9 +298,10 @@ func joinList(list []string) string {
 	return strings.Join(cleaned, ",")
 }
 
-// SaveSnippetToEntries writes a snippet as an entry carrying the snippet action.
+// SaveSnippet creates or updates a snippet. Image snippets carry their PNG in
+// imageDataB64 (base64), because the webview cannot hand us a file handle.
 // 片段表已废弃：片段就是带 snippet 能力的条目，这里做一次形状转换。
-func (s *ClipService) SaveSnippetToEntries(sp Snippet, imageDataB64 string) (Snippet, error) {
+func (s *ClipService) SaveSnippet(sp Snippet, imageDataB64 string) (Snippet, error) {
 	content := sp.Body
 	if strings.TrimSpace(imageDataB64) != "" && sp.Kind == SnippetImage {
 		raw, decErr := decodeBase64Image(imageDataB64)

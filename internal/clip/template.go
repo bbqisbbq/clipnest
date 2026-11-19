@@ -17,7 +17,6 @@ var clipboardTextForTemplate func() string
 
 // RenderTemplate substitutes template variables and reports the cursor offset
 // (-1 when the template has no {{cursor}}). Exported so the UI can preview it.
-func RenderTemplate(body string) (string, int) { return renderTemplate(body) }
 
 func renderTemplate(body string) (string, int) {
 	if !strings.Contains(body, "{{") {

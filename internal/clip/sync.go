@@ -16,7 +16,7 @@ import (
 // WebDAV sync, third format: one packaged archive per device.
 //
 //	<WebDAV dir>/
-//	  devices/<deviceID>.zip     ← 每台机器只写自己的这一个文件
+//	  clipnest_data/<deviceId>-<host>.zip   ← 每台机器只写自己的这一个文件
 //
 // Why this shape:
 //
@@ -26,26 +26,21 @@ import (
 //     不需要锁、不需要 CAS，也就不怕服务器支不支持 If-Match。
 //   - 合并是幂等的并集（内容哈希 + 时间戳），所以重复拉取、乱序拉取都安全。
 //
-// Package layout (zip):
+// Package layout (zip)，以 sync_package.go 的 buildPackage/parsePackage 为准：
 //
-//	package.json            index: items[hash/updatedAt/blob], deleted[tombstones], settings
-//	items/<hash>.json       one record each
-//	blobs/<hash>.png|.bin   raw payloads (only ones peers do not have yet)
+//	package.json             索引：entries[hash/updatedAt/pinned/blob]、deleted[tombstones]、settings
+//	entries/<hash>.json      一条一个文件
+//	blobs/entry-<hash>.<ext> 原始负载（只带对端还没有的，见 syncBlobBudget）
 
 const (
-	// DefaultSyncFile is the directory-relative name of *our* package. Devices
-	// keep separate files, so this is a prefix, not a shared document.
-	DefaultSyncFile = "clipnest-sync.zip"
-	// legacySyncFile/legacyManifest are v1/v2 remote names; existing settings
-	// are migrated to the packaged layout automatically.
-	legacySyncFile = "clipnest-sync.json"
-	legacyManifest = "manifest.json"
-
 	syncDevicesDir = "clipnest_data"
 	// syncHTTPTimeout bounds a single WebDAV request.
 	syncHTTPTimeout = 60 * time.Second
 	// syncPackageVersion is bumped whenever the archive layout changes.
 	syncPackageVersion = 3
+	// syncMaxEntries caps how many entries one package carries (newest first).
+	// 超过这个数的老条目**不会**进包——不是"整份历史"，见 docs/SYNC.md。
+	syncMaxEntries = 500
 	// syncBlobBudget caps payload bytes inside one package.
 	syncBlobBudget = 96 << 20
 	// syncPeerConcurrency is how many peer packages are fetched in parallel.

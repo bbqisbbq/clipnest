@@ -76,7 +76,6 @@ type Engine struct {
 	lastHwnd uintptr
 
 	active   bool
-	stop     chan struct{}
 	hook     uintptr
 	threadID uint32
 	busy     bool // injecting: ignore our own synthetic keys
@@ -92,7 +91,6 @@ func New(host Host) *Engine {
 	return &Engine{
 		host:       host,
 		cfg:        Config{Suffix: "-", EndChars: " \t,.;:!?)]}", IdleReset: 2 * time.Second, MaxBuffer: 64},
-		stop:       make(chan struct{}),
 		runeFor:    vkToRune,
 		typeTextFn: sendUnicodeText,
 	}

@@ -227,7 +227,7 @@ func TestBuiltinFilterDeletable(t *testing.T) {
 		t.Fatal("all must stay visible")
 	}
 	// 恢复默认
-	svc.RestoreFilters()
+	_ = svc.store.SetMeta(metaHiddenFilters, "[]")
 	if !visible()["pinned"] {
 		t.Fatal("restore should bring pinned back")
 	}

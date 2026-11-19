@@ -37,13 +37,11 @@ const (
 	monitorDefaultToNearest = 0x00000002
 	swRestore               = 9
 	vkControl               = 0x11
-	vkBack                  = 0x08
 	vkLeft                  = 0x25
 	vkMenu                  = 0x12
 	vkV                     = 0x56
 	inputKeyboard           = 1
 	keyeventfKeyUp          = 0x0002
-	keyeventfUnicode        = 0x0004
 )
 
 type pointT struct {
@@ -182,49 +180,14 @@ func packPoint(p pointT) uintptr {
 
 // WorkAreaBottomRight puts a width×height window in the bottom-right corner of
 // the work area of the monitor the mouse is on (used by the 隐写 hint bar).
-func WorkAreaBottomRight(width, height int) (int, int) {
-	var p pointT
-	procGetCursorPos.Call(uintptr(unsafe.Pointer(&p)))
-	hmon, _, _ := procMonitorFromPoint.Call(packPoint(p), monitorDefaultToNearest)
-	if hmon == 0 {
-		return 1920 - width - 16, 1080 - height - 16
-	}
-	var mi monitorInfoT
-	mi.CbSize = uint32(unsafe.Sizeof(mi))
-	if r, _, _ := procGetMonitorInfoW.Call(hmon, uintptr(unsafe.Pointer(&mi))); r == 0 {
-		return 1920 - width - 16, 1080 - height - 16
-	}
-	x := int(mi.RcWork.Right) - width - 16
-	y := int(mi.RcWork.Bottom) - height - 16
-	if x < int(mi.RcWork.Left) {
-		x = int(mi.RcWork.Left)
-	}
-	if y < int(mi.RcWork.Top) {
-		y = int(mi.RcWork.Top)
-	}
-	return x, y
-}
 
 // MakeNonActivating decorates a window so showing it never steals keyboard
 // focus (WS_EX_NOACTIVATE), it stays out of the taskbar, and clicks pass
 // through it (WS_EX_TRANSPARENT). The corner HUD uses all three: it must never
 // pull the caret out of the invisible 隐写 input window.
-func MakeNonActivating(hwnd uintptr) {
-	if hwnd == 0 {
-		return
-	}
-	const (
-		gwlExStyle      = ^uintptr(19) // GWL_EXSTYLE == -20
-		wsExNoActivate  = 0x08000000
-		wsExToolWindow  = 0x00000080
-		wsExTransparent = 0x00000020
-	)
-	procGetWindowLongPtr := user32.NewProc("GetWindowLongPtrW")
-	procSetWindowLongPtr := user32.NewProc("SetWindowLongPtrW")
-	cur, _, _ := procGetWindowLongPtr.Call(hwnd, gwlExStyle)
-	style := cur | wsExNoActivate | wsExToolWindow | wsExTransparent
-	procSetWindowLongPtr.Call(hwnd, gwlExStyle, style)
-}
+
+// GWL_EXSTYLE == -20
+
 // ActivateWindow brings hwnd to the foreground.
 //
 // Windows only lets a thread call SetForegroundWindow when that thread is (or is
@@ -313,9 +276,6 @@ func PasteInto(hwnd uintptr) error {
 }
 
 // sendOneInput injects a single struct via SendInput (used by the expander).
-func sendOneInput(in inputT) {
-	procSendInput.Call(1, uintptr(unsafe.Pointer(&in)), unsafe.Sizeof(in))
-}
 
 // sendLeftArrows walks the caret left by n characters (used by {{cursor}}).
 func sendLeftArrows(n int) {
@@ -334,55 +294,12 @@ func sendLeftArrows(n int) {
 // InjectUnicodeText types text as Unicode keystrokes (KEYEVENTF_UNICODE) instead
 // of going through the clipboard. No clipboard round-trip means no flicker, no
 // "paste" flash in the target app, and the user's clipboard stays untouched.
-func InjectUnicodeText(text string) error {
-	if text == "" {
-		return nil
-	}
-	const chunk = 64
-	units, _ := windows.UTF16FromString(text) // trailing NUL dropped below
-	if len(units) > 0 {
-		units = units[:len(units)-1]
-	}
-	for start := 0; start < len(units); start += chunk {
-		end := start + chunk
-		if end > len(units) {
-			end = len(units)
-		}
-		batch := make([]inputT, 0, (end-start)*2)
-		for _, u := range units[start:end] {
-			batch = append(batch,
-				inputT{Type: inputKeyboard, Ki: keyboardInput{WScan: u, DwFlags: keyeventfUnicode}},
-				inputT{Type: inputKeyboard, Ki: keyboardInput{WScan: u, DwFlags: keyeventfUnicode | keyeventfKeyUp}},
-			)
-		}
-		if ret, _, err := procSendInput.Call(uintptr(len(batch)), uintptr(unsafe.Pointer(&batch[0])),
-			unsafe.Sizeof(batch[0])); ret != uintptr(len(batch)) {
-			return fmt.Errorf("注入文本失败: %d/%d %v", ret, len(batch), err)
-		}
-		time.Sleep(2 * time.Millisecond)
-	}
-	return nil
-}
+
+// trailing NUL dropped below
 
 // InjectBackspaces sends n backspaces in a single SendInput batch. One batch is
 // atomic from the target app's point of view, which is what makes the erase
 // before an expansion feel instant instead of "backspace, backspace, …".
-func InjectBackspaces(n int) {
-	if n <= 0 {
-		return
-	}
-	if n > 200 {
-		n = 200
-	}
-	batch := make([]inputT, 0, n*2)
-	for i := 0; i < n; i++ {
-		batch = append(batch,
-			inputT{Type: inputKeyboard, Ki: keyboardInput{WVk: vkBack}},
-			inputT{Type: inputKeyboard, Ki: keyboardInput{WVk: vkBack, DwFlags: keyeventfKeyUp}},
-		)
-	}
-	procSendInput.Call(uintptr(len(batch)), uintptr(unsafe.Pointer(&batch[0])), unsafe.Sizeof(batch[0]))
-}
 
 // ---- 原生窗口外观（跟随主题） -------------------------------------------
 

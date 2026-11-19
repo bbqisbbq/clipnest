@@ -58,7 +58,6 @@ func (s *ClipService) GetEntry(id string) (Entry, error) {
 func (s *ClipService) GetEntryStats() EntryStats { return s.store.EntryStats() }
 
 // GetEntryTags lists tags in use (content tags + system tags).
-func (s *ClipService) GetEntryTags() []string { return s.store.EntryTags() }
 
 // SaveEntry creates or updates an entry. Empty content is allowed when only
 // flags change — the stored content is reused.
@@ -129,15 +128,6 @@ func (s *ClipService) DemoteFromSnippet(id string) (Entry, error) {
 }
 
 // PromoteToManual keeps a collected entry from expiring (it becomes "mine").
-func (s *ClipService) PromoteToManual(id string) (Entry, error) {
-	e, ok := s.store.GetEntry(id)
-	if !ok {
-		return Entry{}, errors.New("条目不存在")
-	}
-	e.Source = SourceManual
-	e.ExpiresAt = nil
-	return s.store.SaveEntry(e)
-}
 
 // ---- 待办 API ------------------------------------------------------------
 
@@ -276,10 +266,6 @@ func (s *ClipService) DeleteFilter(id string) bool {
 }
 
 // RestoreFilters brings back every builtin the user removed.
-func (s *ClipService) RestoreFilters() bool {
-	_ = s.store.SetMeta(metaHiddenFilters, "[]")
-	return true
-}
 
 // CountEntriesWith reports how many entries match q — 筛选器弹窗的实时预览。
 func (s *ClipService) CountEntriesWith(q EntryQuery) int { return s.store.CountEntriesMatching(q) }

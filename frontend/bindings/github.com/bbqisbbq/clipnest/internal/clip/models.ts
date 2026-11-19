@@ -411,14 +411,14 @@ export interface Settings {
     "theme": string;
 
     /**
-     * WebDAV sync. SyncURL is a directory; SyncFile is the document name inside
-     * that directory.
+     * WebDAV sync. SyncURL 是目录；每台机器只写自己那一个包
+     * （clipnest_data/<deviceId>-<host>.zip，见 sync_dav.go 的 packageName），
+     * 所以没有任何"共享文档名"要配置——旧的 SyncFile 字段已删除。
      */
     "syncEnabled": boolean;
     "syncUrl": string;
     "syncUser": string;
     "syncPass": string;
-    "syncFile": string;
     "syncIntervalMin": number;
 
     /**
@@ -451,7 +451,6 @@ export interface Snippet {
     "group"?: string;
     "body": string;
     "hash": string;
-    "size": number;
     "createdAt": string;
     "updatedAt": string;
     "useCount": number;

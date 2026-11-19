@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 )
@@ -318,16 +317,36 @@ func versionParts(v string) []int {
 	return out
 }
 
-// updateCheckLoop runs one check a few seconds after startup, when enabled.
-func (s *ClipService) updateCheckLoop() {
+// updateCheckLoop runs one check a few seconds after being scheduled.
+//
+// 必须可取消：设置页每保存一次都会重新排一次检查（restartUpdateCheck）。之前是
+// 每次 SaveSettings 都 `go updateCheckLoop()` 且没有取消路径，连点 5 次保存就是
+// 8 秒后 5 个 GitHub 请求，正好撞匿名 60 次/小时的限额（见本文件 CheckUpdate）。
+func (s *ClipService) updateCheckLoop(ctx context.Context, delay time.Duration) {
 	if !s.store.Settings().UpdateCheck {
 		return
 	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
 	select {
-	case <-time.After(8 * time.Second):
+	case <-ctx.Done():
+		return
+	case <-s.stopCh:
+		return
+	case <-timer.C:
 	}
 	s.CheckUpdate()
 }
 
-// updatePlatform is exposed for the UI ("windows/amd64").
-func updatePlatform() string { return runtime.GOOS + "/" + runtime.GOARCH }
+// restartUpdateCheck cancels the pending check (if any) and schedules a new one.
+func (s *ClipService) restartUpdateCheck() {
+	s.updateRestart.Lock()
+	if s.updateCancel != nil {
+		s.updateCancel()
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	s.updateCancel = cancel
+	s.updateRestart.Unlock()
+
+	go s.updateCheckLoop(ctx, 8*time.Second)
+}

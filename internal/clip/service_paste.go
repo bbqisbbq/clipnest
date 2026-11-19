@@ -199,4 +199,3 @@ func (s *ClipService) PickEntry(id string, paste bool) (string, error) {
 }
 
 // PickerHotkey returns the accelerator that opens the picker ("" = disabled).
-func (s *ClipService) PickerHotkey() string { return s.store.Settings().Hotkey }

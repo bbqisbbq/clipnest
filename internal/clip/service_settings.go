@@ -41,8 +41,10 @@ func (s *ClipService) SaveSettings(st Settings) (Settings, error) {
 			return s.store.Settings(), err
 		}
 	}
+	// 两个后台循环都是"重启式"：syncLoop 内部取消上一轮，更新检查走 restartUpdateCheck。
+	// 之前这里是 `go s.updateCheckLoop()`，保存几次就多几个待执行的检查。
 	go s.syncLoop()
-	go s.updateCheckLoop()
+	s.restartUpdateCheck()
 	s.refreshTriggers()
 	s.applyExpander(s.store.Settings())
 	s.emit("settings:changed", st)

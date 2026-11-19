@@ -244,17 +244,6 @@ func (s *ClipService) PickSnippet(id string, paste bool) (string, error) {
 }
 
 // TestSnippet runs a snippet from the manager window (no pasting into a target).
-func (s *ClipService) TestSnippet(id string) (string, error) {
-	sp, ok := s.store.GetSnippet(id)
-	if !ok {
-		return "", errors.New("片段不存在")
-	}
-	status, err := s.runSnippet(sp, false, 0)
-	if err != nil {
-		return "", err
-	}
-	return status, nil
-}
 
 // snippetCommandOutput runs a command snippet and returns its trimmed output.
 // The expander types this at the caret, so `ipconfig-` inserts the addresses
@@ -277,11 +266,8 @@ func (s *ClipService) snippetCommandOutput(id string) (string, error) {
 
 // SnippetDraft is a pre-filled (unsaved) snippet: the editor opening with the
 // content of a clipboard entry, so what was collected can be edited into a phrase.
-type SnippetDraft struct {
-	Snippet Snippet `json:"snippet"`
-	// ImageData is a data URL for image entries (the editor needs the bytes).
-	ImageData string `json:"imageData,omitempty"`
-}
+
+// ImageData is a data URL for image entries (the editor needs the bytes).
 
 // pasteImageInline writes an image snippet to the clipboard and pastes it into
 // whatever window has focus — the expander's path, since an image has no text
@@ -315,13 +301,6 @@ func (s *ClipService) PickerSnippets(query string, limit int) []Snippet {
 
 // GrabClipboardImage returns the image currently on the clipboard as base64 PNG
 // ("" when there is none). Used by the snippet editor's "从剪贴板抓取图片".
-func (s *ClipService) GrabClipboardImage() (string, error) {
-	cap, err := captureClipboard()
-	if err != nil || cap == nil || len(cap.PNG) == 0 {
-		return "", nil
-	}
-	return encodeBase64(cap.PNG), nil
-}
 
 // stripHTML makes a crude plain-text fallback for the HTML clipboard format.
 func stripHTML(s string) string {

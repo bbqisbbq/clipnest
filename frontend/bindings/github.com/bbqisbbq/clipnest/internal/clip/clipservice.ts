@@ -27,13 +27,6 @@ export function AutoStartTarget(): $CancellablePromise<string> {
 }
 
 /**
- * CaptureHotkey returns the accelerator that opens the quick-capture popup.
- */
-export function CaptureHotkey(): $CancellablePromise<string> {
-    return $Call.ByID(2188251343);
-}
-
-/**
  * CheckUpdate asks GitHub for the newest release and compares it with Version.
  */
 export function CheckUpdate(): $CancellablePromise<$models.UpdateInfo> {
@@ -92,13 +85,6 @@ export function DeleteFilter(id: string): $CancellablePromise<boolean> {
 }
 
 /**
- * DeleteSnippet removes one snippet.
- */
-export function DeleteSnippet(id: string): $CancellablePromise<boolean> {
-    return $Call.ByID(3956258923, id);
-}
-
-/**
  * DemoteFromSnippet removes the trigger but keeps the content and the tag.
  */
 export function DemoteFromSnippet(id: string): $CancellablePromise<$models.Entry> {
@@ -119,13 +105,6 @@ export function DownloadUpdate(): $CancellablePromise<string> {
  */
 export function EnsureCaptureHotkey(): $CancellablePromise<void> {
     return $Call.ByID(3754874877);
-}
-
-/**
- * ExpandActive reports whether the keyboard hook is installed.
- */
-export function ExpandActive(): $CancellablePromise<boolean> {
-    return $Call.ByID(2704746155);
 }
 
 /**
@@ -183,13 +162,6 @@ export function GetEntryStats(): $CancellablePromise<$models.EntryStats> {
 }
 
 /**
- * GetEntryTags lists tags in use (content tags + system tags).
- */
-export function GetEntryTags(): $CancellablePromise<string[] | null> {
-    return $Call.ByID(418288868);
-}
-
-/**
  * GetFilterFields tells the frontend which fields/operators the rule engine
  * accepts. 只此一份白名单，UI 不自己硬编码。
  */
@@ -228,27 +200,6 @@ export function GetSettings(): $CancellablePromise<$models.Settings> {
 }
 
 /**
- * GetSnippetGroups lists distinct groups.
- */
-export function GetSnippetGroups(): $CancellablePromise<string[] | null> {
-    return $Call.ByID(2795034284);
-}
-
-/**
- * GetSnippetImage returns a data URL for an image snippet.
- */
-export function GetSnippetImage(id: string): $CancellablePromise<string> {
-    return $Call.ByID(2792085841, id);
-}
-
-/**
- * GetSnippets returns snippets for the manager view / picker.
- */
-export function GetSnippets(query: string, group: string): $CancellablePromise<$models.Snippet[] | null> {
-    return $Call.ByID(4219966901, query, group);
-}
-
-/**
  * GetStats returns counters for the header / settings.
  */
 export function GetStats(): $CancellablePromise<$models.Stats> {
@@ -276,21 +227,6 @@ export function GetSyncStatus(): $CancellablePromise<$models.SyncStatus> {
  */
 export function GetTodos(q: $models.EntryQuery): $CancellablePromise<$models.TodoRef[] | null> {
     return $Call.ByID(808630980, q);
-}
-
-/**
- * Version returns the app version as a string method too (handy in JS).
- */
-export function GetVersion(): $CancellablePromise<string> {
-    return $Call.ByID(2407259921);
-}
-
-/**
- * GrabClipboardImage returns the image currently on the clipboard as base64 PNG
- * ("" when there is none). Used by the snippet editor's "从剪贴板抓取图片".
- */
-export function GrabClipboardImage(): $CancellablePromise<string> {
-    return $Call.ByID(2902528052);
 }
 
 /**
@@ -396,24 +332,10 @@ export function PickSnippet(id: string, paste: boolean): $CancellablePromise<str
 }
 
 /**
- * PickerHotkey returns the accelerator that opens the picker ("" = disabled).
- */
-export function PickerHotkey(): $CancellablePromise<string> {
-    return $Call.ByID(677716557);
-}
-
-/**
  * PickerSnippets powers "--" search inside the popup.
  */
 export function PickerSnippets(query: string, limit: number): $CancellablePromise<$models.Snippet[] | null> {
     return $Call.ByID(169391773, query, limit);
-}
-
-/**
- * PromoteToManual keeps a collected entry from expiring (it becomes "mine").
- */
-export function PromoteToManual(id: string): $CancellablePromise<$models.Entry> {
-    return $Call.ByID(4242788608, id);
 }
 
 /**
@@ -463,13 +385,6 @@ export function Render(t: expand$0.Trigger): $CancellablePromise<[string, number
 }
 
 /**
- * RestoreFilters brings back every builtin the user removed.
- */
-export function RestoreFilters(): $CancellablePromise<boolean> {
-    return $Call.ByID(844173800);
-}
-
-/**
  * SaveEntry creates or updates an entry. Empty content is allowed when only
  * flags change — the stored content is reused.
  */
@@ -504,17 +419,10 @@ export function SaveSettings(st: $models.Settings): $CancellablePromise<$models.
 /**
  * SaveSnippet creates or updates a snippet. Image snippets carry their PNG in
  * imageDataB64 (base64), because the webview cannot hand us a file handle.
+ * 片段表已废弃：片段就是带 snippet 能力的条目，这里做一次形状转换。
  */
 export function SaveSnippet(sp: $models.Snippet, imageDataB64: string): $CancellablePromise<$models.Snippet> {
     return $Call.ByID(3917329013, sp, imageDataB64);
-}
-
-/**
- * SaveSnippetToEntries writes a snippet as an entry carrying the snippet action.
- * 片段表已废弃：片段就是带 snippet 能力的条目，这里做一次形状转换。
- */
-export function SaveSnippetToEntries(sp: $models.Snippet, imageDataB64: string): $CancellablePromise<$models.Snippet> {
-    return $Call.ByID(3974063084, sp, imageDataB64);
 }
 
 /**
@@ -615,23 +523,8 @@ export function SyncNow(): $CancellablePromise<$models.SyncStatus> {
 }
 
 /**
- * TestSnippet runs a snippet from the manager window (no pasting into a target).
- */
-export function TestSnippet(id: string): $CancellablePromise<string> {
-    return $Call.ByID(1627635062, id);
-}
-
-/**
  * TestSync verifies the endpoint and reports what is already there.
  */
 export function TestSync(): $CancellablePromise<string> {
     return $Call.ByID(292331458);
-}
-
-/**
- * TriggerPreview validates a trigger against the current settings and returns a
- * warning for the editor ("" when the trigger is fine).
- */
-export function TriggerPreview(trigger: string): $CancellablePromise<string> {
-    return $Call.ByID(1493429405, trigger);
 }

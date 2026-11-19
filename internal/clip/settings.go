@@ -66,13 +66,13 @@ type Settings struct {
 	AutoStart bool   `json:"autoStart"`
 	Theme     string `json:"theme"` // "system" | "dark" | "light"
 
-	// WebDAV sync. SyncURL is a directory; SyncFile is the document name inside
-	// that directory.
+	// WebDAV sync. SyncURL 是目录；每台机器只写自己那一个包
+	// （clipnest_data/<deviceId>-<host>.zip，见 sync_dav.go 的 packageName），
+	// 所以没有任何"共享文档名"要配置——旧的 SyncFile 字段已删除。
 	SyncEnabled     bool   `json:"syncEnabled"`
 	SyncURL         string `json:"syncUrl"`
 	SyncUser        string `json:"syncUser"`
 	SyncPass        string `json:"syncPass"`
-	SyncFile        string `json:"syncFile"`
 	SyncIntervalMin int    `json:"syncIntervalMin"`
 	// SyncDeviceID is a random per-installation id. Each device writes its own
 	// package file, so two machines can never overwrite each other's data.
@@ -107,7 +107,6 @@ func DefaultSettings() Settings {
 		SyncURL:          "",
 		SyncUser:         "",
 		SyncPass:         "",
-		SyncFile:         DefaultSyncFile,
 		SyncIntervalMin:  30,
 		SyncSettings:     true,
 		SnippetsInPicker: true,

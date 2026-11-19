@@ -319,15 +319,29 @@ func (s *Store) DeleteAllUnpinned() int {
 }
 
 // RefreshEntryFiles re-stats the file references of one entry.
+//
+// 只写 files 一列，**不碰 updated_at / hash / FTS**。这条路径由 3 分钟一次的
+// 巡检调用（service_capture.go 的 refreshFilesLoop），而同步包的指纹里含
+// updated_at（sync_package.go 的 packageFingerprint）——复用过 SaveEntry 会让
+// "文件还在不在" 这种本机元数据变成内容变更：每轮同步都判定"变了"并整包 PUT，
+// 还会把假修改推给对端。没有变化时返回 false，调用方也就不会白发一次 UI 事件。
 func (s *Store) RefreshEntryFiles(id string) (Entry, bool) {
 	e, ok := s.GetEntry(id)
 	if !ok || len(e.Files) == 0 {
 		return Entry{}, false
 	}
+	changed := false
 	for i := range e.Files {
-		e.Files[i] = statFile(e.Files[i])
+		next := statFile(e.Files[i])
+		if next != e.Files[i] {
+			e.Files[i] = next
+			changed = true
+		}
 	}
-	if _, err := s.SaveEntry(e); err != nil {
+	if !changed {
+		return e, false
+	}
+	if _, err := s.db.Exec(`UPDATE entries SET files = ? WHERE id = ?`, encodeFiles(e.Files), id); err != nil {
 		return e, false
 	}
 	return e, true

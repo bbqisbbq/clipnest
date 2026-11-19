@@ -15,7 +15,7 @@ import (
 // 设置与开机自启（service_settings.go）。
 
 // Version is shown in the UI and written to the log on start.
-const Version = "2.6.2"
+const Version = "2.6.3"
 
 // AppInfo is static information the frontend needs for the about/settings view.
 type AppInfo struct {
@@ -85,6 +85,11 @@ type ClipService struct {
 	syncStatus  SyncStatus
 	syncRestart sync.Mutex
 	syncCancel  context.CancelFunc
+
+	// updateRestart/updateCancel 同理：更新检查只允许有一个待执行的 goroutine，
+	// 设置变更时取消重排（见 update.go 的 restartUpdateCheck）。
+	updateRestart sync.Mutex
+	updateCancel  context.CancelFunc
 }
 
 // NewService opens the store inside dataDir.
@@ -112,7 +117,7 @@ func (s *ClipService) Start() error {
 	go s.captureLoop()
 	go s.refreshFilesLoop()
 	go s.syncLoop()
-	go s.updateCheckLoop()
+	s.restartUpdateCheck()
 	s.EnsureCaptureHotkey()
 	s.refreshTriggers()
 	s.applyExpander(s.store.Settings())
@@ -198,7 +203,6 @@ func (s *ClipService) Quit() {
 }
 
 // Version returns the app version as a string method too (handy in JS).
-func (s *ClipService) GetVersion() string { return Version }
 
 // LogClient records a frontend error/note in clipnest.log, so a blank window or
 // a broken binding can be diagnosed from outside the webview.

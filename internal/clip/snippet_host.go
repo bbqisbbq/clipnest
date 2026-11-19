@@ -1,7 +1,6 @@
 package clip
 
 import (
-	"errors"
 	"strings"
 	"sync"
 	"unicode"
@@ -169,17 +168,11 @@ func (s *ClipService) SetOwnWindowCheck(fn func() bool) {
 }
 
 // ExpandActive reports whether the keyboard hook is installed.
-func (s *ClipService) ExpandActive() bool { return s.engine.Active() }
 
 // TriggerPreview validates a trigger against the current settings and returns a
 // warning for the editor ("" when the trigger is fine).
-func (s *ClipService) TriggerPreview(trigger string) string {
-	st := s.store.Settings()
-	return expand.ValidateTrigger(trigger, st.ExpandSuffix, st.ExpandEndChars)
-}
 
 // errEngineMissing keeps call sites honest while the engine is being wired.
-var errEngineMissing = errors.New("触发器引擎未初始化")
 
 // DefaultEndChars are the characters that finish an abbreviation. Space and tab
 // cover "type the word, hit space"; the punctuation covers writing prose.

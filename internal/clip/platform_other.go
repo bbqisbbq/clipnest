@@ -33,7 +33,6 @@ func autoStartCommandValue() string                    { return "" }
 func shellOpen(string) error                           { return ErrNotSupported }
 func OpenExternal(string) error                        { return ErrNotSupported }
 func revealInExplorer(string) error                    { return ErrNotSupported }
-func clipboardOwnerApp() string                        { return "" }
 
 // entryEchoHash is Win32-only (it mirrors the clipboard capture hashes).
 func entryEchoHash(Entry) string { return "" }
@@ -42,10 +41,7 @@ func entryEchoHash(Entry) string { return "" }
 func ForegroundWindowHandle() uintptr           { return 0 }
 func CaretAnchor() (int, int)                   { return 0, 0 }
 func ClampToWorkArea(x, y, w, h int) (int, int) { return x, y }
-func WorkAreaBottomRight(w, h int) (int, int)   { return 0, 0 }
-func MakeNonActivating(uintptr)                 {}
-func ActivateWindow(uintptr)                    {}
-func SendPaste() error                          { return ErrNotSupported }
-func PasteInto(uintptr) error                   { return ErrNotSupported }
 
-var errNoOp = errors.New("not supported on this platform")
+func ActivateWindow(uintptr)  {}
+func SendPaste() error        { return ErrNotSupported }
+func PasteInto(uintptr) error { return ErrNotSupported }

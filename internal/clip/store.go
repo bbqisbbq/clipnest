@@ -87,9 +87,11 @@ func Open(dir string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	// SQLite serialises writers anyway; one connection avoids lock churn
-	// between the capture goroutine and UI queries.
-	db.SetMaxOpenConns(1)
+	// WAL 已由上面的 DSN 打开：允许「一个写者 + 多个读者」并行。但只给 1 条连接时，
+	// database/sql 会把所有查询串在同一把连接上——首次同步要写上千条，界面在这期间
+	// 完全查不动。给 4 条：读走空闲连接，写者互斥交给 busy_timeout(5000) 与 SQLite。
+	db.SetMaxOpenConns(4)
+	db.SetMaxIdleConns(4)
 	if _, err := db.Exec(coreSchema); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("初始化数据库失败: %w", err)
@@ -113,9 +115,12 @@ func Open(dir string) (*Store, error) {
 		}
 	}
 
+	// 日志目录要在可能写日志的迁移之前就位：dropLegacyTables 内部用 Logf，
+	// 顺序反了会让迁移失败的记录写进空目录，等于一条日志都留不下。
+	logDirValue.Store(dir)
+
 	dropLegacyTables(db)
 
-	logDirValue.Store(dir)
 	s := &Store{
 		db:           db,
 		dir:          dir,

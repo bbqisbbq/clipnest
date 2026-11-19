@@ -58,10 +58,6 @@ type entryRecord struct {
 }
 
 // snippetRecord is one snippets/<hash>.json body.
-type snippetRecord struct {
-	Version int     `json:"version"`
-	Snippet Snippet `json:"snippet"`
-}
 
 // syncPackage is a parsed archive.
 type syncPackage struct {
@@ -190,10 +186,18 @@ func parsePackage(data []byte) (*syncPackage, error) {
 	return pkg, nil
 }
 
-// buildOwnPackage renders everything this machine knows: all record bodies, the
-// blobs no peer has yet, our tombstones and (when newest) our settings.
+// buildOwnPackage renders what this machine knows: the newest syncMaxEntries
+// records, the blobs no peer has yet, our tombstones and (when newest) our settings.
+//
+// 注意这是"最近 N 条"而不是整份历史：条目再多也不会无限膨胀成一个几百 MB 的包。
+// 满额时记一行日志，免得用户看到"同步成功"却找不到三年前的条目。
 func (s *ClipService) buildOwnPackage(peerHasBlob map[string]bool, peerTombstones []Tombstone, st Settings) ([]byte, string, error) {
-	entries := s.store.ListEntries(EntryQuery{Limit: 500})
+	entries := s.store.ListEntries(EntryQuery{Limit: syncMaxEntries})
+	if len(entries) == syncMaxEntries {
+		if total := s.store.CountEntries(); total > len(entries) {
+			Logf(s.store.Dir(), "sync: package capped at %d entries (store holds %d; older ones stay local)", syncMaxEntries, total)
+		}
+	}
 	idx := pkgIndex{
 		Version:   syncPackageVersion,
 		DeviceID:  st.SyncDeviceID,
@@ -266,9 +270,12 @@ func (s *ClipService) buildOwnPackage(peerHasBlob map[string]bool, peerTombstone
 	return payload, packageFingerprint(idx, blobNames), nil
 }
 
-// packageFingerprint digests the *content* of a package (not the archive bytes
-// and not the "updatedAt" stamp), so an idle machine can tell that re-uploading
-// would change nothing.
+// packageFingerprint digests what actually goes over the wire: entry hashes,
+// their updatedAt stamps, tombstones, blob names and the shareable settings.
+//
+// updatedAt 是**内容变更**的等价物（采集/手写都会推它），所以它必须进指纹；
+// 反过来说，任何"只改本机元数据"的写路径都不能碰 updated_at，否则空闲机器也会
+// 被判定为"内容变了"（见 entry.go 的 RefreshEntryFiles）。
 func packageFingerprint(idx pkgIndex, blobNames []string) string {
 	h := sha256.New()
 	for _, it := range idx.Entries {

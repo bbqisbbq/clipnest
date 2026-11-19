@@ -158,7 +158,6 @@ func (s *ClipService) CloseCapture() {
 }
 
 // CaptureHotkey returns the accelerator that opens the quick-capture popup.
-func (s *ClipService) CaptureHotkey() string { return s.store.Settings().CaptureHotkey }
 
 // EnsureCaptureHotkey repairs a profile whose captureHotkey ended up empty
 // because an older build shipped no default for it. Runs once (meta marker), so

@@ -326,38 +326,8 @@ func (s *Store) mergeEntry(e Entry) error {
 
 // FindEntryByTitle returns the live entry whose title matches name
 // (case-insensitive). 隐写模式 uses it to resolve `@名称@` to a landing entry.
-func (s *Store) FindEntryByTitle(name string) (Entry, bool) {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return Entry{}, false
-	}
-	row := s.db.QueryRow(`SELECT `+entryColumns+` FROM entries
-		WHERE LOWER(title) = LOWER(?) AND archived = 0
-		ORDER BY updated_at DESC LIMIT 1`, name)
-	e, err := scanEntry(row)
-	if err != nil {
-		return Entry{}, false
-	}
-	return e, true
-}
 
 // AppendTextToEntry appends text to an entry, separated by a blank line.
 //
 // It re-reads the row and saves it back whole: a partial Entry from the caller
 // would silently reset tags, actions or the trigger key.
-func (s *Store) AppendTextToEntry(id, text string) (Entry, error) {
-	text = strings.TrimSpace(text)
-	if text == "" {
-		return Entry{}, errors.New("内容不能为空")
-	}
-	e, ok := s.GetEntry(id)
-	if !ok {
-		return Entry{}, errors.New("条目不存在")
-	}
-	if strings.TrimSpace(e.Content) == "" {
-		e.Content = text
-	} else {
-		e.Content = strings.TrimRight(e.Content, "\n") + "\n\n" + text
-	}
-	return s.SaveEntry(e)
-}

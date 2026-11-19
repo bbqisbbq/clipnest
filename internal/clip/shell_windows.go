@@ -59,13 +59,6 @@ func revealInExplorer(path string) error {
 }
 
 // clipboardOwnerApp reports the executable that currently owns the clipboard.
-func clipboardOwnerApp() string {
-	hwnd, _, _ := procGetClipboardOwner.Call()
-	if hwnd == 0 {
-		return ""
-	}
-	return processNameForWindow(hwnd)
-}
 
 var procGetClipboardOwner = user32.NewProc("GetClipboardOwner")
 
