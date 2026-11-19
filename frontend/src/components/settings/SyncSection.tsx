@@ -7,10 +7,7 @@ import { Row, Section, Switch, type SettingsPatch } from "./ui";
 
 // 「云同步」分区：WebDAV 连接参数、同步间隔、设备包面板。
 // 面板数据（panel）与「测试连接」结果（testing / testResult）是本分区专有状态，
-// 就留在本组件里；draft 与保存动作仍由 SettingsView 管。
-//
-// resetSignal：父组件的「撤销」会把不属于草稿的临时提示一并清掉（原来如此），
-// 这里靠它来清空测试结果。
+// 就留在本组件里；draft 与落盘由 SettingsView 管（2.8.0 起自动保存，没有撤销）。
 
 type Props = {
   draft: Settings;
@@ -20,7 +17,6 @@ type Props = {
   syncStatus: SyncStatus | null;
   onTestSync: () => Promise<string>;
   onSyncNow: () => void;
-  resetSignal: number;
 };
 
 export default function SyncSection({
@@ -30,7 +26,6 @@ export default function SyncSection({
   syncStatus,
   onTestSync,
   onSyncNow,
-  resetSignal,
 }: Props) {
   const [panel, setPanel] = useState<SyncPanel | null>(null);
   const [testing, setTesting] = useState(false);
@@ -52,9 +47,6 @@ export default function SyncSection({
     };
   }, [syncStatus?.lastSync, syncStatus?.inProgress]);
 
-  useEffect(() => {
-    if (resetSignal > 0) setTestResult("");
-  }, [resetSignal]);
 
   const runTest = async () => {
     setTesting(true);

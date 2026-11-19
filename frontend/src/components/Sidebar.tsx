@@ -27,10 +27,13 @@ import {
 type FilterProps = {
   filters: EntryFilter[];
   activeFilterId: string;
+  /** 启动时自动打开的筛选器 id（""=没设，落到第一个） */
+  defaultFilterId: string;
   onSelectFilter: (f: EntryFilter) => void;
   selectedDay: string;
   onPickDay: (day: string) => void;
   onEditFilter: (f: EntryFilter) => void;
+  onSetDefaultFilter: (f: EntryFilter) => void;
   entryStats: { manual: number; clipboard: number; snippets: number; total: number; pinned: number; archived: number; today: number; todoOpen: number; todoDone: number } | null;
 };
 
@@ -39,6 +42,7 @@ type Props = {
   capturing: boolean;
   syncActive: boolean;
   filterProps: FilterProps;
+  /** 点「设置」：在设置页时是"关掉回原处"，否则是"打开设置"（由 App 判断） */
   onOpenSettings: () => void;
   onToggleCapture: () => void;
   /** 待办收集页是独立入口（不是筛选器）：它的数据是清单项，不是条目 */
@@ -124,6 +128,11 @@ export default function Sidebar(props: Props) {
                 >
                   {renderNavIcon(f.icon || "memo", 14)}
                   <span>{f.name}</span>
+                  {props.filterProps.defaultFilterId === f.id ? (
+                    <em className="side-default" title="启动时自动打开这个筛选器">
+                      默认
+                    </em>
+                  ) : null}
                   {n !== null && n !== undefined ? <em>{n}</em> : null}
                   <button
                     className={`side-more ${menuFor === f.id ? "is-open" : ""}`}
@@ -154,6 +163,14 @@ export default function Sidebar(props: Props) {
                       }}
                     >
                       复制为新筛选器
+                    </button>
+                    <button
+                      onClick={() => {
+                        setMenuFor(null);
+                        props.filterProps.onSetDefaultFilter(f);
+                      }}
+                    >
+                      {props.filterProps.defaultFilterId === f.id ? "取消默认打开" : "设为默认打开"}
                     </button>
                     {f.deletable ? (
                       <button

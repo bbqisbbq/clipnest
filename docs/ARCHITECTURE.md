@@ -40,6 +40,7 @@ internal/clip/           业务层：条目、捕获、片段、同步、绑定 
 | `service_capture.go` | 采集管线（合并 45ms、去重、回写抑制）+ 快速输入窗（含尺寸记忆：`capture.size` → meta） |
 | `service_paste.go` | 条目 → 系统：复制回剪贴板、打开、picker 弹窗三件套 |
 | `service_settings.go` | 设置保存与副作用（自启、展开器、两个后台循环） |
+| `draft.go` | 快捷输入框的未保存草稿（meta 键 `composer.draft`，跟着 clipnest.db 走） |
 | `entry_api.go` | 绑定给前端的条目 API + 筛选器 CRUD |
 | `syncpanel.go` | 设置页「设备包」面板的数据形状 |
 
@@ -83,24 +84,28 @@ internal/clip/           业务层：条目、捕获、片段、同步、绑定 
 ## 二、前端（React + TS）
 
 ```
-src/App.tsx              薄壳：装 hooks、切视图、转发通知（不写业务）
+src/App.tsx              薄壳：装 hooks、切视图（含"关设置回原处"）、转发通知（不写业务）
 src/hooks/
   useToast.ts            全局通知
   useTheme.ts            主题落地（预设 + 自定义 CSS + 原生边框）
   useAppData.ts          设置 / 应用信息 / 同步状态 / 筛选器 / 计数
   useEntries.ts          条目列表数据层：分页、上滑加载更早、按天分组、贴底滚动
   useEntryImages.ts      正文 memoimg: 引用的按需加载缓存
+  useComposerDraft.ts    快捷输入框草稿：内存 → 防抖落库（400ms）→ 重启读回
+  useFilters.ts          筛选器增删改（⋯ 菜单 + 新建/编辑弹窗的状态机）
 src/lib/
   api.ts                 绑定封装 + 类型别名
   images.ts              正文图片引用的解析与收集（纯函数）
   themes.ts              配色预设、对比度自检、自定义 CSS 净化
+  dates.ts               日期键唯一写法："2026-11-19" / "2026-11"（日历、今天、EntryQuery.day）
   format.ts              时间/体积格式化
   window.ts              无边框窗口控制
 src/components/
   TitleBar / Sidebar / Calendar / Tip / Icons      布局与小组件
-  SettingsView          设置页编排者（草稿、脏标记、保存条）
+  SettingsView          设置页编排者（草稿 + 自动保存 + 顶部返回/状态条）
   settings/             八个分区（含 Editor）：Capture / Interaction / Sync / Snippets / Appearance / Update / About + ui.tsx
-  EntriesView           统一内容视图（搜索、写新条目、卡片操作编排）
+  Composer + ComposerDock  Composer 只管长相（高度、拖拽、按钮），ComposerDock 管"存哪儿、存完通知谁"
+  EntriesView           统一内容视图（搜索、卡片操作编排；输入框已不在它里面）
   entries/EntryCard     单条卡片：折叠、图片点击、操作按钮
   EntryDetailView       条目详情：占右侧整区（不是浮层），顶部面包屑返回 + 属性面板
   TodoView              待办收集页：摊平所有条目里的 - [ ] 任务，勾选写回正文
@@ -122,8 +127,15 @@ src/theme-light.css      主题引擎管不到的浅色补丁（--k-* / --shadow
 3. **CSS 的 import 顺序就是层叠顺序**：同优先级的选择器靠后覆盖，新增样式文件要插在
    正确的段位里，不能随手追加到末尾（`main.tsx` 里有注释说明）。
 
-**两条经验**：
+**三条经验**：
 
+- **主区竖向分两格**：`.pane-body`（当前视图）+ `.memo-composer`（全局输入框，`ComposerDock`）。
+  输入框**不在任何视图内部**——它在 App 的最外层，所以切筛选器 / 待办 / 设置时位置和内容都不变；
+  详情页是唯一的例外（那是在改一条已有的内容，不要两个"保存"抢地方）。草稿存 `meta.composer.draft`，
+  换页面、重启都读得回来。
+- **设置是自动保存的**：`SettingsView` 只记"这次动过哪些字段"（`touched`），停手 400ms 合并进
+  最新服务端设置再落盘——所以同步线程拉回来的对端设置、侧栏刚设的默认筛选器都不会被一份过期快照覆盖。
+  没有"保存/撤销"按钮，只有顶部一行状态。
 - **主区只有一条阅读列**：`base.css` 的 `--read-w`（列宽）/ `--gutter`（最小留白）/
   `--read-pad`（居中留白）三个 token 统一了时间线、输入区、待办、详情正文。
   新页面用 `padding-inline: var(--read-pad)` + `max-width: var(--read-w)`，
@@ -145,8 +157,12 @@ entry_blobs    附件：内容寻址，≤512KB 进库、更大落盘 memo_files
 entries_fts    全文索引（trigram，中文子串可搜；标题也进索引）
 entry_filters  用户保存的筛选器（含规则树 JSON）
 tombstones     删除墓碑（同步用）
-meta           键值对（设备 id、一次性标记、filters.hidden）
+meta           键值对（设备 id、一次性标记、filters.hidden、composer.draft、capture.size）
 ```
+
+**草稿不是条目**：输入框里敲了一半的东西存在 `meta.composer.draft`（只有一条键值、只在本机），
+不进 `entries`、不进同步包、也不算内容哈希的一部分——半成品不该被当成历史，也不该同步到别的机器。
+`SetComposerDraft("")` 即清空，所以"存成条目"之后不会在重启时又被塞回输入框。
 
 **待办是派生的，不是第二张表**：正文里的 `- [ ]` 就是真源，
 `todo_state`（`''`/`open`/`done`）与 `todo_done_at` 是 `SaveEntry` / `mergeEntry` 里现算的派生列
@@ -191,6 +207,8 @@ meta           键值对（设备 id、一次性标记、filters.hidden）
 - 合并：按内容 hash 配对；`updated_at` 新的赢；`pinned` 取或；删除走墓碑
 - 合并必须用 `Store.mergeEntry`（保留远端时间戳）。用 `SaveEntry` 会把
   `updated_at` 盖成"现在"，让本地副本比墓碑还新，删除会被静默忽略。
+- **筛选器不跨端同步**（`entry_filters` 不进包），所以指针类设置也不能跨端：
+  `Settings.DefaultFilterID` 在 `localSettingsFields` 里，对端带来的值一律丢掉。
 
 ## 五、怎么验证
 

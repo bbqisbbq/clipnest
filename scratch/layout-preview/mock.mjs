@@ -65,7 +65,7 @@ function titleBar() {
 
 const FILTERS = [
   { icon: "all", name: "全部内容", n: 36, active: true },
-  { icon: "memo", name: "我写的", n: 7 },
+  { icon: "memo", name: "我写的", n: 7, isDefault: true },
   { icon: "text", name: "剪贴板", n: 27 },
   { icon: "snippet", name: "片段", n: 3 },
   { icon: "link", name: "链接", n: 4 },
@@ -102,10 +102,12 @@ function calendar() {
 }
 
 function sidebar(active = "entries") {
-  const items = FILTERS.map(
+    const items = FILTERS.map(
     (f) => `<div class="side-item-wrap">
       <div class="side-item ${f.active ? "is-active" : ""}" role="button" tabindex="0">
-        ${icon(ICONS[f.icon] ?? ICONS.memo, 14)}<span>${f.name}</span><em>${f.n}</em>
+        ${icon(ICONS[f.icon] ?? ICONS.memo, 14)}<span>${f.name}</span>${
+          f.isDefault ? `<em class="side-default" title="启动时自动打开这个筛选器">默认</em>` : ""
+        }<em>${f.n}</em>
         <button class="side-more">⋯</button>
       </div>
     </div>`,
@@ -167,6 +169,23 @@ const IMG =
     `<svg xmlns="http://www.w3.org/2000/svg" width="900" height="560"><rect width="900" height="560" fill="#233049"/><rect x="60" y="60" width="520" height="26" rx="13" fill="#4d6bff"/><rect x="60" y="120" width="700" height="14" rx="7" fill="#4a5a7d"/><rect x="60" y="152" width="620" height="14" rx="7" fill="#4a5a7d"/><circle cx="720" cy="380" r="90" fill="#e0a253"/></svg>`,
   ).toString("base64");
 
+// 全局常驻的快捷输入框（ComposerDock）：2.8.0 起它不属于任何视图，而是主区的
+// 最后一格，所以每张页面标本都要带上它——否则截出来的图看不出"切页面时它还在原地"。
+function composerDock() {
+  return `<div class="memo-composer" style="height:184px">
+    <div class="memo-composer-resizer" role="separator" aria-orientation="horizontal"></div>
+    <div class="composer-box">
+      <div class="md-surface" style="padding:12px 14px">
+        <div class="memo-body"><p style="color:var(--text-3)">随手记点什么…（Ctrl+Enter 保存，写 - [ ] 就是待办）</p></div>
+      </div>
+      <div class="composer-actions">
+        <span class="composer-tags"><span class="composer-hint">写 #标签 归类 · - [ ] 待办 · Ctrl+Enter 保存</span></span>
+        <div class="composer-btns"><button class="link-btn">清空</button><button class="btn btn-primary btn-sm">保存</button></div>
+      </div>
+    </div>
+  </div>`;
+}
+
 function entriesPane() {
   const cards = [
     card({ time: "14:31", collected: true, src: "来自 chrome.exe", actions: ["剪贴板"], tags: ["工作"], body: "<p>把 <code>hook 注入</code> 那段挪到 <code>service_capture.go</code>，合并窗口从 45ms 提到 60ms 再测一次抖动。</p>" }),
@@ -194,18 +213,6 @@ function entriesPane() {
         <div class="memo-day-label">昨天</div>
         ${cards.slice(6).join("\n        ")}
       </section>
-    </div>
-  </div>
-  <div class="memo-composer" style="height:184px">
-    <div class="memo-composer-resizer" role="separator" aria-orientation="horizontal"></div>
-    <div class="composer-box">
-      <div class="md-surface" style="padding:12px 14px">
-        <div class="memo-body"><p style="color:var(--text-3)">随手记点什么…（Ctrl+Enter 保存，写 - [ ] 就是待办）</p></div>
-      </div>
-      <div class="composer-actions">
-        <span class="composer-tags"><span class="composer-hint">写 #标签 归类 · - [ ] 待办 · Ctrl+Enter 保存</span></span>
-        <div class="composer-btns"><button class="link-btn">清空</button><button class="btn btn-primary btn-sm">保存</button></div>
-      </div>
     </div>
   </div>
 </div>`;
@@ -298,6 +305,11 @@ function settingsPane() {
     `<div class="field"><div class="field-label"><span>${label}</span></div><div class="field-control">${ctrl}</div></div>`;
   const sw = (on) => `<button class="switch ${on ? "is-on" : ""}"><span class="switch-knob"></span></button>`;
   return `<main class="main is-settings">
+  <header class="settings-head">
+    <button class="btn btn-ghost btn-sm settings-back">← 全部内容</button>
+    <h2 class="settings-title">设置</h2>
+    <span class="settings-state is-saved">已自动保存 14:32</span>
+  </header>
   <div class="settings">
     <div class="settings-inner">
       <section class="card">
@@ -333,9 +345,6 @@ function settingsPane() {
       </section>
     </div>
   </div>
-  <footer class="settings-bar"><span class="is-dirty">有未保存的修改</span>
-    <div class="settings-bar-actions"><button class="btn btn-ghost">撤销</button><button class="btn btn-primary">保存设置</button></div>
-  </footer>
 </main>`;
 }
 
@@ -343,6 +352,8 @@ function settingsPane() {
 
 function page(name, mainPane, opts = {}) {
   const bodyClass = opts.bodyClass ?? "app is-entries";
+  // 详情页不带底部输入框（真 app 里也是隐藏的：那是在改一条已有的内容）
+  const dock = opts.dock === false ? "" : composerDock();
   return `<!doctype html><html lang="zh-CN" data-theme="dark"><head><meta charset="utf-8"/>
 <style>${css}</style>
 <style>html,body{height:100%;margin:0}#root{height:100%}</style>
@@ -351,7 +362,10 @@ function page(name, mainPane, opts = {}) {
 ${titleBar()}
 <div class="workspace">
 ${sidebar(opts.active ?? "entries")}
-<div class="main-pane">${mainPane}</div>
+<div class="main-pane">
+<div class="pane-body">${mainPane}</div>
+${dock}
+</div>
 </div>
 </div></div>
 </body></html>`;
@@ -425,11 +439,11 @@ function standalone(bodyClass, inner, w, h) {
 
 const PAGES = [
   { name: "entries", html: page("entries", entriesPane()), w: 1280, h: 860 },
-  { name: "detail", html: page("detail", entriesPane() + detailPane()), w: 1280, h: 860 },
+  { name: "detail", html: page("detail", entriesPane() + detailPane(), { dock: false }), w: 1280, h: 860 },
   { name: "todo", html: page("todo", todoPane(), { active: "todo" }), w: 1280, h: 860 },
   { name: "settings", html: page("settings", settingsPane(), { active: "settings" }), w: 1280, h: 860 },
   { name: "narrow", html: page("entries", entriesPane()), w: 1000, h: 760 },
-  { name: "detail-narrow", html: page("detail", entriesPane() + detailPane()), w: 1000, h: 760 },
+  { name: "detail-narrow", html: page("detail", entriesPane() + detailPane(), { dock: false }), w: 1000, h: 760 },
   { name: "settings-narrow", html: page("settings", settingsPane(), { active: "settings" }), w: 900, h: 700 },
   { name: "picker", html: standalone("is-picker", pickerWindow(), 468, 424), w: 520, h: 545 },
   { name: "capture", html: standalone("is-capture", captureWindow(), 620, 220), w: 660, h: 340 },

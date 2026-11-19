@@ -25,13 +25,13 @@ export type DialogChoice = {
   kind?: "primary" | "ghost" | "danger";
 };
 
-type ChooseOptions = {
+export type ChooseOptions = {
   title?: string;
   message: ReactNode;
   choices: DialogChoice[];
 };
 
-type ConfirmOptions = {
+export type ConfirmOptions = {
   title?: string;
   message: ReactNode;
   confirmLabel?: string;

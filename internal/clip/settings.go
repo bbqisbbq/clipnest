@@ -60,6 +60,12 @@ type Settings struct {
 	EditorToolbar   []string `json:"editorToolbar"`
 	ComposerToolbar []string `json:"composerToolbar"`
 
+	// ---- navigation ----
+	// DefaultFilterID 是启动时自动选中的侧栏筛选器（空 = 用第一个）。
+	// 机器本地：筛选器本身不进同步包，id 在另一台机器上很可能不存在，
+	// 跟着设置同步过去只会让那台机器启动到一个"找不到"的筛选器上。
+	DefaultFilterID string `json:"defaultFilterId"`
+
 	// UpdateCheck polls GitHub for a newer release shortly after startup.
 	UpdateCheck bool `json:"updateCheck"`
 	// AutoStart registers the app in HKCU\...\Run.

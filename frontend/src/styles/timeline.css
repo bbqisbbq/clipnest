@@ -165,17 +165,8 @@ body.is-capture { background: transparent; }
 .capture-close:hover { color: var(--danger); }
 
 .capture-box { flex: 1; min-height: 0; }
-.capture-box .md-surface { padding: 0; }/* 状态栏：干净时收起，保存后闪一下再收起 */
-.settings-bar.is-hidden {
-  opacity: 0;
-  transform: translateY(100%);
-  pointer-events: none;
-}
-.settings-bar {
-  transition: opacity .18s var(--ease), transform .18s var(--ease);
-}
-.settings-bar .is-saved { color: var(--ok); }
-.settings-bar .is-dirty { color: var(--warn); }/* 底部输入区的预览块 */
+.capture-box .md-surface { padding: 0; }
+/* 底部输入区的预览块 */
 .memo-composer .memo-preview { flex: 1; min-height: 0; overflow-y: auto; }
 /* Markdown 编辑器（CodeMirror 6）：容器只负责占位，内部样式由组件注入 */
 /* 编辑器容器（Vditor 包在 .md-surface 里，见 styles/vditor-theme.css）。
@@ -374,7 +365,11 @@ body.is-capture { background: transparent; }
 
 .cal-grid {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  /* minmax(0,1fr) 而不是 1fr：`1fr` 的最小值等于 min-content，而 .cal-cell 是
+     <button>，浏览器给按钮留了 1px 6px 的内距（我们的 reset 只清了边框和底色），
+     于是每列最少 27.6px → 七列 217px，比卡片的 193px 宽 → 侧栏出现横向滚动条、
+     右边的 15/22/29 被切掉。显式允许列压到 0 才能真的随侧栏收缩。 */
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 4px;
   /* 宽度封顶：七列最宽到 252px。不封顶的话窗口一拉宽，aspect-ratio 会让格子
      长到 44px，整块日历撑高一大截，看着像"溢出"。 */
@@ -392,7 +387,9 @@ body.is-capture { background: transparent; }
   /* 固定 28px 行高：列宽在侧栏里是 30–32px，视觉上接近正方形；比 aspect-ratio
      稳——正方形在窄侧栏只有 18–24px（挤），在宽窗口又会膨胀到 44px（溢出）。 */
   height: 28px;
-  padding-bottom: 4px; /* 给热度点留位置，别压着数字 */
+  /* 把 <button> 的 UA 内距一起清掉：只写 padding-bottom 会留下左右各 6px，
+     既让格子里的数字不居中，也是上面那处横向溢出的根。 */
+  padding: 0 0 4px; /* 底部 4px 给热度点留位置，别压着数字 */
   border-radius: var(--r-sm);
   font-size: 12px;
   color: var(--text-2);

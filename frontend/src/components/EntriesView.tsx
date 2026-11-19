@@ -1,5 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
-import Composer from "./Composer";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Lightbox from "./Lightbox";
 import EntryCard from "./entries/EntryCard";
 import { ClipService, type Entry, type EntryFilter, type EntryQuery } from "../lib/api";
@@ -14,29 +13,37 @@ import { useEntryImages } from "../hooks/useEntryImages";
 //   双击卡片     → 右侧打开条目详情（onOpenDetail，由 App 切视图）
 //   点「编辑」   → 同上（按钮留着，双击是快捷方式）
 //   点图片      → 大图
-//   底部输入框   → 只负责记新的
 //
-// 分工：取数/分页/分组在 useEntries，图片缓存在 useEntryImages，
-// 单条卡片在 entries/EntryCard；本组件只做搜索框、写新条目和卡片操作的编排。
+// 底部输入框不在这里：它是全局常驻组件（ComposerDock，挂在 App 上），
+// 因为待办页、设置页也要在同一个位置有它，而且草稿不能被卸载清空。
+// 本组件只做搜索框、卡片操作与时间线。
 
 type Props = {
   filter: EntryFilter;
   day: string;
+  /** 全局输入框里的草稿：正文里的图片引用要提前焐热，保存的瞬间才不会闪 */
+  draftText: string;
+  /** 输入框存下一条后 +1：重载列表并贴到底部 */
+  reloadSignal: number;
   onNotify: (message: string) => void;
   onChanged: () => void;
   onOpenDetail: (entry: Entry) => void;
 };
 
-export default function EntriesView({ filter, day, onNotify, onChanged, onOpenDetail }: Props) {
+export default function EntriesView({
+  filter,
+  day,
+  draftText,
+  reloadSignal,
+  onNotify,
+  onChanged,
+  onOpenDetail,
+}: Props) {
   const [query, setQuery] = useState("");
   const askForTrigger = usePrompt();
 
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [lightbox, setLightbox] = useState<string | null>(null);
-
-  const [draft, setDraft] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
 
   const baseQuery = useMemo<EntryQuery>(() => {
     const q = { ...(filter.query ?? {}) } as EntryQuery;
@@ -49,46 +56,17 @@ export default function EntriesView({ filter, day, onNotify, onChanged, onOpenDe
     useEntries(baseQuery);
 
   // 需要图片的正文：正在写的草稿 + 已加载的条目
-  const imageTexts = useMemo(() => [draft, ...entries.map((e) => e.content)], [draft, entries]);
+  const imageTexts = useMemo(() => [draftText, ...entries.map((e) => e.content)], [draftText, entries]);
   const { imgCache } = useEntryImages(imageTexts);
 
-  // ---- 写新的 ------------------------------------------------------------
-
-  const save = useCallback(
-    async (content?: string) => {
-      // content 由 Composer 从编辑器里直接读（state 可能落后一个 keystroke）
-      const text = (content ?? draft).trim();
-      if (!text) {
-        setError("写点什么再保存");
-        return;
-      }
-      setBusy(true);
-      setError("");
-      try {
-        await ClipService.SaveEntry({ content: text, source: "manual", kind: "text" } as never);
-        onNotify("已记下");
-        setDraft("");
-        stickToBottom.current = true;
-        await loadLatest();
-        onChanged();
-      } catch (err) {
-        setError(String(err));
-      } finally {
-        setBusy(false);
-      }
-    },
-    [draft, loadLatest, onChanged, onNotify, stickToBottom],
-  );
-
-  // 粘贴/拖入图片：存成附件，返回正文要写的 token，由编辑器自己插进光标处
-  const pasteImage = useCallback(async (dataUrl: string) => {
-    try {
-      return await ClipService.SaveImage(dataUrl);
-    } catch (err) {
-      setError(String(err));
-      return null;
-    }
-  }, []);
+  // 全局输入框存下一条 → 这里重载一页并贴底。
+  // 信号在 App 里累加，所以从设置页回来时也会带着最新的那一次（首次挂载读 0 不触发）。
+  useEffect(() => {
+    if (reloadSignal === 0) return;
+    stickToBottom.current = true;
+    void loadLatest();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reloadSignal]);
 
   // ---- 卡片操作 ----------------------------------------------------------
 
@@ -228,15 +206,6 @@ export default function EntriesView({ filter, day, onNotify, onChanged, onOpenDe
           )}
         </div>
       </div>
-
-      <Composer
-        value={draft}
-        onChange={setDraft}
-        onSave={(content) => void save(content)}
-        onImageFile={pasteImage}
-        busy={busy}
-        error={error}
-      />
 
       {lightbox ? <Lightbox src={lightbox} onClose={() => setLightbox(null)} /> : null}
     </div>

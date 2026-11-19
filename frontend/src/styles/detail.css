@@ -1,22 +1,36 @@
 /* 条目详情（右侧整区）。
    结构：workspace 是 grid（侧栏 | 主区），主区里 EntriesView 常驻、详情绝对定位盖在上面
-   —— 这样返回列表时滚动位置还在（见 docs/design/2026-11-19-todo-filters-editor.md 3.1）。 */
+   —— 这样返回列表时滚动位置还在（见 docs/design/2026-11-19-todo-filters-editor.md 3.1）。
+   2.8.0 起主区竖向分两格：上面是当前视图（.pane-body），下面是全局常驻的快捷输入框。 */
 
 .main-pane {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* 视图层：详情用它当定位容器（absolute inset:0 盖住视图区，不盖输入框）。 */
+.pane-body {
+  position: relative;
+  flex: 1;
   display: flex;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
 }
-.main-pane > .entries {
+
+.pane-body > .entries {
   flex: 1;
   min-width: 0;
 }
-/* 设置页也是 main-pane 的直接子元素（<main class="main is-settings">）。
+
+/* 设置页也是视图层的直接子元素（<main class="main is-settings">）。
    漏了这条它就成了 flex 的"收缩到内容宽度"项：卡片只有 480px 宽、
-   右边留一大片空白，保存条也跟着缩。 */
-.main-pane > .main {
+   右边留一大片空白。 */
+.pane-body > .main {
   flex: 1;
   min-width: 0;
 }

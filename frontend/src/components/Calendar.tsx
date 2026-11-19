@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ClipService, type EntryQuery } from "../lib/api";
+import { dayKey, monthKey, today } from "../lib/dates";
 
 // 日历：月视图，有内容的日子显示热度点，点某天 = 只看那天。
 // 这是统一时间线的"导航器"——不需要滚一条无限长的列表。
@@ -14,14 +15,6 @@ type Props = {
 };
 
 const WEEKDAYS = ["一", "二", "三", "四", "五", "六", "日"];
-
-function monthKey(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
-
-function dayKey(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
 
 export default function Calendar({ selectedDay, onPickDay, query }: Props) {
   const [cursor, setCursor] = useState(() => new Date());
@@ -65,7 +58,7 @@ export default function Calendar({ selectedDay, onPickDay, query }: Props) {
     return out;
   }, [cursor]);
 
-  const today = dayKey(new Date());
+  const todayStr = today();
   const maxCount = useMemo(
     () => Math.max(1, ...Object.values(counts)),
     [counts],
@@ -93,7 +86,7 @@ export default function Calendar({ selectedDay, onPickDay, query }: Props) {
           title="回到今天"
           onClick={() => {
             setCursor(new Date());
-            onPickDay(selectedDay === today ? "" : today);
+            onPickDay(selectedDay === todayStr ? "" : todayStr);
           }}
         >
           今天
@@ -112,7 +105,7 @@ export default function Calendar({ selectedDay, onPickDay, query }: Props) {
         {cells.map((cell, i) => {
           if (!cell) return <span key={`pad-${i}`} className="cal-cell is-empty" aria-hidden="true" />;
           const n = counts[cell.key] ?? 0;
-          const isToday = cell.key === today;
+          const isToday = cell.key === todayStr;
           const isActive = cell.key === selectedDay;
           // 热度只靠圆点的透明度表达（CSS 里从来没有 .has-1..4，
           // 以前算出来的 level 类名一个样式都没命中，属白算）

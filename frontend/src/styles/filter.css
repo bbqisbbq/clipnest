@@ -235,6 +235,20 @@
 }
 /* ---------------- 侧栏：筛选器的 ⋯ 菜单 ---------------- */
 
+/* 「默认」小标：启动时自动打开的就是这一行。
+   不用图标（IconPin 已经被「置顶」筛选器占着），一个描边小字最省地方，
+   也不跟行尾的计数抢注意力。 */
+.side-item .side-default {
+  flex: none;
+  padding: 0 4px;
+  border: 1px solid var(--accent-line);
+  border-radius: 4px;
+  color: var(--accent);
+  font-size: 10px;
+  font-style: normal;
+  line-height: 14px;
+}
+
 .side-item .side-more {
   margin-left: auto;
   opacity: 0;

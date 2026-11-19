@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AppInfo, Settings, SyncStatus, UpdateInfo } from "../lib/api";
 import CaptureSection from "./settings/CaptureSection";
 import InteractionSection from "./settings/InteractionSection";
@@ -9,16 +9,29 @@ import EditorSection from "./settings/EditorSection";
 import UpdateSection from "./settings/UpdateSection";
 import AboutSection from "./settings/AboutSection";
 
-// 设置页的编排者：只负责草稿（draft）、脏标记、"保存/撤销"与底部保存条。
-// 七个分区各自是 ./settings/ 下的组件，状态与渲染都搬过去；
+// 设置页的编排者：草稿、自动保存、顶部状态条。
+// 八个分区各自是 ./settings/ 下的组件，状态与渲染都搬过去；
 // 这里不写任何分区的具体字段，免得又长回一个大文件。
+//
+// 保存策略（2.8.0 起）：**没有保存按钮**。改一下就落盘，停手 400ms 写一次，
+// 离开设置页前补一次。只记"这次改过哪些字段"（touched），保存时把这些字段
+// 合并到最新的服务端设置上——这样同步线程拉回来的对端设置、或者侧栏刚设的
+// 默认筛选器不会被一份过期的整对象覆盖掉。
+
+/** 停手多久落盘：比输入框草稿长一点，避免拖动开关时连续写。 */
+const SAVE_DELAY_MS = 400;
 
 type Props = {
   settings: Settings | null;
   appInfo: AppInfo | null;
   storageBytes: number;
   syncStatus: SyncStatus | null;
-  onSave: (next: Settings) => void;
+  /** 落盘（App 里是 useAppData 的 saveSettings），返回是否成功 */
+  onSave: (next: Settings) => Promise<boolean>;
+  /** 关掉设置页，回到进来之前那一屏 */
+  onClose: () => void;
+  /** 返回按钮上写哪一屏（"全部内容" / "待办"…） */
+  backLabel: string;
   onClearHistory: () => void;
   onOpenDataDir: () => void;
   onQuit: () => void;
@@ -30,25 +43,87 @@ type Props = {
   onOpenRelease: () => void;
 };
 
+type Status = { kind: "idle" | "saving" | "saved" | "error"; text?: string };
+
+function clockLabel(): string {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
 export default function SettingsView(props: Props) {
-  const { settings, appInfo, storageBytes, syncStatus } = props;
+  const { settings, appInfo, storageBytes, syncStatus, onSave } = props;
 
   const [draft, setDraft] = useState<Settings | null>(settings);
-  const [savedFlash, setSavedFlash] = useState(false);
-  // 撤销时用来通知各分区清掉自己的临时提示（同步的「测试结果」）
-  const [resetSignal, setResetSignal] = useState(0);
-  const flashTimer = useRef<number | null>(null);
+  const [status, setStatus] = useState<Status>({ kind: "idle" });
+  // 这次编辑动过哪些字段（只合并这些，别的字段以服务端最新值为准）
+  const touched = useRef<Partial<Settings>>({});
+  const timer = useRef<number | null>(null);
+  const saving = useRef(false);
+  // 保存要读"当前服务端设置"，用 ref 拿最新的一份（避免闭包读到旧值）
+  const settingsRef = useRef<Settings | null>(settings);
+  settingsRef.current = settings;
 
+  // 外部改了设置（侧栏把某个筛选器设成默认、同步拉回了对端设置）：
+  // 手上没有待保存的编辑才整体采纳，否则别打断用户。
   useEffect(() => {
+    if (!settings) return;
+    if (saving.current || Object.keys(touched.current).length > 0) return;
     setDraft(settings);
   }, [settings]);
 
-  const dirty = useMemo(() => {
-    if (!draft || !settings) return false;
-    return JSON.stringify(draft) !== JSON.stringify(settings);
-  }, [draft, settings]);
+  const flush = useCallback(async () => {
+    if (timer.current) {
+      window.clearTimeout(timer.current);
+      timer.current = null;
+    }
+    const pending = touched.current;
+    if (Object.keys(pending).length === 0) return;
+    touched.current = {};
+    saving.current = true;
+    setStatus({ kind: "saving" });
+    const ok = await onSave({ ...(settingsRef.current ?? ({} as Settings)), ...pending });
+    saving.current = false;
+    if (!ok) {
+      // 失败：改动放回队列，下次输入/离开设置页时再试一次
+      touched.current = { ...pending, ...touched.current };
+      setStatus({ kind: "error", text: "保存失败，稍后会自动重试" });
+      return;
+    }
+    setStatus({ kind: "saved", text: `已自动保存 ${clockLabel()}` });
+  }, [onSave]);
 
-  useEffect(() => () => { if (flashTimer.current) window.clearTimeout(flashTimer.current); }, []);
+  const patch = useCallback(
+    (p: Partial<Settings>) => {
+      touched.current = { ...touched.current, ...p };
+      setDraft((prev) => (prev ? { ...prev, ...p } : prev));
+      if (timer.current) window.clearTimeout(timer.current);
+      timer.current = window.setTimeout(() => void flush(), SAVE_DELAY_MS);
+    },
+    [flush],
+  );
+
+  // 离开设置页（切视图 / 关窗口）之前，把还在防抖窗口里的改动补上
+  useEffect(
+    () => () => {
+      if (timer.current) window.clearTimeout(timer.current);
+      timer.current = null;
+      if (Object.keys(touched.current).length > 0) void flush();
+    },
+    [flush],
+  );
+
+  const statusText = useMemo(() => {
+    switch (status.kind) {
+      case "saving":
+        return "保存中…";
+      case "saved":
+        return status.text ?? "已自动保存";
+      case "error":
+        return status.text ?? "保存失败";
+      default:
+        return "改动会自动保存";
+    }
+  }, [status]);
 
   if (!draft) {
     return (
@@ -58,26 +133,16 @@ export default function SettingsView(props: Props) {
     );
   }
 
-  const patch = (p: Partial<Settings>) => setDraft({ ...draft, ...p });
-
-  const showBar = dirty || savedFlash;
-
-  const save = () => {
-    const next = { ...draft };
-    props.onSave(next);
-    // 保存成功的提示只闪现 2 秒，然后状态栏自动收起，不长期占着屏幕
-    setSavedFlash(true);
-    if (flashTimer.current) window.clearTimeout(flashTimer.current);
-    flashTimer.current = window.setTimeout(() => setSavedFlash(false), 2000);
-  };
-
-  const revert = () => {
-    setDraft(settings);
-    setResetSignal((n) => n + 1);
-  };
-
   return (
     <main className="main is-settings">
+      <header className="settings-head">
+        <button className="btn btn-ghost btn-sm settings-back" onClick={props.onClose} title="关掉设置，回到刚才那一屏">
+          ← {props.backLabel}
+        </button>
+        <h2 className="settings-title">设置</h2>
+        <span className={`settings-state is-${status.kind}`}>{statusText}</span>
+      </header>
+
       <div className="settings">
         <div className="settings-inner">
           <CaptureSection draft={draft} patch={patch} />
@@ -91,13 +156,13 @@ export default function SettingsView(props: Props) {
             syncStatus={syncStatus}
             onTestSync={props.onTestSync}
             onSyncNow={props.onSyncNow}
-            resetSignal={resetSignal}
           />
 
           <SnippetsSection draft={draft} patch={patch} />
 
           <AppearanceSection draft={draft} patch={patch} />
-        <EditorSection draft={draft} patch={patch} />
+
+          <EditorSection draft={draft} patch={patch} />
 
           <UpdateSection
             draft={draft}
@@ -117,25 +182,6 @@ export default function SettingsView(props: Props) {
           />
         </div>
       </div>
-
-      <footer
-        className={`settings-bar ${showBar ? "is-shown" : "is-hidden"}`}
-        /* 隐藏时用 inert：光 aria-hidden 只是让读屏忽略，里面的按钮还在 Tab 序里。
-           React 18 的类型里还没有 inert，所以用属性展开（DOM 本身支持）。 */
-        {...(!showBar ? { inert: "" } : {})}
-      >
-        <span className={dirty ? "is-dirty" : "is-saved"}>
-          {dirty ? "有未保存的修改" : "设置已保存"}
-        </span>
-        <div className="settings-bar-actions">
-          <button className="btn btn-ghost" onClick={revert} disabled={!dirty}>
-            撤销
-          </button>
-          <button className="btn btn-primary" onClick={save} disabled={!dirty}>
-            保存设置
-          </button>
-        </div>
-      </footer>
     </main>
   );
 }

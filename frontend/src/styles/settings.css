@@ -249,28 +249,46 @@
   padding-bottom: 8px;
 }
 
-.settings-bar {
+/* 顶部条：左边是"回到刚才那一屏"，右边是自动保存状态。
+   2.8.0 之前这里没有头，只有一条会自己收起的底部保存条——那时设置要手动点保存；
+   现在改一下就落盘（见 SettingsView），所以留一个一直看得见的状态就够了。 */
+.settings-head {
+  flex: none;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  /* 和 .settings-inner 的卡片左边缘对齐：卡片外面还有 24px 内边距，
-     所以是"居中留白 + 24"，不是单纯的居中留白。 */
-  padding: 10px max(24px, calc((100% - 720px) / 2 + 24px));
-  border-top: 1px solid var(--border-soft);
-  background: color-mix(in srgb, var(--surface) 94%, transparent);
-  backdrop-filter: blur(8px);
+  gap: 10px;
+  padding: 8px max(24px, calc((100% - 720px) / 2 + 24px));
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--surface);
+}
+
+.settings-back {
+  flex: none;
+}
+
+.settings-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.settings-state {
+  margin-left: auto;
   font-size: 12px;
   color: var(--text-3);
 }
 
-.settings-bar .is-dirty {
-  color: var(--warn);
+.settings-state.is-saving {
+  color: var(--text-2);
 }
 
-.settings-bar-actions {
-  display: flex;
-  gap: 7px;
+.settings-state.is-saved {
+  color: var(--ok);
+}
+
+.settings-state.is-error {
+  color: var(--warn);
 }
 
 
