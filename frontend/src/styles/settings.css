@@ -17,10 +17,10 @@
 .settings-inner {
   max-width: 720px;
   margin: 0 auto;
-  padding: 16px 20px 24px;
+  padding: 20px 24px 28px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
 }
 
 .card {
@@ -30,7 +30,7 @@
 }
 
 .card-head {
-  padding: 11px 14px 10px;
+  padding: 13px 16px 12px;
   border-bottom: 1px solid var(--border-soft);
   border-radius: var(--r-lg) var(--r-lg) 0 0;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.015), transparent);
@@ -50,7 +50,7 @@
 }
 
 .card-body {
-  padding: 2px 14px 10px;
+  padding: 4px 16px 12px;
 }
 
 .field {
@@ -61,7 +61,7 @@
   grid-template-columns: minmax(180px, 1fr) auto;
   align-items: center;
   gap: 16px;
-  padding: 8px 0;
+  padding: 9px 0;
   border-bottom: 1px solid var(--border-soft);
 }
 
@@ -254,7 +254,9 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 9px 20px;
+  /* 和 .settings-inner 的卡片左边缘对齐：卡片外面还有 24px 内边距，
+     所以是"居中留白 + 24"，不是单纯的居中留白。 */
+  padding: 10px max(24px, calc((100% - 720px) / 2 + 24px));
   border-top: 1px solid var(--border-soft);
   background: color-mix(in srgb, var(--surface) 94%, transparent);
   backdrop-filter: blur(8px);

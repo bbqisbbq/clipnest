@@ -119,6 +119,11 @@ src/theme-light.css      主题引擎管不到的浅色补丁（--k-* / --shadow
 
 **两条经验**：
 
+- **主区只有一条阅读列**：`base.css` 的 `--read-w`（列宽）/ `--gutter`（最小留白）/
+  `--read-pad`（居中留白）三个 token 统一了时间线、输入区、待办、详情正文。
+  新页面用 `padding-inline: var(--read-pad)` + `max-width: var(--read-w)`，
+  **不要**在滚动容器里用 `margin: 0 auto` 居中（滚动条会吃掉 9px，列心左移，和头部差半格）。
+  改完跑 `scratch/layout-preview/snap.mjs` 对比截图，见 `docs/design/2026-11-19-layout-rhythm.md`。
 - **字体分两套**：`--font-ui` = Inter + Noto Sans SC（比例宽度，长中文段落好读）；
   `--font-mono` = Maple Mono NF CN（等宽，`styles/fonts.css` 里只有一个 400 字面）。
   等宽字体铺满界面会把中文撑成 1.2em 宽、行拉长，所以别再把它塞进 `--font-ui`。

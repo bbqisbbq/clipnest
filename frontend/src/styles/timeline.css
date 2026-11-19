@@ -10,28 +10,31 @@
   flex-direction: column; /* 上：时间线（flex:1）；下：固定输入区 */
   min-height: 0;
   overflow: hidden;
-  border-left: 1px solid var(--border-soft);
 }
 
 .memo-main { display: flex; flex-direction: column; min-height: 0; flex: 1; min-width: 0; }
+/* 头部与时间线共用同一条阅读列：搜索框的左边缘和第一张卡片的左边缘对齐，
+   而不是一个贴面板、一个居中对齐。 */
 .memo-head {
   display: flex; align-items: center; gap: 12px;
-  padding: 10px 14px; border-bottom: 1px solid var(--border-soft);
+  padding: 14px var(--read-pad) 12px;
+  border-bottom: 1px solid var(--border-soft);
 }
-.memo-head .input { flex: 1; }
-.memo-count { color: var(--text-3); font-size: 12px; white-space: nowrap; }
+.memo-head .input { flex: 1; padding: 6px 10px; }
+.memo-count { color: var(--text-3); font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 
-.memo-timeline { flex: 1; overflow-y: auto; padding: 6px 14px 24px; }
+/* 时间线的左右留白直接用 --read-pad：滚动条占掉的 9px 只会缩短右侧，
+   左侧（卡片的左边缘）始终和搜索框、输入框对齐。 */
+.memo-timeline { flex: 1; overflow-y: auto; padding: 8px var(--read-pad) 28px; }
 
 /* 阅读列：卡片不再跟着窗口一起变宽。1120px 窗口下一张卡片上千像素宽，
    一行塞一百多字，读起来很难受；固定列宽后两侧留白，视线不用来回扫。 */
 .memo-day {
-  margin-top: 14px;
+  margin-top: 18px;
   width: 100%;
-  max-width: 760px;
-  margin-left: auto;
-  margin-right: auto;
+  max-width: var(--read-w);
 }
+.memo-day:first-child { margin-top: 6px; }
 .memo-card-title {
   margin: 0 0 6px;
   font-size: 12px;
@@ -41,17 +44,17 @@
 }
 .memo-day-label {
   position: sticky; top: 0; z-index: 1;
-  padding: 6px 0 8px;
+  padding: 10px 0 10px;
   color: var(--text-3); font-size: 12px; letter-spacing: .04em;
-  background: linear-gradient(var(--bg) 70%, transparent);
+  background: linear-gradient(var(--bg) 68%, transparent);
 }
 
 .memo-card {
   border: 1px solid var(--border-soft);
   border-radius: var(--r-lg);
   background: var(--surface);
-  padding: 12px 14px;
-  margin-bottom: 10px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
   cursor: pointer;
   transition: border-color .15s var(--ease), background .15s var(--ease);
 }
@@ -78,7 +81,7 @@
 
 .memo-meta {
   display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
-  margin-top: 8px; font-size: 11px; color: var(--text-3);
+  margin-top: 10px; font-size: 11px; color: var(--text-3);
 }
 .memo-tag { border: 0; background: none; color: var(--accent); font-size: 11px; cursor: pointer; padding: 0; }
 .memo-src { color: var(--text-3); }
@@ -249,7 +252,7 @@ body.is-col-resizing .memo-splitter { background: var(--accent-tint); }
   flex: none;
   display: flex;
   flex-direction: column;
-  padding: 14px 24px 16px;
+  padding: 16px var(--gutter) 18px;
   border-top: 1px solid var(--border-soft);
   background: var(--surface);
   overflow: visible;
@@ -279,12 +282,13 @@ body.is-col-resizing .memo-splitter { background: var(--accent-tint); }
   flex: 1;
   /* 和卡片同一个阅读列宽 */
   width: 100%;
-  max-width: 760px;
+  max-width: var(--read-w);
   margin-left: auto;
   margin-right: auto;
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
   background: var(--surface-2);
+  box-shadow: var(--shadow-card);
   overflow: hidden;
   transition: border-color .12s var(--ease);
 }
@@ -307,7 +311,7 @@ body.is-col-resizing .memo-splitter { background: var(--accent-tint); }
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 6px 10px 8px 12px;
+  padding: 8px 10px 9px 14px;
   border-top: 1px solid var(--border-soft);
 }
 .composer-tags { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
@@ -326,7 +330,7 @@ body.is-col-resizing .memo-splitter { background: var(--accent-tint); }
   text-overflow: ellipsis;
 }
 .composer-btns { margin-left: auto; display: flex; align-items: center; gap: 12px; flex: none; }
-.composer-error { margin: 6px 0 0; max-width: 760px; margin-left: auto; margin-right: auto; }
+.composer-error { margin: 8px 0 0; max-width: var(--read-w); margin-left: auto; margin-right: auto; }
 
 /* 侧栏菜单自定义：拖动与改名 */
 .side-item .nav-edit-btn {
@@ -395,7 +399,6 @@ body.is-col-resizing .memo-splitter { background: var(--accent-tint); }
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
-  border-left: 1px solid var(--border-soft);
 }
 .entries-main { display: flex; flex-direction: column; min-height: 0; flex: 1; }
 
@@ -421,8 +424,8 @@ body.is-col-resizing .memo-splitter { background: var(--accent-tint); }
 
 /* ---------------- 日历 ---------------- */
 .cal {
-  margin: 4px 8px 10px;
-  padding: 8px 8px 10px;
+  margin: 2px 0 14px;
+  padding: 10px 10px 12px;
   border: 1px solid var(--border-soft);
   border-radius: var(--r-md);
   background: var(--surface-2);
@@ -431,7 +434,8 @@ body.is-col-resizing .memo-splitter { background: var(--accent-tint); }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
+  padding: 0 2px;
 }
 .cal-title { font-size: 11px; color: var(--text-2); }
 .cal-nav {
@@ -447,9 +451,9 @@ body.is-col-resizing .memo-splitter { background: var(--accent-tint); }
 .cal-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 2px;
+  gap: 3px;
 }
-.cal-weekdays { margin-bottom: 3px; }
+.cal-weekdays { margin-bottom: 4px; }
 .cal-weekday {
   text-align: center;
   font-size: 9px;
@@ -459,9 +463,9 @@ body.is-col-resizing .memo-splitter { background: var(--accent-tint); }
   position: relative;
   display: grid;
   place-items: center;
-  height: 24px;
+  height: 26px;
   border-radius: var(--r-sm);
-  font-size: 10px;
+  font-size: 10.5px;
   color: var(--text-2);
   cursor: pointer;
   transition: background .1s var(--ease), color .1s var(--ease);
@@ -480,8 +484,8 @@ body.is-col-resizing .memo-splitter { background: var(--accent-tint); }
 }
 .cal-clear {
   width: 100%;
-  margin-top: 6px;
-  padding: 3px;
+  margin-top: 8px;
+  padding: 4px;
   border-radius: var(--r-sm);
   font-size: 10px;
   color: var(--text-3);

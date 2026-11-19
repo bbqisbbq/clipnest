@@ -40,3 +40,6 @@ scratch/backup-*/
 
 # 根目录别再放构建产物：go build 不带 -o 会在这里掉一个 clipnest.exe
 /*.exe
+
+# 布局对比截图（本地看效果用，只入库脚本）
+scratch/layout-preview/*.png

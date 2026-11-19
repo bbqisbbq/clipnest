@@ -8,16 +8,16 @@
   min-width: 0;
   min-height: 0;
   flex: 1;
-  border-left: 1px solid var(--border-soft);
   overflow: hidden;
 }
 
+/* 头部与行都对齐同一条阅读列（和时间线一致），页面之间切换时左边缘不动。 */
 .todo-head {
   display: flex;
   align-items: baseline;
   gap: 12px;
   flex: none;
-  padding: 12px 20px 10px;
+  padding: 16px var(--read-pad) 12px;
   border-bottom: 1px solid var(--border-soft);
 }
 .todo-head h2 {
@@ -54,21 +54,21 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 8px 12px 32px;
+  padding: 12px var(--read-pad) 32px;
 }
 
 .todo-group {
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  max-width: 860px;
+  gap: 2px;
+  max-width: none;
 }
 .todo-group--done {
-  margin-top: 14px;
+  margin-top: 18px;
 }
 .todo-group-head {
   align-self: flex-start;
-  margin: 2px 0 4px 6px;
+  margin: 4px 0 6px 4px;
   padding: 3px 6px;
   border: 0;
   border-radius: var(--r-sm);
@@ -85,8 +85,8 @@
 .todo-row {
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 5px 8px;
+  gap: 10px;
+  padding: 7px 10px;
   border-radius: var(--r-sm);
   transition: background 0.1s var(--ease);
 }
@@ -96,8 +96,8 @@
 
 .todo-check {
   flex: none;
-  width: 15px;
-  height: 15px;
+  width: 16px;
+  height: 16px;
   margin: 0;
   accent-color: var(--accent);
   cursor: pointer;

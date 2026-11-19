@@ -19,6 +19,9 @@
   --text: #e9ebf0;
   --text-2: #a4abba;
   --text-3: #6e7686;
+  /* 旧名（picker / snippets 里用过）：别让它变成未定义变量，
+     否则 color: var(--text-dim) 整条声明失效、文字亮成正文色。 */
+  --text-dim: var(--text-3);
 
   --accent: #7d8cff;
   --accent-2: #9d7bff;
@@ -41,7 +44,16 @@
   --r-lg: 10px;
   --r-xl: 14px;
 
+  /* 布局节奏：主区所有页面共用一条"阅读列"。
+     --gutter   窄窗口下的最小左右留白
+     --read-w   阅读列宽（时间线 / 输入区 / 待办 / 详情正文共用，视线不在两种列宽之间跳）
+     --read-pad 居中留白 = max(最小留白, (面板宽 - 列宽)/2)，用在面板级容器上 */
+  --gutter: 20px;
+  --read-w: 760px;
+  --read-pad: max(var(--gutter), calc((100% - var(--read-w)) / 2));
+
   --shadow-pop: 0 20px 48px rgba(0, 0, 0, 0.5);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.22);
   --ease: cubic-bezier(0.2, 0.6, 0.3, 1);
 
   /* 界面（比例字体）：Inter 管拉丁与数字，Noto Sans SC 管中文 —— 与正文行长
