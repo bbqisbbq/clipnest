@@ -94,7 +94,8 @@ ClipNest 在你使用电脑时安静地记录进入过系统剪贴板的一切�
 | --- | --- | --- |
 | `clipnest-<版本>-amd64-setup.exe` | `C:\Program Files\bbqisbbq\ClipNest` | 需要管理员（UAC） |
 
-GitHub Releases 上只保留**最新一个版本**的安装包（旧版本资产会随每次发版清理掉）。
+每个 Release 都只带**它自己那个版本**的安装包（外加 2.7.1 起的 `.sig`）。自动更新只看
+`/releases/latest`，所以旧版本的包留在原地既不会被误装，也方便回滚到指定版本。
 
 安装包**未做 Authenticode 签名**，首次运行会触发 SmartScreen 提示（「更多信息 → 仍要运行」）。
 要签名的话脚本是现成的（自签名证书在 `build\signing\`，不入库）：
