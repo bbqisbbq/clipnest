@@ -4,7 +4,6 @@ package clip
 
 import (
 	"bytes"
-	"fmt"
 	"image"
 	"image/color"
 	"image/png"
@@ -17,15 +16,16 @@ import (
 // These tests drive the real Windows clipboard. They run sequentially because
 // the clipboard is global state.
 //
-// If a ClipNest instance is running it is also wiring itself to that same
-// clipboard (and briefly holding it open), which makes round-trip assertions
-// flaky — so the whole file skips instead of failing for the wrong reason.
-func TestMain(m *testing.M) {
-	if clipnestRunning() {
-		fmt.Fprintln(os.Stderr, "skip: a ClipNest instance is running and shares the clipboard; quit it first")
-		os.Exit(0)
+// 只有真正读写剪贴板的那几条要独占剪贴板：如果本机正跑着一个 ClipNest 实例，
+// 它也在监听同一块剪贴板（还会短暂占住），往返断言就会莫名失败。所以这里用
+// requireIdleClipboard 逐条跳过，而不是像以前那样在 TestMain 里把**整个包**的
+// 测试一起跳过——那会让存储/查询/同步这些跟剪贴板无关的用例白白不跑。
+func requireIdleClipboard(t *testing.T) {
+	t.Helper()
+	if !clipnestRunning() {
+		return
 	}
-	os.Exit(m.Run())
+	t.Skip("clipnest.exe 正在运行并共享剪贴板：先退出它再跑这条用例")
 }
 
 func clipnestRunning() bool {
@@ -38,6 +38,7 @@ func clipnestRunning() bool {
 }
 
 func TestDIBRoundTrip(t *testing.T) {
+	requireIdleClipboard(t)
 	img := image.NewNRGBA(image.Rect(0, 0, 4, 3))
 	img.SetNRGBA(0, 0, color.NRGBA{R: 255, A: 255})
 	img.SetNRGBA(3, 2, color.NRGBA{G: 128, B: 64, A: 255})
@@ -61,6 +62,7 @@ func TestDIBRoundTrip(t *testing.T) {
 }
 
 func TestTextRoundTrip(t *testing.T) {
+	requireIdleClipboard(t)
 	const want = "ClipNest 剪贴板回写测试 ✓"
 	if err := WriteTextToClipboard(want); err != nil {
 		t.Fatalf("WriteTextToClipboard: %v", err)
@@ -81,6 +83,7 @@ func TestTextRoundTrip(t *testing.T) {
 }
 
 func TestLinkDetection(t *testing.T) {
+	requireIdleClipboard(t)
 	if err := WriteTextToClipboard("https://github.com/bbqisbbq/clipnest"); err != nil {
 		t.Fatalf("WriteTextToClipboard: %v", err)
 	}
@@ -91,6 +94,7 @@ func TestLinkDetection(t *testing.T) {
 }
 
 func TestImageRoundTrip(t *testing.T) {
+	requireIdleClipboard(t)
 	img := image.NewNRGBA(image.Rect(0, 0, 8, 6))
 	for y := 0; y < 6; y++ {
 		for x := 0; x < 8; x++ {
@@ -117,6 +121,7 @@ func TestImageRoundTrip(t *testing.T) {
 }
 
 func TestFilesRoundTrip(t *testing.T) {
+	requireIdleClipboard(t)
 	exe, err := os.Executable()
 	if err != nil {
 		t.Skip("no executable path")
@@ -137,6 +142,7 @@ func TestFilesRoundTrip(t *testing.T) {
 }
 
 func TestCustomFormatRoundTrip(t *testing.T) {
+	requireIdleClipboard(t)
 	payload := []byte{0xDE, 0xAD, 0xBE, 0xEF, 0x01, 0x02, 0x03}
 	const formatName = "ClipNestSmokeFmt"
 	if err := WriteRawToClipboard(0, formatName, payload); err != nil {
@@ -161,6 +167,7 @@ func TestCustomFormatRoundTrip(t *testing.T) {
 }
 
 func TestRTFCapture(t *testing.T) {
+	requireIdleClipboard(t)
 	const rtf = `{\rtf1\ansi\deff0{\fonttbl{\f0 Calibri;}}\f0\fs24 Hello \b ClipNest\b0\par second line}`
 	if err := WriteRTFToClipboard(rtf, ""); err != nil {
 		t.Fatalf("WriteRTFToClipboard: %v", err)
