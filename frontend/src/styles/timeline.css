@@ -341,7 +341,24 @@ body.is-capture { background: transparent; }
   margin-bottom: 8px;
   padding: 0 2px;
 }
-.cal-title { font-size: 12px; color: var(--text-2); }
+.cal-title {
+  flex: 1;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-2);
+}
+/* 「今天」：切到别的月份后唯一能回到当月的入口 */
+.cal-today {
+  margin-left: 4px;
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  font-size: 12px;
+  color: var(--text-3);
+  cursor: pointer;
+  transition: border-color .12s var(--ease), color .12s var(--ease);
+}
+.cal-today:hover { border-color: var(--accent-line); color: var(--accent); }
 .cal-nav {
   width: 20px; height: 20px;
   display: grid; place-items: center;
@@ -360,29 +377,34 @@ body.is-capture { background: transparent; }
 .cal-weekdays { margin-bottom: 4px; }
 .cal-weekday {
   text-align: center;
-  font-size: 9px;
+  font-size: 12px;
   color: var(--text-3);
 }
 .cal-cell {
   position: relative;
   display: grid;
   place-items: center;
-  height: 26px;
+  /* 正方形格子：列宽由 7 等分决定，高度跟着宽度走，七列一排才不显扁 */
+  aspect-ratio: 1;
   border-radius: var(--r-sm);
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--text-2);
   cursor: pointer;
   transition: background .1s var(--ease), color .1s var(--ease);
 }
 .cal-cell.is-empty { cursor: default; }
 .cal-cell:not(.is-empty):hover { background: var(--accent-tint); color: var(--accent); }
-.cal-cell.is-today { box-shadow: inset 0 0 0 1px var(--border-strong); }
-.cal-cell.is-active { background: var(--accent); color: #fff; }
-.cal-cell.is-active .cal-dot { background: #fff; }
+.cal-cell.is-today { color: var(--accent); font-weight: 600; }
+/* 选中的是浅底 + 强调色文字：实心块在暖白低对比里太抢眼，而且会把"今天"的描边吃掉 */
+.cal-cell.is-active { background: var(--accent-tint); color: var(--accent); font-weight: 600; }
 .cal-dot {
   position: absolute;
-  bottom: 2px;
-  width: 3px; height: 3px;
+  left: 50%;
+  bottom: 3px;
+  /* 绝对定位只给了 bottom 时，横向落点取决于"静态位置"，在 grid 格子里会偏到右下 */
+  transform: translateX(-50%);
+  width: 3px;
+  height: 3px;
   border-radius: 50%;
   background: var(--accent);
 }

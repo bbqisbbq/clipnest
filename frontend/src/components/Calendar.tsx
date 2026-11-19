@@ -88,6 +88,16 @@ export default function Calendar({ selectedDay, onPickDay, query }: Props) {
         <button className="cal-nav" onClick={() => shiftMonth(1)} title="下个月">
           ›
         </button>
+        <button
+          className="cal-today"
+          title="回到今天"
+          onClick={() => {
+            setCursor(new Date());
+            onPickDay(selectedDay === today ? "" : today);
+          }}
+        >
+          今天
+        </button>
       </div>
 
       <div className="cal-grid cal-weekdays">
@@ -100,7 +110,7 @@ export default function Calendar({ selectedDay, onPickDay, query }: Props) {
 
       <div className="cal-grid">
         {cells.map((cell, i) => {
-          if (!cell) return <span key={`pad-${i}`} className="cal-cell is-empty" />;
+          if (!cell) return <span key={`pad-${i}`} className="cal-cell is-empty" aria-hidden="true" />;
           const n = counts[cell.key] ?? 0;
           const isToday = cell.key === today;
           const isActive = cell.key === selectedDay;
