@@ -7,6 +7,12 @@ export {
 };
 
 export {
+    Kind,
+    SnippetKind,
+    Source
+} from "./models.js";
+
+export type {
     AppInfo,
     DayCount,
     Entry,
@@ -17,11 +23,8 @@ export {
     FilterCondition,
     FilterFieldSpec,
     FilterGroup,
-    Kind,
     Settings,
     Snippet,
-    SnippetKind,
-    Source,
     Stats,
     SyncDetail,
     SyncDeviceInfo,

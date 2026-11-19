@@ -10,6 +10,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"time"
+	"io"
 	"strings"
 	"testing"
 )
@@ -292,4 +294,66 @@ func TestVerifySignatureText(t *testing.T) {
 	if err := verifySignatureText(file, "AAAA"); err == nil {
 		t.Fatal("长度异常的签名不该通过")
 	}
+}
+
+// 真实发布的签名链路体检（默认跳过，要联网）：
+//
+//	$env:CLIPNEST_LIVE_RELEASE_TEST="1"; go test ./internal/clip -run TestLiveReleaseSignature -v
+//
+// 验的是最容易出岔子的那一环：**线上那份 .sig 能不能被程序里内置的公钥验通**。
+// 单元测试只能证明"逻辑对"，证明不了"密钥配对没错、资产传对了"。
+func TestLiveReleaseSignature(t *testing.T) {
+	if os.Getenv("CLIPNEST_LIVE_RELEASE_TEST") != "1" {
+		t.Skip("设 CLIPNEST_LIVE_RELEASE_TEST=1 才跑（需要联网访问 GitHub）")
+	}
+	// 两条路：给了直链就走直链（API 有每 IP 60 次/小时的限流，发版当天很容易撞上），
+	// 否则走正常的发布索引。
+	assetURL := os.Getenv("CLIPNEST_LIVE_ASSET_URL")
+	sigURL := os.Getenv("CLIPNEST_LIVE_SIG_URL")
+	assetSize := int64(0)
+	sigName := "sig"
+	if assetURL != "" && sigURL != "" {
+		t.Logf("用直链体检: %s", assetURL)
+	} else {
+		rel, err := fetchLatestRelease()
+		if err != nil {
+			t.Fatalf("fetch latest release: %v", err)
+		}
+		asset := pickInstallerAsset(rel.Assets)
+		if asset == nil {
+			t.Fatalf("%s 没有可用的安装包", rel.TagName)
+		}
+		sig := resolveSigAsset(rel.Assets, asset.Name)
+		if sig == nil {
+			t.Fatalf("%s 的发布缺少 %s.sig —— 这一版没人能更新上来", rel.TagName, asset.Name)
+		}
+		t.Logf("latest=%s installer=%s (%d bytes) sig=%s", rel.TagName, asset.Name, asset.Size, sig.Name)
+		assetURL, sigURL, assetSize, sigName = asset.DownloadURL, sig.DownloadURL, asset.Size, sig.Name
+	}
+
+	path := filepath.Join(t.TempDir(), "live-setup.exe")
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	resp, err := (&http.Client{Timeout: 10 * time.Minute}).Get(assetURL)
+	if err != nil {
+		f.Close()
+		t.Fatalf("download: %v", err)
+	}
+	n, copyErr := io.Copy(f, resp.Body)
+	resp.Body.Close()
+	if cerr := f.Close(); copyErr == nil {
+		copyErr = cerr
+	}
+	if copyErr != nil {
+		t.Fatalf("download body: %v", copyErr)
+	}
+	if assetSize > 0 && n != assetSize {
+		t.Fatalf("size %d, want %d", n, assetSize)
+	}
+	if err := verifyUpdateSignature(path, &ghAsset{Name: sigName, DownloadURL: sigURL}); err != nil {
+		t.Fatalf("线上签名验不过（内置公钥与私钥不配对，或资产传错了）: %v", err)
+	}
+	t.Logf("签名校验通过：%d 字节安装包 + 内置公钥", n)
 }
