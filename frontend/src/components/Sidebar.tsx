@@ -1,6 +1,7 @@
 import type { EntryFilter } from "../lib/api";
 import Calendar from "./Calendar";
 import {
+  IconAll,
   IconFiles,
   IconFolder,
   IconImage,
@@ -40,11 +41,9 @@ type Props = {
   onToggleCapture: () => void;
 };
 
-// 未分组的片段用这个哨兵值筛选（空串表示「全部」）
-export const NO_GROUP = "__none__";
-
 function renderNavIcon(name: string, size: number) {
   switch (name) {
+    case "all": return <IconAll size={size} />;
     case "snippet": return <IconSnippet size={size} />;
     case "memo": return <IconMemo size={size} />;
     case "star": return <IconStar size={size} />;

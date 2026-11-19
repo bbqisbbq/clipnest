@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -16,7 +15,7 @@ import (
 )
 
 // Version is shown in the UI and written to the log on start.
-const Version = "2.3.0"
+const Version = "2.3.1"
 
 // AppInfo is static information the frontend needs for the about/settings view.
 type AppInfo struct {
@@ -250,7 +249,6 @@ func (s *ClipService) handleClipboardChange() {
 	if err != nil {
 		return
 	}
-	// 不再自动清理：用户要求「以保留为主，手动删除」。Prune 保留实现但不再调用。
 
 	if isNew {
 		s.emit("clip:new", *entry)
@@ -258,24 +256,6 @@ func (s *ClipService) handleClipboardChange() {
 		s.emit("clip:bumped", *entry)
 	}
 	s.emit("clip:stats", s.store.Stats())
-}
-
-func (s *ClipService) shouldIgnore(cap *Captured, st Settings, patterns []*regexp.Regexp) bool {
-	if len(patterns) == 0 {
-		return false
-	}
-	haystacks := []string{cap.Text, cap.Preview}
-	for _, f := range cap.Files {
-		haystacks = append(haystacks, f.Name, f.Path)
-	}
-	for _, re := range patterns {
-		for _, h := range haystacks {
-			if h != "" && re.MatchString(h) {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // ---- frontend API -------------------------------------------------------
@@ -401,9 +381,6 @@ func (s *ClipService) GetSettings() Settings { return s.store.Settings() }
 // actually stored.
 func (s *ClipService) SaveSettings(st Settings) (Settings, error) {
 	prev := s.store.Settings()
-	if st.MaxItems <= 0 {
-		st.MaxItems = 1000
-	}
 	if st.Hotkey == "" {
 		st.Hotkey = prev.Hotkey
 	}
@@ -425,7 +402,6 @@ func (s *ClipService) SaveSettings(st Settings) (Settings, error) {
 			return s.store.Settings(), err
 		}
 	}
-	// 不再自动清理：用户要求「以保留为主，手动删除」。Prune 保留实现但不再调用。
 	go s.syncLoop()
 	go s.updateCheckLoop()
 	s.refreshTriggers()

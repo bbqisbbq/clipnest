@@ -25,10 +25,6 @@ type Settings struct {
 	// MaxTextLength skips text entries longer than this many characters (0 =
 	// unlimited). Guards against pasting whole documents into the history.
 	MaxTextLength int `json:"maxTextLength"`
-	// MaxItems caps the history; oldest unpinned entries are pruned first.
-	MaxItems int `json:"maxItems"`
-	// MaxAgeDays drops entries older than this (0 = keep forever).
-	MaxAgeDays int `json:"maxAgeDays"`
 
 
 	// Hotkey is a Wails accelerator, e.g. "Ctrl+Shift+V". Empty disables it.
@@ -43,9 +39,6 @@ type Settings struct {
 	// ShowOnLaunch opens the manager window at startup instead of staying in
 	// the tray.
 	ShowOnLaunch bool `json:"showOnLaunch"`
-	// CloseToTray hides the window on close instead of quitting. Kept for
-	// documentation: it is always true in this build.
-	CloseToTray bool `json:"closeToTray"`
 	// ---- snippets ----
 	// SnippetsInPicker shows matching snippets in the quick-paste list.
 	SnippetsInPicker bool `json:"snippetsInPicker"`
@@ -59,11 +52,6 @@ type Settings struct {
 	ExpandEndChars string `json:"expandEndChars"`
 
 	// ---- appearance ----
-	// ---- 一级菜单自定义（顺序 / 名称 / 图标）----
-	NavOrder  []string          `json:"navOrder"`
-	NavLabels map[string]string `json:"navLabels"`
-	NavIcons  map[string]string `json:"navIcons"`
-
 	// ThemePreset selects a palette (see frontend/src/lib/themes.ts).
 	ThemePreset string `json:"themePreset"`
 	// ThemeCustomCSS is user-authored CSS applied on top of the preset.
@@ -87,7 +75,7 @@ type Settings struct {
 	// package file, so two machines can never overwrite each other's data.
 	SyncDeviceID string `json:"syncDeviceId,omitempty"`
 	// SyncSettings shares the non-machine-specific settings (capture toggles,
-	// retention, ignore rules, hotkey, paste behaviour) with other machines.
+	// hotkey, paste behaviour, appearance) with other machines.
 	SyncSettings bool `json:"syncSettings"`
 	// SyncUpdatedAt stamps the last change of the shareable settings, so peers
 	// can tell whose copy is newer.
@@ -105,13 +93,10 @@ func DefaultSettings() Settings {
 		CaptureRich:    true,
 		CaptureCustom:  true,
 		MaxTextLength:  100_000,
-		MaxItems:       1000,
-		MaxAgeDays:     30,
 		Hotkey:         "Ctrl+Shift+V",
 		CaptureHotkey:   "Ctrl+Shift+N",
 		PasteOnPick:    true,
 		ShowOnLaunch:   false,
-		CloseToTray:    true,
 		AutoStart:      false,
 		Theme:          "system",
 
@@ -126,18 +111,10 @@ func DefaultSettings() Settings {
 		ExpandEnabled:    false,
 		ExpandSuffix:     "-",
 		ExpandEndChars:   DefaultEndChars,
-		NavOrder:        []string{"history", "snippets", "memos"},
-		NavLabels:       map[string]string{},
-		NavIcons:        map[string]string{},
 		ThemePreset:     "default-dark",
 		ThemeCustomCSS:  "",
 		UpdateCheck:      true,
 	}
-}
-
-// clone returns a deep copy so callers can mutate freely.
-func (s Settings) clone() Settings {
-	return s
 }
 
 // nowUTC returns a strictly increasing UTC timestamp.

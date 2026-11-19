@@ -78,24 +78,23 @@ func TestEntryUnifiedType(t *testing.T) {
 	}
 }
 
-func TestEntryExpiryOnlyTouchesCollected(t *testing.T) {
+func TestEntryExpiresAtIsKeptNotPruned(t *testing.T) {
 	svc := newTestService(t, t.TempDir())
 
-	permanent, _ := svc.store.SaveEntry(Entry{Content: "永久保存的笔记"})
 	past := time.Now().UTC().Add(-time.Hour)
 	expired, _ := svc.store.SaveEntry(Entry{
 		Content: "早就过期的采集", Source: SourceClipboard,
 		Actions:  []string{ActionClipboard}, Hash: "h-old", ExpiresAt: &past,
 	})
 
-	if n := svc.store.PruneExpired(); n != 1 {
-		t.Fatalf("PruneExpired = %d, want 1", n)
+	// 策略是「以保留为主，手动删除」：没有任何东西会自动清理条目，
+	// ExpiresAt 只是历史字段（旧数据 / 对端同步包可能带），要原样读回。
+	got, ok := svc.store.GetEntry(expired.ID)
+	if !ok {
+		t.Fatal("条目被自动删除了——本程序不该做后台清理")
 	}
-	if _, ok := svc.store.GetEntry(expired.ID); ok {
-		t.Error("过期的采集条目应该被删")
-	}
-	if _, ok := svc.store.GetEntry(permanent.ID); !ok {
-		t.Error("手写笔记被误删了——这是最不能接受的错误")
+	if got.ExpiresAt == nil {
+		t.Error("ExpiresAt 应该原样存回")
 	}
 }
 

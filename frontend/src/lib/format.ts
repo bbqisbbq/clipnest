@@ -41,9 +41,3 @@ export function formatDateTime(iso: string): string {
     second: "2-digit",
   });
 }
-
-export function shortenMiddle(s: string, max = 44): string {
-  if (s.length <= max) return s;
-  const keep = Math.floor((max - 1) / 2);
-  return `${s.slice(0, keep)}…${s.slice(s.length - keep)}`;
-}

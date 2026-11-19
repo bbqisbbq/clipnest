@@ -1,5 +1,8 @@
 # 评估：片段触发引擎该不该照 AutoIt / AutoHotkey 那一族来做
 
+> **状态：评估结论已分批落地**（P0 的 `EndChars` 终止符、按应用的启用/排除、大小写敏感等）。
+> 现行行为见 [../SNIPPETS.md](../SNIPPETS.md) 与 `internal/expand/`；本文只保留当时的对照与取舍。
+
 > 现状基线：ClipNest 0.9.0。本文只做评估，**不含实现**。
 > 参照对象：AutoIt 系自写热字串脚本、AutoHotkey v2 的 hotstring（`:*:` `:?:` `:O:` `:C:` `:R:` `:T:` `:B0:` `#Hotstring EndChars` 等选项）、以及 eTool 的短语触发。
 

@@ -248,16 +248,6 @@ export interface Settings {
     "maxTextLength": number;
 
     /**
-     * MaxItems caps the history; oldest unpinned entries are pruned first.
-     */
-    "maxItems": number;
-
-    /**
-     * MaxAgeDays drops entries older than this (0 = keep forever).
-     */
-    "maxAgeDays": number;
-
-    /**
      * Hotkey is a Wails accelerator, e.g. "Ctrl+Shift+V". Empty disables it.
      * Pressing it pops the picker at the text caret and pastes the chosen entry
      * straight into the focused application.
@@ -280,12 +270,6 @@ export interface Settings {
      * the tray.
      */
     "showOnLaunch": boolean;
-
-    /**
-     * CloseToTray hides the window on close instead of quitting. Kept for
-     * documentation: it is always true in this build.
-     */
-    "closeToTray": boolean;
 
     /**
      * ---- snippets ----
@@ -312,13 +296,6 @@ export interface Settings {
 
     /**
      * ---- appearance ----
-     * ---- 一级菜单自定义（顺序 / 名称 / 图标）----
-     */
-    "navOrder": string[] | null;
-    "navLabels": { [_ in string]?: string } | null;
-    "navIcons": { [_ in string]?: string } | null;
-
-    /**
      * ThemePreset selects a palette (see frontend/src/lib/themes.ts).
      */
     "themePreset": string;
@@ -362,7 +339,7 @@ export interface Settings {
 
     /**
      * SyncSettings shares the non-machine-specific settings (capture toggles,
-     * retention, ignore rules, hotkey, paste behaviour) with other machines.
+     * hotkey, paste behaviour, appearance) with other machines.
      */
     "syncSettings": boolean;
 

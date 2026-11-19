@@ -35,3 +35,6 @@ frontend/.bindings-tmp-*/
 
 # 升级前的本地数据备份（含真实历史，别进仓库）
 scratch/backup-*/
+
+# 根目录别再放构建产物：go build 不带 -o 会在这里掉一个 clipnest.exe
+/*.exe

@@ -108,8 +108,6 @@ export default function SettingsView(props: Props) {
 
   useEffect(() => {
     setDraft(settings);
-    if (settings) {
-    }
   }, [settings]);
 
   const dirty = useMemo(() => {
@@ -142,8 +140,6 @@ export default function SettingsView(props: Props) {
 
   const revert = () => {
     setDraft(settings);
-    if (settings) {
-    }
     setTestResult("");
   };
 
@@ -286,7 +282,7 @@ export default function SettingsView(props: Props) {
             </Row>
             <Row
               label="同步设置项"
-              tip="把采集开关、保留策略、忽略规则、快捷键与粘贴行为一起同步（不含本机专属项：WebDAV 地址/密码、开机自启、启动即显示）。改设置时以最近修改的那台机器为准。"
+              tip="把采集开关、快捷键、粘贴行为与外观一起同步（不含本机专属项：WebDAV 地址/密码、开机自启、启动即显示）。改设置时以最近修改的那台机器为准。"
             >
               <Switch
                 checked={draft.syncSettings}

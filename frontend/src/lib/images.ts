@@ -22,12 +22,3 @@ export function collectImageHashes(texts: string[]): string[] {
   }
   return [...out];
 }
-
-/** 从正文里取出第一张图片的 token（""表示没有）。 */
-export function firstImageToken(content: string): string {
-  const i = content.indexOf("memoimg:");
-  if (i < 0) return "";
-  const rest = content.slice(i);
-  const j = rest.search(/[) \n]/);
-  return j > 0 ? rest.slice(0, j) : rest;
-}

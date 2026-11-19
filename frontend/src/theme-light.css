@@ -1,22 +1,7 @@
-/* 浅色主题：只覆盖颜色 token，布局与尺寸完全共用深色那套 */
+/* 浅色主题：只保留主题引擎管不到的东西。
+   颜色 token 的唯一来源是 lib/themes.ts（运行时写到 :root 的行内变量），
+   这里不再重复一份，否则会出现两套浅色数值互相打架。 */
 :root[data-theme="light"] {
-  --bg: #f4f5f8;
-  --surface: #ffffff;
-  --surface-2: #f2f4f8;
-  --surface-3: #e9ecf2;
-  --border: #dfe3ea;
-  --border-soft: #e8ebf1;
-  --border-strong: #cfd5df;
-  --text: #1b1f27;
-  --text-2: #4b5563;
-  --text-3: #7c8598;
-  --accent: #5566e8;
-  --accent-2: #7c5ce0;
-  --accent-tint: rgba(85, 102, 232, 0.12);
-  --accent-line: rgba(85, 102, 232, 0.4);
-  --ok: #14875f;
-  --warn: #a9691a;
-  --danger: #c8393f;
   --k-text: #4d63d8;
   --k-link: #12867c;
   --k-image: #a86a12;

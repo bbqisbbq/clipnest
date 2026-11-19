@@ -528,28 +528,6 @@ func dayBounds(day string) (string, string, bool) {
 	return encodeTime(t), encodeTime(t.AddDate(0, 0, 1)), true
 }
 
-// PruneExpired deletes entries past their own expiry. Kept for completeness but
-// no longer called anywhere: the policy is "keep everything, delete manually".
-func (s *Store) PruneExpired() int {
-	now := encodeTime(nowUTC())
-	rows, err := s.db.Query(`SELECT id FROM entries WHERE expires_at <> '' AND expires_at < ?`, now)
-	if err != nil {
-		return 0
-	}
-	var ids []string
-	for rows.Next() {
-		var id string
-		if rows.Scan(&id) == nil {
-			ids = append(ids, id)
-		}
-	}
-	rows.Close()
-	for _, id := range ids {
-		s.DeleteEntry(id)
-	}
-	return len(ids)
-}
-
 // EntryStats summarises counts for the sidebar / filters.
 type EntryStats struct {
 	Total     int `json:"total"`

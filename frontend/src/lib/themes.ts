@@ -256,12 +256,3 @@ export function checkContrast(tokens: ThemeTokens): ContrastCheck[] {
     return { label, ratio: Math.round(ratio * 100) / 100, ok: ratio >= 4.5 };
   });
 }
-
-// 当前页面实际生效的 token（预设 + 自定义 CSS 之后），用于自检。
-export function currentTokens(): ThemeTokens {
-  const style = getComputedStyle(document.documentElement);
-  const keys = Object.keys(THEME_PRESETS[0].tokens);
-  const out: ThemeTokens = {};
-  for (const k of keys) out[k] = style.getPropertyValue(k).trim();
-  return out;
-}
