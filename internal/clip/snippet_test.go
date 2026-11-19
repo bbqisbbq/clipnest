@@ -73,3 +73,39 @@ func TestSnippetTriggerIndexFollowsEntryWrites(t *testing.T) {
 		t.Fatal("删掉条目后不该再命中")
 	}
 }
+
+// 富文本 / 链接 / 文件引用 / 私有格式的条目设成片段后，展开必须出文字。
+// 根因：snippetFromEntry 原来把 entry kind 直接强转成 snippet kind（rich 不在
+// SnippetKind 里），Render 落到 default 分支返回空串，引擎记 "produced no text"。
+func TestSnippetKindMappingRendersText(t *testing.T) {
+	cases := []struct {
+		name string
+		kind Kind
+		body string
+	}{
+		{"富文本", KindRichText, "Hello ClipNest\nsecond line"},
+		{"链接", KindLink, "https://example.com/x"},
+		{"纯文本", KindText, "plain body"},
+		{"私有格式", KindCustom, "fallback text"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			svc := newTestService(t, t.TempDir())
+			e, err := svc.SaveEntry(Entry{Content: c.body, Kind: c.kind, Source: SourceClipboard})
+			if err != nil {
+				t.Fatalf("save: %v", err)
+			}
+			if _, err := svc.PromoteToSnippet(e.ID, "zz-kind-"); err != nil {
+				t.Fatalf("promote: %v", err)
+			}
+			trg, _, ok := svc.Match("zz-kind")
+			if !ok {
+				t.Fatal("缩写没命中")
+			}
+			text, _ := svc.Render(trg)
+			if text != c.body {
+				t.Fatalf("展开结果 = %q, want %q", text, c.body)
+			}
+		})
+	}
+}

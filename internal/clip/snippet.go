@@ -132,10 +132,33 @@ func (s *Store) AllSnippets() []Snippet {
 }
 
 // snippetFromEntry adapts an entry to the engine's Snippet view.
+// snippetKindOf maps an entry kind onto the snippet kind the expander understands.
+//
+// 两套枚举**不是一一对应**：条目是 text / link / image / files / rich / custom，
+// 片段是 text / password / url / app / command / file / image / html。
+// 直接 `SnippetKind(e.Kind)` 强转会让链接、富文本、文件引用、私有格式的片段在
+// Render 里落到 default 分支 → 返回空字符串，引擎就记 "produced no text"，
+// 用户看到的是"设成片段了但打缩写没反应"（2026-11-19 修）。
+func snippetKindOf(k Kind) SnippetKind {
+	switch k {
+	case KindLink:
+		return SnippetURL
+	case KindRichText:
+		return SnippetHTML
+	case KindFiles:
+		return SnippetFile
+	case KindImage:
+		return SnippetImage
+	default:
+		// text / custom（私有格式的兜底文本）都按纯文本展开
+		return SnippetText
+	}
+}
+
 func snippetFromEntry(e Entry) Snippet {
 	return Snippet{
 		ID:            e.ID,
-		Kind:          SnippetKind(e.Kind),
+		Kind:          snippetKindOf(e.Kind),
 		Title:         firstLineOf(e.Content),
 		Hash:          e.Hash,
 		Trigger:       e.TriggerKey,
