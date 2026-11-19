@@ -1,0 +1,134 @@
+/* 控件基元：按钮（primary / ghost / danger / sm）与 ⓘ 提示气泡。
+   这些规则在原文件里排在 detail 之后，保持原顺序以维持同名类的覆盖关系。 */
+
+/* ---------------- buttons ---------------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px;
+  border-radius: var(--r-sm);
+  border: 1px solid transparent;
+  font-size: 12px;
+  white-space: nowrap;
+  transition: background 0.12s var(--ease), border-color 0.12s var(--ease), color 0.12s var(--ease);
+}
+
+.btn-primary {
+  background: linear-gradient(160deg, #6478ff, #8b62f3);
+  color: var(--text);
+  box-shadow: 0 3px 12px rgba(100, 120, 255, 0.28);
+}
+
+.btn-primary:hover {
+  filter: brightness(1.07);
+}
+
+.btn-ghost {
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--text-2);
+}
+
+.btn-ghost:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.btn-ghost.is-on {
+  color: var(--warn);
+  border-color: rgba(242, 195, 99, 0.4);
+}
+
+.btn-danger {
+  background: rgba(238, 106, 106, 0.12);
+  border-color: rgba(238, 106, 106, 0.3);
+  color: #f09090;
+}
+
+.btn-danger:hover {
+  background: rgba(238, 106, 106, 0.2);
+  color: #ffa8a8;
+}
+
+.btn-danger-ghost {
+  background: transparent;
+  border-color: rgba(238, 106, 106, 0.24);
+  color: #d98a8a;
+}
+
+.btn-danger-ghost:hover {
+  background: rgba(238, 106, 106, 0.1);
+  color: #f0a0a0;
+}
+
+.btn-sm {
+  padding: 3px 8px;
+  font-size: 11px;
+}
+
+/* ---------------- tooltip ---------------- */
+
+.tip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  margin: -3px 0 -3px 4px;
+  padding: 3px;
+  border-radius: 4px;
+  color: var(--text-3);
+  outline: none;
+  cursor: help;
+  transition: background 0.12s var(--ease), color 0.12s var(--ease);
+}
+
+.tip:hover,
+.tip:focus-visible,
+.tip.is-open {
+  color: var(--accent);
+  background: rgba(125, 140, 255, 0.1);
+}
+
+.tip-body {
+  position: absolute;
+  bottom: calc(100% + 7px);
+  left: -6px;
+  transform: translateY(3px);
+  width: max-content;
+  max-width: 264px;
+  padding: 7px 9px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--surface-3);
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.55;
+  text-align: left;
+  box-shadow: var(--shadow-pop);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.12s var(--ease), transform 0.12s var(--ease);
+  z-index: 90;
+}
+
+.tip-body.is-right {
+  left: auto;
+  right: -6px;
+}
+
+.tip:hover .tip-body,
+.tip:focus-visible .tip-body,
+.tip.is-open .tip-body {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.tip:hover .tip-body.is-right,
+.tip:focus-visible .tip-body.is-right,
+.tip.is-open .tip-body.is-right {
+  transform: translateY(0);
+}
+

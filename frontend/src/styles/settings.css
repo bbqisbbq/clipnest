@@ -1,0 +1,273 @@
+/* 设置页：卡片分区、field 字段行、输入框、开关、配色预设与底部保存条。
+   设备面板与 .settings-bar 的后置补丁在原文件里排在别处，按原顺序留在对应文件。 */
+
+/* ---------------- settings ---------------- */
+
+.main.is-settings {
+  position: relative;
+  overflow: hidden;
+}
+
+.settings {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.settings-inner {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 16px 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.card {
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+}
+
+.card-head {
+  padding: 11px 14px 10px;
+  border-bottom: 1px solid var(--border-soft);
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.015), transparent);
+}
+
+.card-head h3 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+
+.card-head p {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.card-body {
+  padding: 2px 14px 10px;
+}
+
+.field {
+  display: grid;
+  /* The label column never shrinks below 180px: a squeezed label used to wrap
+     into a vertical single-character column, which is exactly the bug this
+     layout replaces. */
+  grid-template-columns: minmax(180px, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.card-body > .field:last-child,
+.card-body > .field-pair:last-child {
+  border-bottom: none;
+}
+
+.field.is-stacked {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 5px;
+}
+
+.field.is-stacked .field-control {
+  justify-content: flex-start;
+}
+
+.field-label {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.field-label > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* Very narrow panes: put the control under its label instead of squeezing. */
+@media (max-width: 1040px) {
+  .field {
+    grid-template-columns: minmax(150px, 1fr) auto;
+    gap: 10px;
+  }
+}
+
+@media (max-width: 940px) {
+  .field:not(.is-stacked) {
+    grid-template-columns: 1fr;
+    gap: 5px;
+  }
+
+  .field:not(.is-stacked) .field-control {
+    justify-content: flex-start;
+  }
+
+  .field-pair {
+    grid-template-columns: 1fr;
+  }
+}
+
+.field-control {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+}
+
+.field-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 16px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.field-pair .field {
+  border-bottom: none;
+}
+
+.input {
+  width: 200px;
+  padding: 5px 9px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  font-size: 12px;
+  outline: none;
+  transition: border-color 0.12s var(--ease), box-shadow 0.12s var(--ease);
+}
+
+.input:focus {
+  border-color: var(--accent-line);
+  box-shadow: 0 0 0 2px rgba(125, 140, 255, 0.12);
+}
+
+.input::placeholder {
+  color: #555d6d;
+}
+
+.input.is-num {
+  width: 92px;
+  text-align: right;
+}
+
+.input.is-short {
+  width: 148px;
+}
+
+.field.is-stacked .input {
+  width: 100%;
+}
+
+.input.is-area {
+  width: 100%;
+  resize: vertical;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  min-height: 74px;
+}
+
+.unit {
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.switch {
+  --wails-draggable: none;
+  width: 34px;
+  height: 19px;
+  padding: 2px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-3);
+  display: flex;
+  transition: background 0.16s var(--ease), border-color 0.16s var(--ease);
+}
+
+.switch-knob {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #5c6473;
+  transition: transform 0.16s var(--ease), background 0.16s var(--ease);
+}
+
+.switch.is-on {
+  background: rgba(125, 140, 255, 0.32);
+  border-color: var(--accent-line);
+}
+
+.switch.is-on .switch-knob {
+  transform: translateX(15px);
+  background: #e3e8ff;
+}
+
+.sync-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0 4px;
+  flex-wrap: wrap;
+}
+
+.sync-state {
+  margin-left: auto;
+  display: flex;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.test-result {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.card-actions {
+  display: flex;
+  gap: 7px;
+  padding-top: 10px;
+  flex-wrap: wrap;
+}
+
+.kv.is-wide {
+  border-bottom: none;
+  padding-bottom: 8px;
+}
+
+.settings-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 20px;
+  border-top: 1px solid var(--border-soft);
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  backdrop-filter: blur(8px);
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.settings-bar .is-dirty {
+  color: var(--warn);
+}
+
+.settings-bar-actions {
+  display: flex;
+  gap: 7px;
+}
+

@@ -10,7 +10,17 @@ import { ClipService } from "./lib/api";
 import "@fontsource-variable/inter";
 import "@fontsource-variable/noto-sans-sc";
 import "@fontsource-variable/jetbrains-mono";
-import "./styles.css";
+// 样式按域拆成多个文件：import 顺序就是层叠顺序，必须与原 styles.css 的
+// 段落顺序一致（同优先级的选择器靠后覆盖）。theme-light.css 仍是最后的补丁。
+import "./styles/base.css";
+import "./styles/layout.css";
+import "./styles/entries.css";
+import "./styles/controls.css";
+import "./styles/settings.css";
+import "./styles/picker.css";
+import "./styles/snippets.css";
+import "./styles/timeline.css";
+import "./styles/editor.css";
 import "./theme-light.css";
 import { applyTheme } from "./lib/themes";
 
