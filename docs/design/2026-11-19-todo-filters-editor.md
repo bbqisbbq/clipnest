@@ -1,8 +1,9 @@
 # 设计：Todo 收集 / 筛选器重构 / 编辑框重构
 
 > 状态：待评审（2026-11-19）。三块可独立验收，批 1 → 批 2 → 批 3。
-> 已拍板：**todo 按清单项（解析正文 `- [ ]`）**、**编辑器用 Vditor IR**、
-> **「全部内容」保留为不可删的根、「置顶」改为可删**、**先出文档再写代码**。
+> 已拍板：**todo 按清单项（解析正文 `- [ ]`）**、**编辑器用 Vditor IR + 全量拷贝 dist**、
+> **「全部内容」保留为不可删的根、「置顶」改为可删**、
+> **完成状态以字段属性为主、tag 作为默认关闭的设置项**、**先出文档再写代码**。
 
 ---
 
@@ -288,11 +289,13 @@ view: "entries" | "detail" | "settings"
 | 主题 | 编辑器壳 `theme: "classic" \| "dark"`（跟随我们的深浅主题）；正文预览 `preview.theme.current: "light" \| "dark"` |
 | 图标风格 | `icon: "ant" \| "material"`（用 `ant`，与现有线性图标更接近） |
 
-**离线资源落地**：把 `node_modules/vditor/dist` 里运行时必需的那几个目录拷进
-`frontend/public/vditor/`（`css/` `js/lute` `js/icons` `js/i18n` `js/highlight.js/highlight.min.js`
-`js/highlight.js/styles/github.min.css` 等），`cdn: import.meta.env.BASE_URL + "vditor"`。
-不拷 mathjax / mermaid / markmap / echarts / katex 字体（我们不用，能省 15MB+）。
-构建脚本里加一步校验：缺文件就让 `vite build` 失败（不然装出来是"打开编辑器白屏"）。
+**离线资源落地（已定：全量拷贝）**：把 `node_modules/vditor/dist` **整个**拷到
+`frontend/public/vditor/dist/`（约 22MB），`cdn: import.meta.env.BASE_URL + "vditor"`。
+全量拷贝意味着公式（katex/mathjax）、流程图（mermaid/flowchart）、思维导图（markmap）、
+图表（echarts）、五线谱、化学式这些渲染器**都能用**，代价只是安装包变大；
+它们都是按需加载（渲染到对应语法时才请求），不影响编辑器的启动速度。
+构建脚本里加一步校验：缺 `dist/js/lute/lute.min.js` 或 `dist/index.min.js` 就让
+`vite build` 失败（不然装出来是"打开编辑器白屏"）。
 
 **必须实测的未知项（写进实施清单）**
 1. Wails 内嵌资源用 `wails://` / 自定义 scheme 时，`cdn` 相对路径能否被 lute 的 `<script src>` 加载。
@@ -336,8 +339,8 @@ toolbar: ["headings","bold","italic","strike","|","list","ordered-list","check",
 
 - `lute.min.js` 3.6MB + `index.min.js` 280KB 是**按需**加载：详情视图首次打开时
   `const { default: Vditor } = await import("vditor")`，并显示「编辑器加载中…」骨架。
-- 安装包增大主要来自 public 里那几个文件（约 4.5MB 未压缩，压缩后估 1.2MB）。
-  可接受；如果在意，后续把 lute 换成 gzip 预压 + 运行时解压（不做）。
+- 安装包增大约 22MB（public 里全量 `vditor/dist`）。这是明确选择：**买下「公式/流程图/思维导图/图表都能渲染」**，
+  而不是把 15MB 花在"反正用不上"的猜测上。若日后体积成为问题，再按需裁剪并加构建白名单。
 
 ### 3.5 详情视图的其余改造
 
@@ -399,7 +402,7 @@ pwsh -File scripts\visual-check\check-css.ps1     # 批 3 必跑
 | 风险 | 处置 |
 | --- | --- |
 | Vditor 的 lute 从 `cdn` 加载，Wails 自定义 scheme 可能拦 | 批 3 第一件事就是最小验证；失败退路写在 3.2 |
-| lute 3.6MB 拉大安装包 | 只拷必需资源、懒加载；不引 mermaid/mathjax（省 15MB+） |
+| lute 3.6MB + 全量 dist 22MB 拉大安装包 | 已明确接受：换「公式/流程图/思维导图/图表可渲染」；资源按需加载，编辑器仍是懒加载 |
 | IR 模式 IME | 批 3 装机实测中文输入；不行就退 `mode:"sv"`（分屏）或保留 CodeMirror |
 | 编辑器内 `#tag` 不高亮 | 明确取舍，tag 在卡片与详情属性面板里照常可见 |
 | 同步版本混跑把派生列抹掉 | `mergeEntry` 一律本端重算派生列（1.4） |
