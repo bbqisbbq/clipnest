@@ -3,6 +3,11 @@
 // It lives in the system tray, records what you copy while it is running, and
 // gives you a searchable window to manage that history. Closing the window
 // keeps the app alive; only "退出" in the tray menu really quits.
+//
+// 这个文件只管"装配顺序"，不装细节：
+//   - main.go   启动顺序：路径、设置预读、服务、App、窗口、托盘、监听
+//   - wire.go   窗口与热键的开关（wiring 结构体，替代原来十几个互相捕获的闭包）
+//   - tray.go   托盘图标与菜单
 package main
 
 import (
@@ -13,7 +18,6 @@ import (
 	"path/filepath"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
-	"github.com/wailsapp/wails/v3/pkg/events"
 
 	"github.com/bbqisbbq/clipnest/internal/clip"
 )
@@ -50,217 +54,50 @@ func main() {
 	clip.TrimLog(dataDir, 2<<20)
 	clip.Logf(dataDir, "=== ClipNest %s starting (exe=%s) ===", clip.Version, exePath)
 
-	var (
-		app                  *application.App
-		win                  *application.WebviewWindow
-		picker               *application.WebviewWindow
-		capture              *application.WebviewWindow
-		pauseItem            *application.MenuItem
-		autoStartItem        *application.MenuItem
-		currentHotkey        string
-		currentCaptureHotkey string
-		applyCaptureHotkey   func(string) error
-		svc                  *clip.ClipService
-	)
-
-	showWindow := func() {
-		if win == nil {
-			return
-		}
-		win.Show()
-		win.Focus()
-	}
-	hideWindow := func() {
-		if win != nil {
-			win.Hide()
-		}
-	}
-
-	// The picker: a frameless always-on-top popup that appears at the caret.
-	showPickerAt := func(x, y int) bool {
-		if picker == nil {
-			return false
-		}
-		px, py := clip.ClampToWorkArea(x, y, clip.PickerWidth, clip.PickerHeight)
-		// Window calls and the foreground hand-off must happen on the main
-		// thread: that is the thread that owns the popup window.
-		application.InvokeSync(func() {
-			picker.SetPosition(px, py)
-			picker.Show()
-			if hwnd := uintptr(picker.NativeWindow()); hwnd != 0 {
-				clip.ActivateWindow(hwnd)
-			}
-			picker.Focus()
-			clip.Logf(dataDir, "picker window: pos=(%d,%d) hwnd=%#x fg=%#x",
-				px, py, uintptr(picker.NativeWindow()), clip.ForegroundWindowHandle())
-		})
-		if app != nil {
-			app.Event.Emit("picker:opened", "")
-		}
-		return true
-	}
-	hidePicker := func() {
-		if picker != nil {
-			picker.Hide()
-		}
-	}
-
-	// 快速输入：光标处弹一个小编辑框，Enter 存成备忘。
-	// 尺寸用户可拖（见下面 capture 窗口的注释），所以夹边距时取窗口的**当前**尺寸，
-	// 不能再用常量——否则拖大过的窗口会被按 620×220 夹，右下角跑到屏幕外。
-	showCaptureAt := func(x, y int) bool {
-		if capture == nil {
-			return false
-		}
-		w, h := capture.Size()
-		if w <= 0 || h <= 0 {
-			w, h = clip.CaptureWidth, clip.CaptureHeight
-		}
-		cx, cy := clip.ClampToWorkArea(x, y, w, h)
-		application.InvokeSync(func() {
-			capture.SetPosition(cx, cy)
-			capture.Show()
-			if hwnd := uintptr(capture.NativeWindow()); hwnd != 0 {
-				clip.ActivateWindow(hwnd)
-			}
-			capture.Focus()
-			clip.Logf(dataDir, "capture window: pos=(%d,%d) size=(%dx%d) hwnd=%#x",
-				cx, cy, w, h, uintptr(capture.NativeWindow()))
-		})
-		if app != nil {
-			app.Event.Emit("capture:opened", "")
-		}
-		return true
-	}
-	hideCapture := func() {
-		if capture != nil {
-			capture.Hide()
-		}
-	}
-
-	// 原生边框跟随主题：把 DWM 的系统边框/标题区刷成当前配色
-	applyChrome := func(dark bool, borderHex string) {
-		application.InvokeSync(func() {
-			if win != nil {
-				clip.SetWindowChrome(uintptr(win.NativeWindow()), dark, borderHex)
-			}
-			// picker 不设原生边框：它是透明窗口上的圆角卡片，DWM 的 1px 边框会沿着
-			// 方形窗口轮廓画一圈，正好落在本来要透明的四个角上。
-			if capture != nil {
-				clip.SetWindowChrome(uintptr(capture.NativeWindow()), dark, borderHex)
-			}
-		})
-	}
-
-	var applyHotkey func(string) error
-	applyHotkey = func(accel string) error {
-		if accel == currentHotkey {
-			return nil
-		}
-		if currentHotkey != "" && app.GlobalShortcut.IsRegistered(currentHotkey) {
-			_ = app.GlobalShortcut.Unregister(currentHotkey)
-		}
-		currentHotkey = ""
-		if accel == "" {
-			return nil
-		}
-		if err := app.GlobalShortcut.Register(accel, func() {
-			if err := svc.ShowPicker(); err != nil {
-				log.Printf("打开快速粘贴窗失败: %v", err)
-			}
-		}); err != nil {
-			return err
-		}
-		currentHotkey = accel
-		return nil
-	}
-
-	applyCaptureHotkey = func(accel string) error {
-		if accel == currentCaptureHotkey {
-			return nil
-		}
-		if currentCaptureHotkey != "" && app.GlobalShortcut.IsRegistered(currentCaptureHotkey) {
-			_ = app.GlobalShortcut.Unregister(currentCaptureHotkey)
-		}
-		currentCaptureHotkey = ""
-		if accel == "" {
-			return nil
-		}
-		if err := app.GlobalShortcut.Register(accel, func() {
-			if err := svc.ShowCapture(); err != nil {
-				clip.Logf(dataDir, "open capture window failed: %v", err)
-			}
-		}); err != nil {
-			clip.Logf(dataDir, "capture hotkey register failed: %q: %v", accel, err)
-			return err
-		}
-		currentCaptureHotkey = accel
-		clip.Logf(dataDir, "capture hotkey registered: %s", accel)
-		return nil
-	}
-
-	quit := func() {
-		if svc != nil {
-			svc.Shutdown()
-		}
-		if app != nil {
-			app.Quit()
-		}
-	}
-
 	// Service first: we need the persisted settings to decide whether the
 	// window starts visible.
 	preSettings := clip.DefaultSettings()
 	if st, err := clip.PeekSettings(dataDir); err == nil {
 		preSettings = st
 	}
-	// `clipnest.exe --show` forces the window open (handy when launching from a
-	// shortcut or while testing); `--background` is what the logon entry uses so
-	// autostart never pops a window in the user's face.
-	forceShow := false
-	forceHidden := false
-	for _, arg := range os.Args[1:] {
-		switch arg {
-		case "--show", "-show":
-			forceShow = true
-		case "--background", "-background":
-			forceHidden = true
-		}
-	}
+	forceShow, forceHidden := parseArgs(os.Args[1:])
+
+	w := &wiring{dataDir: dataDir, exePath: exePath}
 
 	svc, err := clip.NewClipService(dataDir, clip.Hooks{
 		Emit: func(name string, data any) {
-			if app != nil {
-				app.Event.Emit(name, data)
+			if w.app != nil {
+				w.app.Event.Emit(name, data)
 			}
 		},
-		ShowWindow:    showWindow,
-		HideWindow:    hideWindow,
-		Quit:          quit,
+		ShowWindow:    w.showWindow,
+		HideWindow:    w.hideWindow,
+		Quit:          w.quit,
 		ExePath:       exePath,
 		PlatformWorks: true,
-		ShowPickerAt:  showPickerAt,
-		ShowCaptureAt: showCaptureAt,
-		HideCapture:   hideCapture,
-		ApplyChrome:   applyChrome,
-		HidePicker:    hidePicker,
+		ShowPickerAt:  w.showPickerAt,
+		ShowCaptureAt: w.showCaptureAt,
+		HideCapture:   w.hideCapture,
+		ApplyChrome:   w.applyChrome,
+		HidePicker:    w.hidePicker,
 		OpenURL:       clip.OpenExternal,
 		OnSettings: func(st clip.Settings) error {
-			if pauseItem != nil {
-				setPauseLabel(pauseItem, st.Capture)
+			if w.pauseItem != nil {
+				setPauseLabel(w.pauseItem, st.Capture)
 			}
-			if autoStartItem != nil {
-				autoStartItem.SetChecked(st.AutoStart)
+			if w.autoStartItem != nil {
+				w.autoStartItem.SetChecked(st.AutoStart)
 			}
-			_ = applyCaptureHotkey(st.CaptureHotkey)
-			return applyHotkey(st.Hotkey)
+			_ = w.applyCaptureHotkey(st.CaptureHotkey)
+			return w.applyHotkey(st.Hotkey)
 		},
 	})
 	if err != nil {
 		log.Fatalf("打开数据目录失败 (%s): %v", dataDir, err)
 	}
+	w.svc = svc
 
-	app = application.New(application.Options{
+	w.app = application.New(application.Options{
 		Name:        "ClipNest",
 		Description: "轻量剪贴板管理器：常驻托盘，静默记录文本、图片、链接与文件引用。",
 		Icon:        appIcon,
@@ -280,7 +117,7 @@ func main() {
 		SingleInstance: &application.SingleInstanceOptions{
 			UniqueID: "com.bbqisbbq.clipnest",
 			OnSecondInstanceLaunch: func(_ application.SecondInstanceData) {
-				showWindow()
+				w.showWindow()
 			},
 		},
 		Mac: application.MacOptions{
@@ -289,162 +126,13 @@ func main() {
 		},
 	})
 
-	win = app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Name:      "main",
-		Title:     "ClipNest 剪贴板",
-		Width:     1120,
-		Height:    740,
-		MinWidth:  900,
-		MinHeight: 560,
-		// --background (logon entry) always wins; --show forces a visible window
-		// even when the setting says "stay in the tray".
-		Hidden: forceHidden || (!preSettings.ShowOnLaunch && !forceShow),
-		// Frameless: the UI draws its own caption bar so the chrome matches the
-		// content. Resizing still works (the Wails runtime handles edge drags).
-		Frameless: true,
-		Windows: application.WindowsWindow{
-			Theme: application.SystemDefault,
-		},
-		BackgroundColour: application.NewRGB(10, 11, 15),
-		URL:              "/",
-	})
+	w.createWindows(preSettings, forceHidden || (!preSettings.ShowOnLaunch && !forceShow))
 
-	// The whole point of a tray app: closing the window must not quit.
-	win.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
-		e.Cancel()
-		win.Hide()
-	})
-
-	// Quick paste popup. Frameless, always on top, hidden until the hotkey
-	// asks for it; it hides itself as soon as it loses focus.
-	picker = app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Name:            "picker",
-		Title:           "ClipNest",
-		Width:           clip.PickerWidth,
-		Height:          clip.PickerHeight,
-		Frameless:       true,
-		AlwaysOnTop:     true,
-		Hidden:          true,
-		DisableResize:   true,
-		HideOnFocusLost: true,
-		Windows: application.WindowsWindow{
-			Theme: application.SystemDefault,
-		},
-		// 弹窗是圆角卡片：窗口本身必须透明，否则四角会露出窗口底色（那四个"小黑点"）。
-		// BackgroundTypeTransparent 在 Windows 上走 DirectComposition（WS_EX_NOREDIRECTIONBITMAP），
-		// 页面背后是真透明，不是黑色。
-		BackgroundType:   application.BackgroundTypeTransparent,
-		BackgroundColour: application.NewRGB(18, 21, 28),
-		URL:              "/?mode=picker",
-	})
-
-	// Quick capture popup: a memo in one keystroke, right where you are typing.
-	//
-	// 无边框，但**要能拖、要能拉**（2.6.x 的「记一笔」是个固定大小的死框，被吐槽过）：
-	//   · 拖动 —— 前端给抬头加 `--wails-draggable: drag`，Wails 运行时据此把
-	//     按下手势交给系统标题栏拖动，不用自己算鼠标位移。
-	//   · 拉伸 —— 这里**不能**设 DisableResize：Wails v3 的运行时靠
-	//     setResizable(true) 才把窗口四周 5px 激活成拉伸热区
-	//     （Windows 上无边框窗没有原生边框，WM_NCCALCSIZE 把边吃掉了，
-	//     所以「OS 自己会给」这个假设不成立）。
-	//   · 尺寸 —— 记住上次拖到多大（本机 meta，不同步），位置仍在光标处弹出。
-	captureW, captureH := svc.CaptureSize()
-	capture = app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Name:            "capture",
-		Title:           "记一笔",
-		Width:           captureW,
-		Height:          captureH,
-		MinWidth:        clip.CaptureMinWidth,
-		MinHeight:       clip.CaptureMinHeight,
-		Frameless:       true,
-		AlwaysOnTop:     true,
-		Hidden:          true,
-		HideOnFocusLost: true,
-		Windows: application.WindowsWindow{
-			Theme: application.SystemDefault,
-		},
-		BackgroundColour: application.NewRGB(14, 16, 21),
-		URL:              "/?mode=capture",
-	})
-	// 拉伸结束时把尺寸记下来。用窗口事件而不是前端 resize 回调：窗口被系统拖动
-	// 拉伸时前端虽然也会发 resize，但只在用户松手后才值得写一次库。
-	// 隐藏中的窗口不算：那时读到的是个还没排好版的小矩形，记下来会顶掉默认尺寸。
-	capture.RegisterHook(events.Windows.WindowEndResize, func(_ *application.WindowEvent) {
-		if !capture.IsVisible() {
-			return
-		}
-		if w, h := capture.Size(); w > 0 && h > 0 {
-			svc.SaveCaptureSize(w, h)
-		}
-	})
-
-	applyHotkey(preSettings.Hotkey)
+	w.applyHotkey(preSettings.Hotkey)
 	clip.Logf(dataDir, "capture hotkey configured: %q", preSettings.CaptureHotkey)
-	applyCaptureHotkey(preSettings.CaptureHotkey)
+	w.applyCaptureHotkey(preSettings.CaptureHotkey)
 
-	// Tray icon + menu.
-	tray := app.SystemTray.New()
-	tray.SetIcon(appIcon)
-	tray.SetTooltip("ClipNest 剪贴板管理器")
-	tray.OnClick(showWindow)
-
-	menu := application.NewMenu()
-	menu.Add("显示管理窗口").OnClick(func(_ *application.Context) { showWindow() })
-	menu.Add("快速粘贴（光标处）").OnClick(func(_ *application.Context) {
-		if err := svc.ShowPicker(); err != nil {
-			log.Printf("打开快速粘贴窗失败: %v", err)
-		}
-	})
-	pauseItem = menu.Add(pauseLabel(preSettings.Capture))
-	pauseItem.OnClick(func(_ *application.Context) {
-		st := svc.GetSettings()
-		updated, err := svc.SetCapture(!st.Capture)
-		if err == nil {
-			setPauseLabel(pauseItem, updated.Capture)
-		}
-	})
-	// 记一笔：把剪贴板当前文本直接存成一条手写条目，不弹窗、不抢焦点
-	menu.Add("记一笔（剪贴板内容）").OnClick(func(_ *application.Context) {
-		go func() {
-			if _, err := svc.QuickMemo(); err != nil {
-				log.Printf("记一笔失败: %v", err)
-			}
-		}()
-	})
-
-	autoStartItem = menu.AddCheckbox("开机自动启动", svc.IsAutoStartEnabled())
-	autoStartItem.OnClick(func(_ *application.Context) {
-		enabled := !svc.IsAutoStartEnabled()
-		if _, err := svc.SetAutoStart(enabled); err != nil {
-			log.Printf("切换开机启动失败: %v", err)
-		}
-		autoStartItem.SetChecked(svc.IsAutoStartEnabled())
-	})
-	menu.AddSeparator()
-	checkUpdateItem := menu.Add("检查更新…")
-	checkUpdateItem.OnClick(func(_ *application.Context) {
-		go func() {
-			info := svc.CheckUpdate()
-			showWindow()
-			if info.Error != "" {
-				log.Printf("检查更新失败: %s", info.Error)
-			}
-		}()
-	})
-	menu.Add("清空未收藏的历史").OnClick(func(_ *application.Context) {
-		_, _ = svc.DeleteAll()
-	})
-	sub := menu.AddSubmenu("更多")
-	sub.Add("打开数据目录").OnClick(func(_ *application.Context) {
-		_ = svc.OpenDataDir()
-	})
-	sub.Add("打开设置").OnClick(func(_ *application.Context) {
-		showWindow()
-		app.Event.Emit("ui:navigate", "settings")
-	})
-	menu.AddSeparator()
-	menu.Add("退出 ClipNest").OnClick(func(_ *application.Context) { quit() })
-	tray.SetMenu(menu)
+	w.buildTray(preSettings)
 
 	// Start listening once the app is wired up.
 	if err := svc.Start(); err != nil {
@@ -459,42 +147,28 @@ func main() {
 	svc.ReconcileAutoStart()
 
 	// The inline expander must not act inside ClipNest's own windows.
-	svc.SetOwnWindowCheck(func() bool {
-		fg := clip.ForegroundWindowHandle()
-		if fg == 0 {
-			return false
-		}
-		if win != nil && fg == uintptr(win.NativeWindow()) {
-			return true
-		}
-		if picker != nil && fg == uintptr(picker.NativeWindow()) {
-			return true
-		}
-		if capture != nil && fg == uintptr(capture.NativeWindow()) {
-			return true
-		}
-		return false
-	})
+	svc.SetOwnWindowCheck(w.ownWindow)
 
-	app.OnShutdown(svc.Shutdown)
+	w.app.OnShutdown(svc.Shutdown)
 
-	if err := app.Run(); err != nil {
+	if err := w.app.Run(); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func pauseLabel(capturing bool) string {
-	if capturing {
-		return "暂停收集"
+// parseArgs reads the two launch switches: `--show` forces the window open
+// (handy from a shortcut or while testing), `--background` is what the logon
+// entry uses so autostart never pops a window in the user's face.
+func parseArgs(args []string) (forceShow, forceHidden bool) {
+	for _, arg := range args {
+		switch arg {
+		case "--show", "-show":
+			forceShow = true
+		case "--background", "-background":
+			forceHidden = true
+		}
 	}
-	return "继续收集"
-}
-
-func setPauseLabel(item *application.MenuItem, capturing bool) {
-	if item == nil {
-		return
-	}
-	item.SetLabel(pauseLabel(capturing))
+	return forceShow, forceHidden
 }
 
 func defaultDataDir() string {
