@@ -115,11 +115,7 @@ export default function App() {
         return;
       }
       try {
-        const ok = await ClipService.DeleteFilter(f.id);
-        if (!ok) {
-          notify("这个筛选器不能删除");
-          return;
-        }
+        await ClipService.DeleteFilter(f.id);
         await data.refreshMeta();
         if (activeFilterId === f.id) setActiveFilterId("all");
         notify(`已删除筛选器「${f.name}」`);

@@ -111,11 +111,7 @@ export default function FilterDialog({ filter, isNew, onClose, onSaved, onDelete
 
   const remove = useCallback(async () => {
     try {
-      const ok = await ClipService.DeleteFilter(filter.id);
-      if (!ok) {
-        setError("这个筛选器不能删除");
-        return;
-      }
+      await ClipService.DeleteFilter(filter.id);
       onNotify(`已删除筛选器「${filter.name}」`);
       onDeleted(filter.id);
     } catch (err) {

@@ -66,8 +66,8 @@ func TestSnippetTriggerIndexFollowsEntryWrites(t *testing.T) {
 	}
 
 	// 删除条目同理
-	if !svc.DeleteEntry(e.ID) {
-		t.Fatal("delete failed")
+	if err := svc.DeleteEntry(e.ID); err != nil {
+		t.Fatalf("delete: %v", err)
 	}
 	if _, _, ok := svc.Match("zz-direct"); ok {
 		t.Fatal("删掉条目后不该再命中")

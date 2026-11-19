@@ -8,7 +8,7 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wailsio/runtime";
+import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Create } from "@wailsio/runtime";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -38,7 +38,9 @@ export function CaptureSize(): $CancellablePromise<[number, number]> {
  * CheckUpdate asks GitHub for the newest release and compares it with Version.
  */
 export function CheckUpdate(): $CancellablePromise<$models.UpdateInfo> {
-    return $Call.ByID(2960176974);
+    return $Call.ByID(2960176974).then(($result: any) => {
+        return $$createType0($result);
+    });
 }
 
 /**
@@ -77,18 +79,19 @@ export function DeleteAll(): $CancellablePromise<number> {
 }
 
 /**
- * DeleteEntry removes an entry and records a tombstone so peers drop theirs.
+ * DeleteEntry removes an entry (the store records the tombstone peers need).
+ * 
+ * 返回 error 而不是 bool：删除有好几种失败（条目已不存在、SQL 出错），bool 把它们
+ * 压成一个 false，前端只能猜原因。墓碑由 store.DeleteEntry 自己写，这里不再重复写。
  */
-export function DeleteEntry(id: string): $CancellablePromise<boolean> {
+export function DeleteEntry(id: string): $CancellablePromise<void> {
     return $Call.ByID(966560778, id);
 }
 
 /**
- * DeleteFilter removes a user filter, or hides a deletable builtin one.
- * Builtins fall back to their defaults only when they are not deletable (they
- * simply can't be removed).
+ * 返回 error：不可删除的内置筛选器与"本来就没了"是两件事，前端要分开提示。
  */
-export function DeleteFilter(id: string): $CancellablePromise<boolean> {
+export function DeleteFilter(id: string): $CancellablePromise<void> {
     return $Call.ByID(3724380380, id);
 }
 
@@ -96,7 +99,9 @@ export function DeleteFilter(id: string): $CancellablePromise<boolean> {
  * DemoteFromSnippet removes the trigger but keeps the content and the tag.
  */
 export function DemoteFromSnippet(id: string): $CancellablePromise<$models.Entry> {
-    return $Call.ByID(239629186, id);
+    return $Call.ByID(239629186, id).then(($result: any) => {
+        return $$createType1($result);
+    });
 }
 
 /**
@@ -133,14 +138,18 @@ export function ForegroundProcess(): $CancellablePromise<string> {
  * GetAppInfo returns version/paths for the about panel.
  */
 export function GetAppInfo(): $CancellablePromise<$models.AppInfo> {
-    return $Call.ByID(3896253666);
+    return $Call.ByID(3896253666).then(($result: any) => {
+        return $$createType2($result);
+    });
 }
 
 /**
  * GetEntries is the single list call for the whole app.
  */
-export function GetEntries(q: $models.EntryQuery): $CancellablePromise<$models.Entry[] | null> {
-    return $Call.ByID(2182809333, q);
+export function GetEntries(q: $models.EntryQuery): $CancellablePromise<$models.Entry[]> {
+    return $Call.ByID(2182809333, q).then(($result: any) => {
+        return $$createType3($result);
+    });
 }
 
 /**
@@ -148,7 +157,9 @@ export function GetEntries(q: $models.EntryQuery): $CancellablePromise<$models.E
  * row to the entry that owns it (that row only carries a summary).
  */
 export function GetEntry(id: string): $CancellablePromise<$models.Entry> {
-    return $Call.ByID(713316985, id);
+    return $Call.ByID(713316985, id).then(($result: any) => {
+        return $$createType1($result);
+    });
 }
 
 /**
@@ -158,31 +169,39 @@ export function GetEntry(id: string): $CancellablePromise<$models.Entry> {
  * q 是当前侧栏筛选器的查询：日历的圆点必须和"点进去能看到什么"用同一套条件，
  * 否则会在「片段 / 图片 / 置顶」这类筛选下画出点却一条也点不出来。
  */
-export function GetEntryCalendar(month: string, q: $models.EntryQuery): $CancellablePromise<$models.DayCount[] | null> {
-    return $Call.ByID(3982370531, month, q);
+export function GetEntryCalendar(month: string, q: $models.EntryQuery): $CancellablePromise<$models.DayCount[]> {
+    return $Call.ByID(3982370531, month, q).then(($result: any) => {
+        return $$createType5($result);
+    });
 }
 
 /**
  * GetEntryStats reports the counts shown next to each filter.
  */
 export function GetEntryStats(): $CancellablePromise<$models.EntryStats> {
-    return $Call.ByID(1775819320);
+    return $Call.ByID(1775819320).then(($result: any) => {
+        return $$createType6($result);
+    });
 }
 
 /**
  * GetFilterFields tells the frontend which fields/operators the rule engine
  * accepts. 只此一份白名单，UI 不自己硬编码。
  */
-export function GetFilterFields(): $CancellablePromise<$models.FilterFieldSpec[] | null> {
-    return $Call.ByID(804798064);
+export function GetFilterFields(): $CancellablePromise<$models.FilterFieldSpec[]> {
+    return $Call.ByID(804798064).then(($result: any) => {
+        return $$createType8($result);
+    });
 }
 
 /**
  * GetFilters returns builtins (with user overrides applied) plus user filters.
  * Builtins the user removed (只有「置顶」能删) are filtered out via meta.
  */
-export function GetFilters(): $CancellablePromise<$models.EntryFilter[] | null> {
-    return $Call.ByID(3084070574);
+export function GetFilters(): $CancellablePromise<$models.EntryFilter[]> {
+    return $Call.ByID(3084070574).then(($result: any) => {
+        return $$createType10($result);
+    });
 }
 
 /**
@@ -204,14 +223,18 @@ export function GetImageData(id: string): $CancellablePromise<string> {
  * GetSettings returns the current settings.
  */
 export function GetSettings(): $CancellablePromise<$models.Settings> {
-    return $Call.ByID(4165251554);
+    return $Call.ByID(4165251554).then(($result: any) => {
+        return $$createType11($result);
+    });
 }
 
 /**
  * GetStats returns counters for the header / settings.
  */
 export function GetStats(): $CancellablePromise<$models.Stats> {
-    return $Call.ByID(4267798722);
+    return $Call.ByID(4267798722).then(($result: any) => {
+        return $$createType12($result);
+    });
 }
 
 /**
@@ -219,22 +242,28 @@ export function GetStats(): $CancellablePromise<$models.Stats> {
  * a fresh PROPFIND when sync is configured.
  */
 export function GetSyncPanel(): $CancellablePromise<$models.SyncPanel> {
-    return $Call.ByID(870774534);
+    return $Call.ByID(870774534).then(($result: any) => {
+        return $$createType13($result);
+    });
 }
 
 /**
  * GetSyncStatus returns the current sync state.
  */
 export function GetSyncStatus(): $CancellablePromise<$models.SyncStatus> {
-    return $Call.ByID(553940266);
+    return $Call.ByID(553940266).then(($result: any) => {
+        return $$createType14($result);
+    });
 }
 
 /**
  * GetTodos expands every entry matching q into individual task rows, for the
  * 待办 collection page (未完成在前)。
  */
-export function GetTodos(q: $models.EntryQuery): $CancellablePromise<$models.TodoRef[] | null> {
-    return $Call.ByID(808630980, q);
+export function GetTodos(q: $models.EntryQuery): $CancellablePromise<$models.TodoRef[]> {
+    return $Call.ByID(808630980, q).then(($result: any) => {
+        return $$createType16($result);
+    });
 }
 
 /**
@@ -292,7 +321,10 @@ export function LogClient(message: string): $CancellablePromise<void> {
  * Match returns the longest trigger that buf ends with (engine-side matching).
  */
 export function Match(buf: string): $CancellablePromise<[expand$0.Trigger, number, boolean]> {
-    return $Call.ByID(472413710, buf);
+    return $Call.ByID(472413710, buf).then(($result: any) => {
+        $result[0] = $$createType17($result[0]);
+        return $result;
+    });
 }
 
 /**
@@ -342,15 +374,19 @@ export function PickSnippet(id: string, paste: boolean): $CancellablePromise<str
 /**
  * PickerSnippets powers "--" search inside the popup.
  */
-export function PickerSnippets(query: string, limit: number): $CancellablePromise<$models.Snippet[] | null> {
-    return $Call.ByID(169391773, query, limit);
+export function PickerSnippets(query: string, limit: number): $CancellablePromise<$models.Snippet[]> {
+    return $Call.ByID(169391773, query, limit).then(($result: any) => {
+        return $$createType19($result);
+    });
 }
 
 /**
  * PromoteToSnippet turns any entry into an abbreviation-triggered snippet.
  */
 export function PromoteToSnippet(id: string, trigger: string): $CancellablePromise<$models.Entry> {
-    return $Call.ByID(4139016423, id, trigger);
+    return $Call.ByID(4139016423, id, trigger).then(($result: any) => {
+        return $$createType1($result);
+    });
 }
 
 /**
@@ -358,7 +394,9 @@ export function PromoteToSnippet(id: string, trigger: string): $CancellablePromi
  * entry. Used by the tray "记一笔" item: no window, no focus stealing.
  */
 export function QuickMemo(): $CancellablePromise<$models.Entry> {
-    return $Call.ByID(3490807694);
+    return $Call.ByID(3490807694).then(($result: any) => {
+        return $$createType1($result);
+    });
 }
 
 /**
@@ -408,14 +446,18 @@ export function SaveCaptureSize(w: number, h: number): $CancellablePromise<void>
  * flags change — the stored content is reused.
  */
 export function SaveEntry(e: $models.Entry): $CancellablePromise<$models.Entry> {
-    return $Call.ByID(1420091460, e);
+    return $Call.ByID(1420091460, e).then(($result: any) => {
+        return $$createType1($result);
+    });
 }
 
 /**
  * SaveFilter stores a new filter, or an override for a builtin one.
  */
 export function SaveFilter(f: $models.EntryFilter): $CancellablePromise<$models.EntryFilter> {
-    return $Call.ByID(2151785410, f);
+    return $Call.ByID(2151785410, f).then(($result: any) => {
+        return $$createType9($result);
+    });
 }
 
 /**
@@ -432,7 +474,9 @@ export function SaveImage(dataB64: string): $CancellablePromise<string> {
  * actually stored.
  */
 export function SaveSettings(st: $models.Settings): $CancellablePromise<$models.Settings> {
-    return $Call.ByID(4110371229, st);
+    return $Call.ByID(4110371229, st).then(($result: any) => {
+        return $$createType11($result);
+    });
 }
 
 /**
@@ -441,28 +485,36 @@ export function SaveSettings(st: $models.Settings): $CancellablePromise<$models.
  * 片段表已废弃：片段就是带 snippet 能力的条目，这里做一次形状转换。
  */
 export function SaveSnippet(sp: $models.Snippet, imageDataB64: string): $CancellablePromise<$models.Snippet> {
-    return $Call.ByID(3917329013, sp, imageDataB64);
+    return $Call.ByID(3917329013, sp, imageDataB64).then(($result: any) => {
+        return $$createType18($result);
+    });
 }
 
 /**
  * SetAutoStart toggles the logon entry (tray menu / settings both use it).
  */
 export function SetAutoStart(enabled: boolean): $CancellablePromise<$models.Settings> {
-    return $Call.ByID(1307836, enabled);
+    return $Call.ByID(1307836, enabled).then(($result: any) => {
+        return $$createType11($result);
+    });
 }
 
 /**
  * SetCapture is the tray's pause/resume switch.
  */
 export function SetCapture(enabled: boolean): $CancellablePromise<$models.Settings> {
-    return $Call.ByID(1998003171, enabled);
+    return $Call.ByID(1998003171, enabled).then(($result: any) => {
+        return $$createType11($result);
+    });
 }
 
 /**
  * SetEntryArchived flips the archive flag (same reasoning as SetEntryPinned).
  */
 export function SetEntryArchived(id: string, archived: boolean): $CancellablePromise<$models.Entry> {
-    return $Call.ByID(1842078483, id, archived);
+    return $Call.ByID(1842078483, id, archived).then(($result: any) => {
+        return $$createType1($result);
+    });
 }
 
 /**
@@ -471,7 +523,9 @@ export function SetEntryArchived(id: string, archived: boolean): $CancellablePro
  * is how tags and triggers get silently reset).
  */
 export function SetEntryPinned(id: string, pinned: boolean): $CancellablePromise<$models.Entry> {
-    return $Call.ByID(4291272239, id, pinned);
+    return $Call.ByID(4291272239, id, pinned).then(($result: any) => {
+        return $$createType1($result);
+    });
 }
 
 /**
@@ -487,7 +541,9 @@ export function SetOwnWindowCheck(fn: any): $CancellablePromise<void> {
  * saved back whole, so tags / trigger / hash are never reset by a checkbox click.
  */
 export function SetTodoDone(entryID: string, key: string, done: boolean): $CancellablePromise<$models.Entry> {
-    return $Call.ByID(452964711, entryID, key, done);
+    return $Call.ByID(452964711, entryID, key, done).then(($result: any) => {
+        return $$createType1($result);
+    });
 }
 
 /**
@@ -538,7 +594,9 @@ export function Start(): $CancellablePromise<void> {
  * SyncNow performs a full two-way merge.
  */
 export function SyncNow(): $CancellablePromise<$models.SyncStatus> {
-    return $Call.ByID(2942154482);
+    return $Call.ByID(2942154482).then(($result: any) => {
+        return $$createType14($result);
+    });
 }
 
 /**
@@ -547,3 +605,25 @@ export function SyncNow(): $CancellablePromise<$models.SyncStatus> {
 export function TestSync(): $CancellablePromise<string> {
     return $Call.ByID(292331458);
 }
+
+// Private type creation functions
+const $$createType0 = $models.UpdateInfo.createFrom;
+const $$createType1 = $models.Entry.createFrom;
+const $$createType2 = $models.AppInfo.createFrom;
+const $$createType3 = $Create.Array($$createType1);
+const $$createType4 = $models.DayCount.createFrom;
+const $$createType5 = $Create.Array($$createType4);
+const $$createType6 = $models.EntryStats.createFrom;
+const $$createType7 = $models.FilterFieldSpec.createFrom;
+const $$createType8 = $Create.Array($$createType7);
+const $$createType9 = $models.EntryFilter.createFrom;
+const $$createType10 = $Create.Array($$createType9);
+const $$createType11 = $models.Settings.createFrom;
+const $$createType12 = $models.Stats.createFrom;
+const $$createType13 = $models.SyncPanel.createFrom;
+const $$createType14 = $models.SyncStatus.createFrom;
+const $$createType15 = $models.TodoRef.createFrom;
+const $$createType16 = $Create.Array($$createType15);
+const $$createType17 = expand$0.Trigger.createFrom;
+const $$createType18 = $models.Snippet.createFrom;
+const $$createType19 = $Create.Array($$createType18);

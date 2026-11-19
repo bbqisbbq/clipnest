@@ -78,17 +78,20 @@ func (s *ClipService) SaveEntry(e Entry) (Entry, error) {
 	return saved, nil
 }
 
-// DeleteEntry removes an entry and records a tombstone so peers drop theirs.
-func (s *ClipService) DeleteEntry(id string) bool {
-	if e, ok := s.store.GetEntry(id); ok && e.Hash != "" {
-		s.store.AddTombstoneScoped("entry", e.Hash, nowUTC(), hostName())
+// DeleteEntry removes an entry (the store records the tombstone peers need).
+//
+// 返回 error 而不是 bool：删除有好几种失败（条目已不存在、SQL 出错），bool 把它们
+// 压成一个 false，前端只能猜原因。墓碑由 store.DeleteEntry 自己写，这里不再重复写。
+func (s *ClipService) DeleteEntry(id string) error {
+	if _, ok := s.store.GetEntry(id); !ok {
+		return errors.New("条目不存在")
 	}
-	ok := s.store.DeleteEntry(id)
-	if ok {
-		// 删掉的可能是片段：索引里不能留着它
-		s.refreshTriggers()
+	if !s.store.DeleteEntry(id) {
+		return errors.New("删除条目失败")
 	}
-	return ok
+	// 删掉的可能是片段：索引里不能留着它
+	s.refreshTriggers()
+	return nil
 }
 
 // SetEntryPinned flips the pin flag. The quick-paste list only carries ids, so
@@ -255,27 +258,29 @@ func (s *ClipService) SaveFilter(f EntryFilter) (EntryFilter, error) {
 	return f, nil
 }
 
-// DeleteFilter removes a user filter, or hides a deletable builtin one.
-// Builtins fall back to their defaults only when they are not deletable (they
-// simply can't be removed).
-func (s *ClipService) DeleteFilter(id string) bool {
+// 返回 error：不可删除的内置筛选器与"本来就没了"是两件事，前端要分开提示。
+func (s *ClipService) DeleteFilter(id string) error {
 	for _, b := range BuiltinFilters() {
 		if b.ID != id {
 			continue
 		}
 		if !b.Deletable {
-			return false
+			return errors.New("内置筛选器不可删除")
 		}
 		s.hideFilter(id)
-		_, _ = s.store.db.Exec(`DELETE FROM entry_filters WHERE id = ?`, id)
-		return true
+		if _, err := s.store.db.Exec(`DELETE FROM entry_filters WHERE id = ?`, id); err != nil {
+			return err
+		}
+		return nil
 	}
 	res, err := s.store.db.Exec(`DELETE FROM entry_filters WHERE id = ?`, id)
 	if err != nil {
-		return false
+		return err
 	}
-	n, _ := res.RowsAffected()
-	return n > 0
+	if n, _ := res.RowsAffected(); n == 0 {
+		return errors.New("筛选器不存在")
+	}
+	return nil
 }
 
 // RestoreFilters brings back every builtin the user removed.

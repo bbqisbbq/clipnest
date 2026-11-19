@@ -213,14 +213,14 @@ func TestBuiltinFilterDeletable(t *testing.T) {
 	if !visible()["pinned"] {
 		t.Fatal("pinned should be visible by default")
 	}
-	if !svc.DeleteFilter("pinned") {
-		t.Fatal("pinned should be deletable")
+	if err := svc.DeleteFilter("pinned"); err != nil {
+		t.Fatalf("pinned should be deletable: %v", err)
 	}
 	if visible()["pinned"] {
 		t.Fatal("pinned should be hidden after delete")
 	}
 	// 「全部内容」不许删
-	if svc.DeleteFilter("all") {
+	if err := svc.DeleteFilter("all"); err == nil {
 		t.Fatal("all must not be deletable")
 	}
 	if !visible()["all"] {
