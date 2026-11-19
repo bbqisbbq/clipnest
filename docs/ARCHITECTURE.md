@@ -6,8 +6,11 @@
 ## 一、后端（Go）
 
 ```
-main.go                  Wails 装配：三个窗口（管理 / picker / capture）、托盘、快捷键、钩子注入、单实例
-internal/expand/         缩写展开引擎（零业务知识，只认 Host 接口）
+main.go                 启动顺序：路径与日志、设置预读、--show/--background、服务与 App、Run
+wire.go                 窗口与热键开关（wiring 结构体：三个窗口、托盘项状态、当前热键）
+tray.go                 托盘图标与菜单
+internal/winplat/       Win32 输入注入（SendInput/INPUT 结构体、Unicode 注入、Chord/Paste、前台窗口）
+internal/expand/         缩写展开引擎（零业务知识，只认 Host 接口；注入走 winplat）
 internal/clip/           业务层：条目、捕获、片段、同步、绑定 API
 ```
 
