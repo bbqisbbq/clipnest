@@ -5,8 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "predev": "pwsh -NoProfile -File ../scripts/sync-vditor.ps1",
     "build:dev": "tsc && vite build --minify false --mode development",
+    "prebuild:dev": "pwsh -NoProfile -File ../scripts/sync-vditor.ps1",
     "build": "tsc && vite build --mode production",
+    "prebuild": "pwsh -NoProfile -File ../scripts/sync-vditor.ps1",
+    "sync-vditor": "pwsh -NoProfile -File ../scripts/sync-vditor.ps1",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -21,7 +25,8 @@
     "@wailsio/runtime": "3.0.0",
     "marked": "^18.2.1",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "vditor": "4.0.1"
   },
   "devDependencies": {
     "@types/react": "^18.2.43",

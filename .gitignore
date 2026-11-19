@@ -2,6 +2,8 @@
 bin
 frontend/dist
 frontend/node_modules
+# vditor 运行时资源：由 scripts/sync-vditor.ps1 从 node_modules 拷到 public（22MB 的包拷贝，不入库）
+frontend/public/vditor
 build/linux/appimage/build
 build/windows/nsis/MicrosoftEdgeWebview2Setup.exe
 # Mobile generated (per-machine; overlays hold absolute paths)
