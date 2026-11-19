@@ -34,7 +34,7 @@ internal/clip/           业务层：条目、捕获、片段、同步、绑定 
 | 文件 | 职责 |
 | --- | --- |
 | `service.go` | `ClipService` 装配、`Start`/`Shutdown`、窗口/版本/主题、`GetStats` |
-| `service_capture.go` | 采集管线（合并 45ms、去重、回写抑制）+ 快速输入窗 |
+| `service_capture.go` | 采集管线（合并 45ms、去重、回写抑制）+ 快速输入窗（含尺寸记忆：`capture.size` → meta） |
 | `service_paste.go` | 条目 → 系统：复制回剪贴板、打开、picker 弹窗三件套 |
 | `service_settings.go` | 设置保存与副作用（自启、展开器、两个后台循环） |
 | `entry_api.go` | 绑定给前端的条目 API + 筛选器 CRUD |
@@ -196,6 +196,7 @@ go build -o bin\clipnest-dev.exe .        # 后端 + 内嵌前端产物
 go test ./internal/...                    # 存储/查询/待办/筛选规则/同步/展开引擎
 cd frontend; npx tsc --noEmit; npx vite build --mode production
 pwsh -File scripts\visual-check\check-css.ps1   # 样式回归截图（改 CSS 后跑）
+pwsh -STA -File scratch\e2e-capture-resize.ps1  # 记一笔浮层：拖动/拉伸/尺寸记忆（真鼠标事件）
 ```
 
 `go vet ./internal/...` 现在是**零告警**：`win32_windows.go` 的 `ptrFromUintptr` 与

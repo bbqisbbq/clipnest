@@ -27,6 +27,14 @@ export function AutoStartTarget(): $CancellablePromise<string> {
 }
 
 /**
+ * CaptureSize returns the size the quick-capture window opens at: whatever the
+ * user dragged it to last time, or the default.
+ */
+export function CaptureSize(): $CancellablePromise<[number, number]> {
+    return $Call.ByID(3115883656);
+}
+
+/**
  * CheckUpdate asks GitHub for the newest release and compares it with Version.
  */
 export function CheckUpdate(): $CancellablePromise<$models.UpdateInfo> {
@@ -382,6 +390,17 @@ export function ReconcileAutoStart(): $CancellablePromise<void> {
  */
 export function Render(t: expand$0.Trigger): $CancellablePromise<[string, number]> {
     return $Call.ByID(2172096837, t);
+}
+
+/**
+ * SaveCaptureSize remembers the size the user left the window at.
+ * 
+ * 只记「真的拖出来的」尺寸：小于下限的值不是用户拖出来的（窗口刚创建、被隐藏时
+ * 读到的 0×0 / 几十像素这类瞬时值），记下来只会把默认尺寸换成最小值，所以直接忽略。
+ * 超过上限的才夹：记住的尺寸可能来自更大的显示器，那时收一收比忘掉好。
+ */
+export function SaveCaptureSize(w: number, h: number): $CancellablePromise<void> {
+    return $Call.ByID(3638051099, w, h);
 }
 
 /**

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import MarkdownSurface, { type MarkdownSurfaceHandle, warmUpMarkdown } from "./components/MarkdownSurface";
 import { ClipService } from "./lib/api";
+import { drag, noDrag } from "./lib/window";
 
 // 快速输入窗（Ctrl+Shift+N）：光标处弹出来，写完 Enter 保存、Esc 关闭。
 //
@@ -10,6 +11,9 @@ import { ClipService } from "./lib/api";
 //   · 预热 —— 这个窗口随应用一起创建，挂载后立刻把 lute 烧热，否则第一次唤起
 //     要等 250ms 的引擎初始化（实测数据见 docs/design 3.2.1）
 //   · 界面 —— 无边框整块浮层，只有一个「保存」；格式靠 Markdown 语法（- [ ] 就是待办）
+//   · 拖动 —— 抬头那条（`.capture-head`）是拖动区（`--wails-draggable: drag`），
+//     里面的 × 必须显式 no-drag，否则点它会被当成想拖窗口。改大小不用前端做任何事：
+//     窗口去掉 DisableResize 后，Wails 运行时自己把四周边缘变成拉伸热区。
 
 export default function Capture() {
   const [text, setText] = useState("");
@@ -68,7 +72,7 @@ export default function Capture() {
 
   return (
     <div className="capture">
-      <div className="capture-head">
+      <div className="capture-head" style={drag}>
         <span className="capture-dot" />
         <span className="capture-title">记一笔</span>
         {tags.length > 0 ? (
@@ -83,7 +87,7 @@ export default function Capture() {
           <span className="capture-hint">写 #标签 就能归类</span>
         )}
         <span className="capture-keys">Enter 保存 · Esc 关闭</span>
-        <button className="capture-close" onClick={close} title="关闭（Esc）">
+        <button className="capture-close" style={noDrag} onClick={close} title="关闭（Esc）">
           ×
         </button>
       </div>
