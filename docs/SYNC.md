@@ -20,9 +20,9 @@
 包本身是 zip，里面是「整份历史」：
 
 ```
-package.json                  索引：每条记录的 hash/类型/更新时间/有无附件 + 删除墓碑 + 设置
-items/<hash>.json             一条记录的正文（文本、HTML、RTF、文件引用…）
-blobs/<hash>.png | .bin       图片与私有格式的原始字节（不做 base64）
+package.json                 索引：每条记录的 hash/类型/更新时间/有无附件 + 删除墓碑 + 设置
+entries/<hash>.json          一条记录的正文（文本、HTML、RTF、文件引用…）
+blobs/<name>                 图片与私有格式的原始字节（不 base64，已压缩的直接 Store）
 ```
 
 为什么是这个形状：

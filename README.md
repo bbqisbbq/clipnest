@@ -30,24 +30,28 @@ ClipNest 在你使用电脑时安静地记录进入过系统剪贴板的一切�
   请求数与条目数量无关；**每台机器只写自己的文件，写冲突不可能发生**。默认 30 分钟一次，
   内容没变化时连上传都跳过。设计与竞态分析见 [docs/SYNC.md](docs/SYNC.md)。
 - **主题**：4 套配色预设（默认深色 / 亮白 / 纸感 / 墨黑）+ 跟随系统 + 自定义 CSS（自动去除 @import 与远程 url）+ 对比度自检（WCAG AA）。全部走设计 token。
-- **两级导航**：左侧一级是「剪贴板 / 片段」两个功能区，二级是各自的筛选（剪贴板按类型与收藏、片段按分组）。
+- **两级导航**：左侧是「内容」筛选器（全部 / 我写的 / 剪贴板 / 片段 / 图片 / 置顶 / 已归档，可双击改名换图标）
+  加一个月历；右侧是同一条时间线，所有内容都在这里，靠属性区分来源。
 - **快捷键记一笔**：`Ctrl+Shift+N` 在光标处弹出小编辑框（Enter 保存 / Esc 关闭），不打断手上的事。
-- **备忘（Memos 形态）**：整页上下结构 —— 上面时间线，下面固定输入框（可拖高、可自动跟随）；编辑器用 **CodeMirror 6**（Markdown 语法着色、`#标签`高亮、IME 原生支持、Ctrl+Enter 保存）。本地碎片笔记 —— Markdown、正文里写 `#标签` 自动归类、置顶/归档、中文子串搜索（SQLite FTS5 trigram）；从剪贴板或片段一键转备忘。没有用户、分享、评论，也没有任何服务端。可与 Memos 互通：导出 `memos-export 1.0` zip，或从 Memos 导出的包一键导入。
+- **统一条目视图（Memos 形态）**：整页上下结构 —— 上面时间线，下面固定输入框（可拖高）；
+  编辑器用 **CodeMirror 6**（Markdown 语法着色、`#标签`高亮、IME 原生支持、Ctrl+Enter 保存）。
+  正文里写 `#标签` 自动归类、可置顶/归档、中文子串搜索（SQLite FTS5 trigram）；没有用户、分享、评论，也没有服务端。
 - **片段库（短语）**：把常用回复、地址、提示词、图片、文件、网址、程序、命令存成片段，
   配一个缩写（如 `addr-`）；弹窗里输入 `--` 搜索片段，回车按类型执行（粘贴 / 打开 / 启动 / 执行）。
   详见 [docs/SNIPPETS.md](docs/SNIPPETS.md)。
 - **缩写自动展开**：打开后在任何输入框键入 `addr` 再按空格就替换成内容（空格、回车、标点都能收尾，也可继续用 `addr-`）——和 eTool / PhraseExpress / AutoHotkey 的
   打字触发一致（默认关闭，属于全局键盘钩子）。
 - **本地数据库**：历史和图片存在一个 SQLite 文件里（`clipnest.db`），搜索走索引、写入事务化，
-  备份就是复制一个文件；旧的 JSONL 历史首次启动自动迁移。
+  备份就是复制一个文件。
 - **自动更新**：启动后检查 GitHub Releases，发现新版本在窗口顶部提示，一键下载并静默安装。
 - **自带字体**：打包 Inter（拉丁）+ Noto Sans SC（中文）+ JetBrains Mono（等宽），
   不再依赖系统「微软雅黑」，125%/150% 缩放下也不发虚。
 - **去重**：按内容哈希去重，重复复制只更新时间戳与次数，不产生垃圾条目。
-- **收藏 / 搜索 / 分类**：全部、收藏、文本、链接、图片、文件、富文本、其它格式；搜索匹配正文、文件名与来源程序。
-- **一键回填**：选中「复制」或双击条目，把内容重新写回剪贴板，并抑制自己写入产生的回声记录。
-- **保留策略**：最多条数、最长天数、单条文本长度上限；收藏条目永不被自动清理。
-- **隐私开关**：可按程序名或正则忽略（密码管理器、内部后台等），也可整体暂停收集。
+- **置顶 / 搜索 / 归类**：全部、我写的、剪贴板、片段、图片、置顶、已归档（筛选器可保存、可自定义）；
+  搜索匹配正文、文件名与来源程序。
+- **一键回填**：点「复制」或双击条目，把内容重新写回剪贴板，并抑制自己写入产生的回声记录。
+- **单条长度上限**：超过设定字符数的文本会被跳过（0 = 不限制）。**历史不会自动清理**——不删就一直在。
+- **隐私**：可整体暂停收集；程序不按来源程序过滤，密码管理器复制出来的内容请手动删除。
 - **其它**：开机自启（写 HKCU Run）、单实例（第二次启动只是把窗口拉到前台）、诊断日志。
 - **纯本地优先**：不联网（除非你配置了 WebDAV），数据全部存在 `%APPDATA%\ClipNest`。
 
@@ -63,7 +67,7 @@ ClipNest 在你使用电脑时安静地记录进入过系统剪贴板的一切�
 | E A+B + 一键归档 | 平时存引用，需要长期保留时手动「归档到库」 | 兼顾成本与可靠性 | 需要多一套归档目录与配额逻辑 |
 
 > 详细取舍、数据模型与后续可选实现见 [docs/FILE-STRATEGY.md](docs/FILE-STRATEGY.md)。
-> 当前版本实现的是 A+B；E 的「一键归档」已预留在数据模型里（`Item.Files` 与 blob 目录）。
+> 当前版本实现的是 A+B；E 的「一键归档」已预留在数据模型里（`Entry.Files` 与 `entry_blobs` 附件存储）。
 
 ## 安装
 
@@ -143,6 +147,18 @@ wails3 build
 .\bin\clipnest.exe --show
 ```
 
+### 改完代码怎么自检
+
+```powershell
+go build -o bin\clipnest-dev.exe .                  # 后端 + 内嵌前端产物
+go test ./internal/...                              # 存储/查询/同步/展开引擎
+cd frontend; npx tsc --noEmit; npx vite build --mode production
+pwsh -File scripts\visual-check\check-css.ps1       # 改了 CSS 就跑一次，看折叠/卡片还正常
+```
+
+改了 Go 的导出面（`ClipService` 的方法、模型字段）要重新生成绑定：
+`wails3 generate bindings -clean=true -ts -i`，并确认 `git diff frontend/bindings` 只有预期的改动。
+
 ### 打包安装程序（可选）
 
 ```powershell
@@ -189,60 +205,76 @@ wails3 package      # 生成 NSIS 安装包（需要 NSIS，模板已内置配�
 
 ```
 %APPDATA%\ClipNest\
-  clipnest.db     # SQLite 数据库：条目 + 图片/私有格式的 BLOB（WAL 模式）
-  settings.json   # 采集/保留/忽略/快捷键/同步/更新等设置
+  clipnest.db     # SQLite 数据库：条目 + 全文索引 + 图片/私有格式的 BLOB（WAL 模式）
+  memo_files\     # 超过 512 KB 的附件落盘（库里只留内容寻址的元数据）
+  settings.json   # 采集/快捷键/同步/更新/外观等设置
   clipnest.log    # 诊断日志（启动、同步、弹窗定位、前端异常、更新）
 ```
 
 - **SQLite 单文件**（`modernc.org/sqlite`，纯 Go 驱动，无需 cgo）：条目表 + BLOB 表，搜索走索引，
   写入是事务性的，进程被强杀也不会留下写坏一半的索引；备份 = 复制一个文件。
-- 表结构见 `internal/clip/store.go` 的 `schemaSQL`；单条记录见 `model.go` 的 `Item`。
-- 图片与「其它格式」的原始字节存在 BLOB 表里，数据库因此自包含（`%APPDATA%\ClipNest\clipnest.db`）。
-- 旧版本（≤0.1.1）的 `items.jsonl` + `blobs\` 会在首次启动时自动导入，原文件改名为
-  `items.jsonl.migrated` 保留（不删除）。
-- 保留策略（条数 / 天数）在每次写入后执行，收藏条目豁免。
+- 表结构见 `internal/clip/entry_store.go` 的 `schemaSQL`；单条记录见 `entry.go` 的 `Entry`。
+- 小附件（≤512 KB）存在 BLOB 表里，大的落盘 `memo_files\`，正文统一用 `memoimg:<hash>` 引用。
+- **不自动清理**：没有最大条数、也没有保留天数，条目只在你手动删除/归档时消失。
 
 ## 目录结构
 
 ```
 main.go                       应用装配：托盘、两个无边框窗口（管理窗 + 弹窗）、关窗不退出、快捷键、单实例
 internal/clip/
-  model.go                    Item / Filter / Stats / Captured 等数据结构
-  settings.go                 设置结构与默认值（含 WebDAV 字段）
-  store.go                    SQLite 存储：条目 + BLOB、去重、保留策略、旧 JSONL 迁移、诊断日志
-  snippet.go                  片段模型与存储（七种类型、缩写、分组、同步字段）
-  snippet_actions.go          片段动作（粘贴/复制/打开/启动/执行）与弹窗入口
-  snippet_expander_windows.go 缩写自动展开（全局键盘钩子）
-  service.go                  绑定给前端的 ClipService（30+ 个方法）
-  sync.go                     WebDAV 同步 v2：manifest + 每条一个文件的增量同步、设置同步
-  update.go                   自更新：GitHub Releases 检查、下载安装包、静默安装
-  win32_windows.go            Win32 基元：剪贴板 API、前景程序、开机自启
-  clipboard_windows.go        读取/写回各类剪贴板格式（含自定义格式与 RTF）
-  dib_windows.go              CF_DIB(V5) ↔ image.NRGBA 互转
-  ole_windows.go              OLE IDataObject 回退（延迟渲染场景）
+  model.go                    Kind / FileRef / Captured 等纯数据
+  settings.go                 设置结构与默认值（含 WebDAV、主题字段）
+  entry.go                    Entry 类型、采集入库、生命周期
+  entry_store.go              entries 表 schema、读写、FTS、mergeEntry
+  entry_query.go              EntryQuery 查询（筛选器/日历/统计/标签/缩写检索）
+  entry_blob.go               附件字节存取（≤512KB 进库，更大的落盘）
+  entry_image.go              纯函数：解码、缩略、MIME 推断
+  store.go                    SQLite 打开/迁移、meta、墓碑、统计、诊断日志
+  service.go                  ClipService 装配与生命周期
+  service_capture.go          采集管线 + 快速输入窗
+  service_paste.go            条目 → 剪贴板 / 打开 / picker 弹窗
+  service_settings.go         设置保存与副作用（自启、展开器、后台循环）
+  entry_api.go                绑定给前端的条目 API 与筛选器 CRUD
+  snippet*.go                 片段：条目适配、动作、缩写主机、模板变量
+  sync.go / sync_dav.go       同步门面 + WebDAV 传输层
+  sync_package.go / sync_run.go / sync_merge.go   包格式 / 一次同步的编排 / 合并规则
+  clipboard_windows.go        读剪贴板：格式归类与各类型 capture
+  clipboard_formats_windows.go  格式知识与文本提取（跳过清单、URL/RTF/HTML）
+  clipboard_write_windows.go  写回：文本 / HTML / RTF / 图片 / CF_HDROP
+  dib_windows.go              CF_DIB(V5) ↔ image.NRGBA
+  ole_windows.go              OLE IDataObject 回退（延迟渲染）
   watcher_windows.go          消息窗口 + WM_CLIPBOARDUPDATE 监听
   picker_windows.go           光标定位、前台接管、合成 Ctrl+V
+  win32_windows.go            Win32 基元：剪贴板 API、前景程序、开机自启
   shell_windows.go            ShellExecute / 资源管理器定位
   platform_other.go           非 Windows 桩实现（保持可编译）
+内部按职责分文件的完整表格见 docs/ARCHITECTURE.md
 frontend/                     React + TS + Vite
-  src/App.tsx                 管理窗口：布局、事件订阅、键盘快捷键
-  src/Picker.tsx              快速粘贴弹窗（`?mode=picker`）
-  src/styles.css              设计系统（深色、无边框、hairline 边框、单一强调色）
-  src/components/             TitleBar / Sidebar / ItemRow / DetailPanel / SettingsView / Tip / Icons
-  src/lib/                    api（绑定封装）、format（时间与体积）、window（无边框窗口控制）
-  bindings/                   wails3 生成的 TS 绑定
+  src/App.tsx                 管理窗薄壳：装 hooks、切视图、转发通知
+  src/Picker.tsx              快速粘贴弹窗（`?mode=picker`）；src/Capture.tsx 是快速输入窗
+  src/hooks/                  useAppData / useEntries / useEntryImages / useTheme / useToast
+  src/components/
+    TitleBar / Sidebar / Calendar / Tip / Icons     布局与小组件
+    EntriesView + entries/EntryCard                 统一内容视图与卡片
+    SettingsView + settings/*                       设置页编排者与七个分区
+    EntryEditor / Composer / MarkdownEditor / SnippetFields / HotkeyInput / Lightbox
+  src/lib/                    api（绑定封装）、themes（配色预设与对比度自检）、images、format、window
+  src/styles/                 按域拆开的样式（base/layout/entries/controls/settings/picker/snippets/timeline/editor）
+  src/theme-light.css         主题引擎管不到的浅色补丁
+  bindings/                   wails3 生成的 TS 绑定（改了 Go 导出面要重新生成）
 scripts/make_icon.py          生成 appicon.png 与 windows/icon.ico
+scripts/visual-check/         样式回归：把构建产物 CSS 内联进标本页并截图（改动 CSS 后跑）
 scratch/clipdump/             开发期剪贴板格式转储工具
 scratch/setclip/              开发期投放 RTF / 自定义格式到剪贴板的工具
 scratch/dav/                  一次性 WebDAV 服务器（同步联调）
 scratch/e2e-picker*.ps1       弹窗端到端自动化（回车粘贴 / Esc / Ctrl+Enter）
 scratch/cap.ps1               窗口截图助手（定位、悬停、滚轮、点击）
+docs/ARCHITECTURE.md          分层、文件职责表、扩展点与"怎么验证"
 docs/CAPTURE.md               收集机制、格式覆盖矩阵与已知缺口
 docs/SYNC.md                  WebDAV 同步配置、合并规则与限制
 docs/SNIPPETS.md              片段库/缩写触发/触发选项/同步行为
-docs/ARCHITECTURE.md          三层解耦与扩展点（引擎/平台/业务）
-docs/TRIGGER-EVAL.md          触发器引擎评估（对照 AutoHotkey 那族）
 docs/FILE-STRATEGY.md         文件复制的方案对比与数据模型
+docs/design/                  历史设计记录（Memos 集成、统一条目模型、触发引擎评估）
 ```
 
 ## 排查：开机启动弹出一个黑框
