@@ -9,6 +9,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/bbqisbbq/clipnest/internal/winplat"
 	"golang.org/x/sys/windows"
 )
 
@@ -30,7 +31,6 @@ var (
 	procAttachThreadInput   = user32.NewProc("AttachThreadInput")
 	procSetFocus            = user32.NewProc("SetFocus")
 	procGetCurrentThreadID  = kernel32.NewProc("GetCurrentThreadId")
-	procSendInput           = user32.NewProc("SendInput")
 )
 
 const (
@@ -41,7 +41,6 @@ const (
 	vkMenu                  = 0x12
 	vkV                     = 0x56
 	inputKeyboard           = 1
-	keyeventfKeyUp          = 0x0002
 )
 
 type pointT struct {
@@ -78,21 +77,6 @@ type guiThreadInfo struct {
 // keyboardInput mirrors KEYBDINPUT. inputT must be sizeof(INPUT) == 40 on x64:
 // 4 bytes type + 4 padding + the 32-byte union (MOUSEINPUT is the largest
 // member), otherwise SendInput rejects the call with ERROR_INVALID_PARAMETER.
-type keyboardInput struct {
-	WVk         uint16
-	WScan       uint16
-	DwFlags     uint32
-	Time        uint32
-	DwExtraInfo uintptr
-}
-
-type inputT struct {
-	Type uint32
-	_    uint32
-	Ki   keyboardInput
-	_    [8]byte
-}
-
 // ForegroundWindowHandle returns the window that currently has focus.
 func ForegroundWindowHandle() uintptr {
 	h, _, _ := procGetForegroundWindow.Call()
@@ -236,32 +220,6 @@ func ActivateWindow(hwnd uintptr) {
 }
 
 // SendPaste synthesises Ctrl+V into whatever window currently has focus.
-func SendPaste() error {
-	inputs := []inputT{
-		{Type: inputKeyboard, Ki: keyboardInput{WVk: vkControl}},
-		{Type: inputKeyboard, Ki: keyboardInput{WVk: vkV}},
-		{Type: inputKeyboard, Ki: keyboardInput{WVk: vkV, DwFlags: keyeventfKeyUp}},
-		{Type: inputKeyboard, Ki: keyboardInput{WVk: vkControl, DwFlags: keyeventfKeyUp}},
-	}
-	n, _, err := procSendInput.Call(
-		uintptr(len(inputs)),
-		uintptr(unsafe.Pointer(&inputs[0])),
-		uintptr(unsafe.Sizeof(inputT{})),
-	)
-	if int(n) != len(inputs) {
-		return fmt.Errorf("SendInput 只送达 %d/%d 个按键事件: %v", int(n), len(inputs), err)
-	}
-	return nil
-}
-
-func keybdTap(vk uint16) {
-	down := inputT{Type: inputKeyboard, Ki: keyboardInput{WVk: vk}}
-	up := inputT{Type: inputKeyboard, Ki: keyboardInput{WVk: vk, DwFlags: keyeventfKeyUp}}
-	var arr [2]inputT
-	arr[0], arr[1] = down, up
-	procSendInput.Call(2, uintptr(unsafe.Pointer(&arr[0])), uintptr(unsafe.Sizeof(inputT{})))
-}
-
 // PasteInto focuses hwnd and pastes after a short settle delay. The delay
 // matters: some apps (Electron, Office) need a moment after activation before
 // they process the synthetic Ctrl+V.
@@ -350,3 +308,10 @@ func parseHexColor(hex string) (uint32, bool) {
 	}
 	return uint32(b)<<16 | uint32(g)<<8 | uint32(r), true
 }
+// SendPaste synthesises Ctrl+V into whatever window currently has focus.
+// 实现搬到了 internal/winplat（那边还有 expand 用的 Unicode 注入，共用同一份
+// INPUT 结构体与批处理）。
+func SendPaste() error { return winplat.Paste() }
+
+// keybdTap 按下并抬起一个键（Alt 菜单、左方向键这些场景）。
+func keybdTap(vk uint16) { winplat.TapKey(vk) }

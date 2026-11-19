@@ -13,6 +13,7 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/windows"
+	"github.com/bbqisbbq/clipnest/internal/winplat"
 )
 
 const (
@@ -24,9 +25,6 @@ const (
 	llkhfInjected  = 0x10
 	vkBack         = 0x08
 	vkLeft         = 0x25
-	inputKeyboard  = 1
-	keyeventfKeyUp = 0x0002
-	keyeventfUni   = 0x0004
 	gcsCompStr     = 0x0008
 	imeCmodeNative = 0x0001
 )
@@ -36,8 +34,6 @@ var (
 	kernel32 = windows.NewLazySystemDLL("kernel32.dll")
 	imm32    = windows.NewLazySystemDLL("imm32.dll")
 
-	procSendInput        = user32.NewProc("SendInput")
-	procGetForeground    = user32.NewProc("GetForegroundWindow")
 	procSetWindowsHook   = user32.NewProc("SetWindowsHookExW")
 	procCallNextHook     = user32.NewProc("CallNextHookEx")
 	procUnhookWindows    = user32.NewProc("UnhookWindowsHookEx")
@@ -54,21 +50,6 @@ var (
 	procImmGetOpenStatus  = imm32.NewProc("ImmGetOpenStatus")
 	procImmGetConvStatus  = imm32.NewProc("ImmGetConversionStatus")
 )
-
-type keyboardInput struct {
-	WVk         uint16
-	WScan       uint16
-	DwFlags     uint32
-	Time        uint32
-	DwExtraInfo uintptr
-}
-
-type inputT struct {
-	Type uint32
-	_    uint32
-	Ki   keyboardInput
-	_    [8]byte
-}
 
 type kbdllhookstruct struct {
 	VKCode      uint32
@@ -93,95 +74,11 @@ var allowInjected = os.Getenv("CLIPNEST_EXPANDER_ALLOW_INJECTED") == "1"
 // injectDeadline guards against swallowing keys after we already fired.
 var hookThread atomic.Uint32
 
-func send(batch []inputT) error {
-	if len(batch) == 0 {
-		return nil
-	}
-	ret, _, err := procSendInput.Call(uintptr(len(batch)), uintptr(unsafe.Pointer(&batch[0])),
-		unsafe.Sizeof(batch[0]))
-	if int(ret) != len(batch) {
-		return fmt.Errorf("SendInput %d/%d: %v", ret, len(batch), err)
-	}
-	return nil
-}
-
-// sendUnicodeText types text as Unicode keystrokes (KEYEVENTF_UNICODE), which
-// needs no clipboard and works in nearly every editor.
-func sendUnicodeText(text string) error {
-	if text == "" {
-		return nil
-	}
-	units, _ := windows.UTF16FromString(text)
-	if len(units) > 0 {
-		units = units[:len(units)-1] // drop trailing NUL
-	}
-	const chunk = 64
-	for start := 0; start < len(units); start += chunk {
-		end := start + chunk
-		if end > len(units) {
-			end = len(units)
-		}
-		batch := make([]inputT, 0, (end-start)*2)
-		for _, u := range units[start:end] {
-			batch = append(batch,
-				inputT{Type: inputKeyboard, Ki: keyboardInput{WScan: u, DwFlags: keyeventfUni}},
-				inputT{Type: inputKeyboard, Ki: keyboardInput{WScan: u, DwFlags: keyeventfUni | keyeventfKeyUp}},
-			)
-		}
-		if err := send(batch); err != nil {
-			return err
-		}
-		time.Sleep(2 * time.Millisecond)
-	}
-	return nil
-}
-
-// sendBackspaces deletes n characters in one batch (atomic from the app's view).
-func sendBackspaces(n int) {
-	if n <= 0 {
-		return
-	}
-	if n > 200 {
-		n = 200
-	}
-	batch := make([]inputT, 0, n*2)
-	for i := 0; i < n; i++ {
-		batch = append(batch,
-			inputT{Type: inputKeyboard, Ki: keyboardInput{WVk: vkBack}},
-			inputT{Type: inputKeyboard, Ki: keyboardInput{WVk: vkBack, DwFlags: keyeventfKeyUp}},
-		)
-	}
-	_ = send(batch)
-}
-
-// sendLeftArrows moves the caret left (used by {{cursor}}).
-func sendLeftArrows(n int) {
-	if n <= 0 {
-		return
-	}
-	if n > 200 {
-		n = 200
-	}
-	for i := 0; i < n; i++ {
-		batch := []inputT{
-			{Type: inputKeyboard, Ki: keyboardInput{WVk: vkLeft}},
-			{Type: inputKeyboard, Ki: keyboardInput{WVk: vkLeft, DwFlags: keyeventfKeyUp}},
-		}
-		_ = send(batch)
-		time.Sleep(6 * time.Millisecond)
-	}
-}
-
 // ShowCursor sends the arrow keys an expansion asked for.
 func (e *Engine) placeCursor(lefts int) {
 	if lefts > 0 {
-		sendLeftArrows(lefts)
+		winplat.LeftArrows(lefts)
 	}
-}
-
-func foregroundWindow() uintptr {
-	hwnd, _, _ := procGetForeground.Call()
-	return hwnd
 }
 
 // imeBusy reports whether the focused window is composing (Chinese pinyin etc.).
@@ -330,3 +227,10 @@ func (e *Engine) uninstall() {
 		procPostThreadMsg.Call(uintptr(threadID), 0x0012 /* WM_QUIT */, 0, 0)
 	}
 }
+
+// 下面四个是包内薄封装：真正的 INPUT 结构体与批处理都在 internal/winplat，
+// 这里只保留包内调用名（wininput_other.go 里有非 Windows 的同名空实现）。
+func sendUnicodeText(text string) error { return winplat.SendUnicode(text) }
+func sendBackspaces(n int)             { winplat.Backspaces(n) }
+func sendLeftArrows(n int)             { winplat.LeftArrows(n) }
+func foregroundWindow() uintptr             { return winplat.ForegroundWindow() }
