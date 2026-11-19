@@ -1,5 +1,7 @@
 import { useEffect, useImperativeHandle, useRef, useState, forwardRef } from "react";
 import type Vditor from "vditor";
+import { ClipService } from "../lib/api";
+import { MEMO_IMG_RE } from "../lib/images";
 
 // 全应用唯一的 Markdown 编辑器：Vditor（IR 即时渲染）。
 //
@@ -64,6 +66,46 @@ function fileToDataURL(file: File): Promise<string> {
     reader.onerror = () => reject(reader.error ?? new Error("读取图片失败"));
     reader.readAsDataURL(file);
   });
+}
+
+// ---- 图片：memoimg: 令牌 ↔ data URL -----------------------------------------
+//
+// 正文里存的是 `![](memoimg:<hash>)`（内容寻址，见 lib/images.ts）。Vditor 会把
+// 这个 src 当成未知协议去加载，于是渲染成一张破图卡片 —— 所以**进编辑器之前**
+// 换成真 data URL，**存回去之前**再换回令牌。两个方向都只在 Markdown 文本层做，
+// 不碰 DOM，IR 模式的删除/复制/撤销都不会把令牌弄丢。
+
+const tokenToData = new Map<string, string>(); // "memoimg:xxx" -> data URL
+const dataToToken = new Map<string, string>(); // data URL -> "memoimg:xxx"
+const DATA_URL_RE = /data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+/g;
+
+/** 把正文里的 memoimg 令牌换成 data URL（缺的去后端取一次，取不到就原样留着）。 */
+async function hydrateImages(md: string): Promise<string> {
+  const missing = [...new Set([...md.matchAll(MEMO_IMG_RE)].map((m) => m[1]))].filter(
+    (hash) => !tokenToData.has(`memoimg:${hash}`),
+  );
+  for (const hash of missing) {
+    try {
+      const data = await ClipService.GetImage(hash);
+      const token = `memoimg:${hash}`;
+      tokenToData.set(token, data);
+      dataToToken.set(data, token);
+    } catch {
+      /* 附件已被清理：留着令牌，至少不会丢信息 */
+    }
+  }
+  return md.replace(MEMO_IMG_RE, (whole) => tokenToData.get(whole) ?? whole);
+}
+
+/** 存回去之前把 data URL 还原成令牌；不认识的 data URL 原样保留。 */
+function dehydrateImages(md: string): string {
+  return md.replace(DATA_URL_RE, (url) => dataToToken.get(url) ?? url);
+}
+
+/** 新粘贴/新选择的图片：先登记映射，正文里用 data URL（这样立刻能看见）。 */
+function rememberImage(token: string, dataUrl: string): void {
+  tokenToData.set(token, dataUrl);
+  dataToToken.set(dataUrl, token);
 }
 
 // ---- 预热 ----------------------------------------------------------------
@@ -148,6 +190,10 @@ const MarkdownSurface = forwardRef<MarkdownSurfaceHandle, Props>(function Markdo
         const toolbar =
           preset === "detail" ? TOOLBAR_DETAIL : preset === "composer" ? TOOLBAR_COMPOSER : [];
 
+        // 令牌 → data URL（要在 Lute 解析之前完成，否则会渲染成破图卡片）
+        const hydrated = await hydrateImages(initial);
+        if (disposed) return;
+
         instance = new V(host, {
           cdn: VDITOR_CDN,
           mode: "ir",
@@ -156,7 +202,7 @@ const MarkdownSurface = forwardRef<MarkdownSurfaceHandle, Props>(function Markdo
           lang: "zh_CN",
           height: "auto",
           minHeight: 0,
-          value: initial,
+          value: hydrated,
           placeholder: props.placeholder ?? "",
           cache: { enable: false },
           outline: { enable: false, position: "left" },
@@ -175,10 +221,13 @@ const MarkdownSurface = forwardRef<MarkdownSurfaceHandle, Props>(function Markdo
               if (!file || !onImageFileRef.current) return "";
               const dataUrl = await fileToDataURL(file);
               const token = await onImageFileRef.current(dataUrl);
-              return token ? `![](${token})\n` : "";
+              if (!token) return "";
+              // 编辑器里直接写 data URL：立刻能看见图；存盘时 dehydrate 会换回令牌
+              rememberImage(token, dataUrl);
+              return `![](${dataUrl})\n`;
             },
           },
-          input: (value: string) => onChangeRef.current(value.replace(/\r\n/g, "\n")),
+          input: (value: string) => onChangeRef.current(dehydrateImages(value).replace(/\r\n/g, "\n")),
           ctrlEnter: () => onSaveRef.current?.(),
           esc: () => onEscapeRef.current?.(),
           after: () => {
@@ -224,8 +273,12 @@ const MarkdownSurface = forwardRef<MarkdownSurfaceHandle, Props>(function Markdo
     const v = vditorRef.current;
     if (!v || !ready) return;
     const next = props.value.replace(/\r\n/g, "\n");
-    if (v.getValue() === next) return;
-    v.setValue(next, true);
+    // 编辑器里放的是 data URL，外部传进来的是令牌，比较前先还原
+    if (dehydrateImages(v.getValue()) === next) return;
+    void hydrateImages(next).then((hydrated) => {
+      // 卸载后 vditorRef 已被清空，可选链会兜住
+      vditorRef.current?.setValue(hydrated, true);
+    });
   }, [props.value, ready]);
 
   // 深浅主题切换：Vditor 不跟着 CSS 变量走，得显式 setTheme
@@ -245,8 +298,13 @@ const MarkdownSurface = forwardRef<MarkdownSurfaceHandle, Props>(function Markdo
   useImperativeHandle(
     ref,
     () => ({
-      getValue: () => vditorRef.current?.getValue() ?? props.value,
-      setValue: (next: string) => vditorRef.current?.setValue(next.replace(/\r\n/g, "\n"), true),
+      // 对外一律给令牌（memoimg:xxx），data URL 只活在编辑器内部
+      getValue: () => dehydrateImages(vditorRef.current?.getValue() ?? props.value),
+      setValue: (next: string) => {
+        void hydrateImages(next.replace(/\r\n/g, "\n")).then((hydrated) => {
+          vditorRef.current?.setValue(hydrated, true);
+        });
+      },
       focus: () => vditorRef.current?.focus(),
       insert: (text: string) => vditorRef.current?.insertValue(text),
       wrap: (before: string, after: string) => {

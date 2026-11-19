@@ -23,13 +23,13 @@ type EntryQuery struct {
 	Pinned   bool   `json:"pinned"`
 	Archived bool   `json:"archived"`
 	// Todo 按派生列过滤：open（有未完成项）/ done（全完成）/ none（没有任务行）
-	Todo string `json:"todo"`
-	Day      string `json:"day"`  // YYYY-MM-DD：日历点某天
-	From     string `json:"from"` // RFC3339（含）
-	To       string `json:"to"`   // RFC3339（不含）
-	Limit    int    `json:"limit"`
-	Before   string `json:"before"` // 游标：created_at < 此值
-	Tail     bool   `json:"tail"`   // true = 取最新 N 条
+	Todo   string `json:"todo"`
+	Day    string `json:"day"`  // YYYY-MM-DD：日历点某天
+	From   string `json:"from"` // RFC3339（含）
+	To     string `json:"to"`   // RFC3339（不含）
+	Limit  int    `json:"limit"`
+	Before string `json:"before"` // 游标：created_at < 此值
+	Tail   bool   `json:"tail"`   // true = 取最新 N 条
 	// Rule 是自定义筛选器的规则树（and/or/not）。与上面的扁平字段是 AND 关系，
 	// 所以内置筛选器保持简单、老数据（没有 rule）行为完全不变。
 	Rule *FilterGroup `json:"rule,omitempty"`

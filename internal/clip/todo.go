@@ -58,7 +58,7 @@ func ParseTodos(entryID, content string) []TodoItem {
 
 	lines := strings.Split(content, "\n")
 	out := make([]TodoItem, 0, 4)
-	fence := ""       // 当前所在代码块的围栏标记（空 = 不在代码块里）
+	fence := ""              // 当前所在代码块的围栏标记（空 = 不在代码块里）
 	seen := map[string]int{} // 归一化文本 → 已出现次数，用于区分重复文本
 
 	for i, raw := range lines {

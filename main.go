@@ -162,6 +162,19 @@ func main() {
 			stealth.Hide()
 		}
 	}
+	// 显示后没拿到焦点时再抢一次（Windows 的前台锁偶尔会拒绝第一次请求）
+	refocusStealth := func() bool {
+		if stealth == nil {
+			return false
+		}
+		application.InvokeSync(func() {
+			if hwnd := uintptr(stealth.NativeWindow()); hwnd != 0 {
+				clip.ActivateWindow(hwnd)
+			}
+			stealth.Focus()
+		})
+		return true
+	}
 	showStealthHud := func() {
 		if stealthHud == nil {
 			return
@@ -299,21 +312,22 @@ func main() {
 				app.Event.Emit(name, data)
 			}
 		},
-		ShowWindow:    showWindow,
-		HideWindow:    hideWindow,
-		Quit:          quit,
-		ExePath:       exePath,
-		PlatformWorks: true,
-		ShowPickerAt:  showPickerAt,
-		ShowCaptureAt: showCaptureAt,
-		HideCapture:   hideCapture,
-		ShowStealthAt: showStealthAt,
-		HideStealth:   hideStealth,
+		ShowWindow:     showWindow,
+		HideWindow:     hideWindow,
+		Quit:           quit,
+		ExePath:        exePath,
+		PlatformWorks:  true,
+		ShowPickerAt:   showPickerAt,
+		ShowCaptureAt:  showCaptureAt,
+		HideCapture:    hideCapture,
+		ShowStealthAt:  showStealthAt,
+		HideStealth:    hideStealth,
+		RefocusStealth: refocusStealth,
 		ShowStealthHud: showStealthHud,
 		HideStealthHud: hideStealthHud,
-		ApplyChrome:   applyChrome,
-		HidePicker:    hidePicker,
-		OpenURL:       clip.OpenExternal,
+		ApplyChrome:    applyChrome,
+		HidePicker:     hidePicker,
+		OpenURL:        clip.OpenExternal,
 		OnSettings: func(st clip.Settings) error {
 			if pauseItem != nil {
 				setPauseLabel(pauseItem, st.Capture)
@@ -438,7 +452,7 @@ func main() {
 		IgnoreMouseEvents: true,
 		BackgroundType:    application.BackgroundTypeTransparent,
 		Windows: application.WindowsWindow{
-			Theme:          application.SystemDefault,
+			Theme:           application.SystemDefault,
 			HiddenOnTaskbar: true,
 		},
 		BackgroundColour: application.NewRGBA(0, 0, 0, 0),
@@ -458,7 +472,7 @@ func main() {
 		IgnoreMouseEvents: true,
 		BackgroundType:    application.BackgroundTypeTransparent,
 		Windows: application.WindowsWindow{
-			Theme:          application.SystemDefault,
+			Theme:           application.SystemDefault,
 			HiddenOnTaskbar: true,
 		},
 		BackgroundColour: application.NewRGBA(0, 0, 0, 0),

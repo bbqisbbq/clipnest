@@ -15,7 +15,7 @@ import (
 // 设置与开机自启（service_settings.go）。
 
 // Version is shown in the UI and written to the log on start.
-const Version = "2.5.1"
+const Version = "2.5.2"
 
 // AppInfo is static information the frontend needs for the about/settings view.
 type AppInfo struct {
@@ -54,6 +54,10 @@ type Hooks struct {
 	HideCapture func()
 	// ShowStealthAt shows the invisible 隐写 input window at the given point.
 	ShowStealthAt func(x, y int) bool
+	// RefocusStealth re-activates the 隐写 window. 显示时 Windows 的前台锁可能拒绝
+	// 我们的 SetForegroundWindow，于是按键会落到用户原来的程序里（等于把内容
+	// 打进了别人的窗口）。前端发现没拿到焦点时用它再抢一次。
+	RefocusStealth func() bool
 	// HideStealth hides the invisible input window.
 	HideStealth func()
 	// ShowStealthHud / HideStealthHud toggle the corner indicator.

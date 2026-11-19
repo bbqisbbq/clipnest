@@ -108,6 +108,21 @@ func (s *ClipService) ShowStealth() error {
 	return nil
 }
 
+// RefocusStealth re-activates the invisible input window.
+//
+// 存在的理由：ShowStealth 时 Windows 可能拒绝我们的前台请求（前台锁），
+// 窗口明明显示了却收不到键盘 —— 用户打出来的字会落进他原来的程序里。
+// 前端在显示后 200ms 检查 document.hasFocus()，没焦点就调这里再抢一次。
+func (s *ClipService) RefocusStealth() bool {
+	s.stealthMu.Lock()
+	active := s.stealthOn
+	s.stealthMu.Unlock()
+	if !active || s.hooks.RefocusStealth == nil {
+		return false
+	}
+	return s.hooks.RefocusStealth()
+}
+
 // StealthProgress is called by the input window on every edit so the HUD can
 // show how much is buffered and where it will land.
 func (s *ClipService) StealthProgress(text string) StealthState {
