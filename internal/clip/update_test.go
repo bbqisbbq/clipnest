@@ -1,10 +1,12 @@
 package clip
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -163,4 +165,40 @@ func indexOf(s, sub string) int {
 		}
 	}
 	return -1
+}
+
+// 这次真实发布的形状（2026-11-19 从 /releases/latest 抓的）：tag v2.7.0，
+// 唯一资产 clipnest-2.7.0-amd64-setup.exe。发版时最容易错的两处就是 tag 前缀和
+// 资产名——一旦错了，update check 会静默地说"没有可用的安装包"，所以固化下来。
+func TestPublishedReleaseIsConsumable(t *testing.T) {
+	const payload = `{
+	  "tag_name": "v2.7.0",
+	  "name": "ClipNest 2.7.0",
+	  "draft": false,
+	  "prerelease": false,
+	  "assets": [{
+	    "name": "clipnest-2.7.0-amd64-setup.exe",
+	    "size": 25382289,
+	    "browser_download_url": "https://github.com/bbqisbbq/clipnest/releases/download/v2.7.0/clipnest-2.7.0-amd64-setup.exe",
+	    "content_type": "application/x-msdownload"
+	  }]
+	}`
+	var rel ghRelease
+	if err := json.Unmarshal([]byte(payload), &rel); err != nil {
+		t.Fatalf("unmarshal release: %v", err)
+	}
+	ver := strings.TrimPrefix(rel.TagName, "v")
+	if ver != "2.7.0" {
+		t.Fatalf("version = %q, want 2.7.0", ver)
+	}
+	if !versionLess("2.6.3", ver) {
+		t.Fatal("从 2.6.3 看 2.7.0 应当算新版本")
+	}
+	asset := pickInstallerAsset(rel.Assets)
+	if asset == nil || asset.Name != "clipnest-2.7.0-amd64-setup.exe" {
+		t.Fatalf("picked %+v, want the setup exe", asset)
+	}
+	if !strings.Contains(asset.DownloadURL, "/download/v2.7.0/") {
+		t.Fatalf("download url = %q", asset.DownloadURL)
+	}
 }
