@@ -34,9 +34,11 @@
 }
 .memo-day-label {
   position: sticky; top: 0; z-index: 1;
-  padding: 10px 0 10px;
+  padding: 10px 0 6px;
   color: var(--text-3); font-size: 12px; letter-spacing: .04em;
-  background: linear-gradient(var(--bg) 68%, transparent);
+  /* 必须**不透底**：原来写的是 linear-gradient(var(--bg) 68%, transparent)，下沿 32%
+     透明，卡片滚到这条下面时就从透出的那一段穿上来，"今天"会压住上一张卡片的元信息。 */
+  background: var(--bg);
 }
 
 .memo-card {

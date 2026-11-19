@@ -85,6 +85,13 @@
   border-bottom: 0;
   background: transparent;
 }
+
+/* Vditor 自带的工具栏内边距是 10px 5px：纵向够、横向贴着输入框描边（圆角 14px
+   之后更明显）。左右各补到 12px，图标不再顶到边框（2026-11-19）。 */
+.md-surface .vditor-toolbar {
+  padding-left: 12px;
+  padding-right: 12px;
+}
 .vditor-toolbar__item .vditor-tooltipped {
   border-radius: var(--r-sm);
 }
