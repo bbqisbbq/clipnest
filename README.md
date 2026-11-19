@@ -75,25 +75,29 @@ ClipNest 在你使用电脑时安静地记录进入过系统剪贴板的一切�
 
 ## 安装
 
-两个安装包（同一份代码，区别只在安装位置与权限）：
+只发一个安装包：**全用户安装**（写到 `C:\Program Files\bbqisbbq\ClipNest`，需要管理员权限，
+向导里可以改目录）。从 2.4.0 起不再提供免 UAC 的 per-user 版本。
 
 | 文件 | 安装到 | 权限 |
 | --- | --- | --- |
-| `bin\clipnest-0.5.0-amd64-setup.exe` | `C:\Program Files\bbqisbbq\ClipNest` | 需要管理员（UAC） |
-| `bin\clipnest-0.5.0-amd64-setup-per-user.exe` | `%LOCALAPPDATA%\Programs\ClipNest` | 免 UAC，当前用户 |
+| `clipnest-<版本>-amd64-setup.exe` | `C:\Program Files\bbqisbbq\ClipNest` | 需要管理员（UAC） |
 
-安装包已做 **Authenticode 签名**（自签名，发布者显示 `ClipNest (self-signed)`）。自签名不会自动消除
-Windows 的"无法验证发布者"提示，但有两个实际好处：文件被篡改会被立刻发现，并且把
-`build\signing\clipnest-selfsigned.cer` 导入「受信任的根证书颁发机构 + 受信任的发布者」后不再报警。
+GitHub Releases 上只保留**最新一个版本**的安装包（旧版本资产会随每次发版清理掉）。
+
+安装包**未做 Authenticode 签名**，首次运行会触发 SmartScreen 提示（「更多信息 → 仍要运行」）。
+要签名的话脚本是现成的（自签名证书在 `build\signing\`，不入库）：
 
 ```powershell
-# 自签名（默认，无需证书）
-powershell -File scripts\sign.ps1 -Path "bin\clipnest-0.5.0-amd64-setup.exe,bin\clipnest-0.5.0-amd64-setup-per-user.exe,bin\clipnest.exe" -SelfSigned
+# 自签名（默认，无需付费证书）；签名后发布者显示 ClipNest (self-signed)
+powershell -File scripts\sign.ps1 -Path "bin\clipnest-2.4.0-amd64-setup.exe,bin\clipnest.exe" -SelfSigned
 
 # 正式证书（买了 OV/EV 证书后；带时间戳才能长期有效）
 $env:CLIPNEST_SIGN_PFX="D:\certs\clipnest.pfx"; $env:CLIPNEST_SIGN_PASSWORD="***"
 powershell -File scripts\sign.ps1 -Path "bin\*.exe" -Timestamp http://timestamp.digicert.com
 ```
+
+自签名不会自动消除"无法验证发布者"提示，但有两个实际好处：文件被篡改会被立刻发现，并且把
+`build\signing\clipnest-selfsigned.cer` 导入「受信任的根证书颁发机构 + 受信任的发布者」后不再报警。
 
 安装向导（简体中文）会问三件事：
 
@@ -116,9 +120,11 @@ powershell -File scripts\sign.ps1 -Path "bin\*.exe" -Timestamp http://timestamp.
 打包命令：
 
 ```powershell
-wails3 package                        # 机器级安装包（需要管理员）
-wails3 package INSTALL_SCOPE=user     # 单用户安装包（免 UAC）
-# 产物：bin\clipnest-amd64-installer.exe
+wails3 task windows:package             # 全用户安装包（发布用的就这一个）
+# 产物：bin\clipnest-amd64-installer.exe（改名为 clipnest-<版本>-amd64-setup.exe 再上传）
+
+# 本地自用想免 UAC 时可以打 per-user 包，但不随发布分发
+wails3 task windows:package INSTALL_SCOPE=user
 ```
 
 > 安装脚本在 `build/windows/nsis/project.nsi`（UTF-8 **带 BOM**，NSIS 要求），
@@ -166,8 +172,19 @@ pwsh -File scripts\visual-check\check-css.ps1       # 改了 CSS 就跑一次，
 ### 打包安装程序（可选）
 
 ```powershell
-wails3 package      # 生成 NSIS 安装包（需要 NSIS，模板已内置配置）
+wails3 task common:update:build-assets   # 改了 config.yml 里的版本号后先跑这个
+wails3 task windows:package             # NSIS 全用户安装包（需要 NSIS，模板已内置配置）
+# 产物 bin\clipnest-amd64-installer.exe，发布前改名为 clipnest-<版本>-amd64-setup.exe
 ```
+
+### 发版清单
+
+1. 改版本号：`internal/clip/service.go` 的 `Version` 与 `build/config.yml` 的 `info.version` 保持一致；
+2. `wails3 task common:update:build-assets`（同步 `build/**/Info.plist`、`windows/info.json`、`wails_tools.nsh` 等资产）；
+3. `wails3 task windows:package` → `bin\clipnest-amd64-installer.exe`，改名成 `clipnest-<版本>-amd64-setup.exe`
+   （**只发全用户安装包**，不带 per-user 版本）；
+4. 提交 + 打 tag：`git tag -a v<版本> -m "ClipNest <版本>"`，然后 `git push origin main --tags`；
+5. 建 GitHub Release 并上传上面那一个安装包；**只保留最新版本的安装包**，旧 release 每次发版都清掉。
 
 ## 使用
 
