@@ -111,6 +111,8 @@ src/components/
   TodoView              待办收集页：摊平所有条目里的 - [ ] 任务，勾选写回正文
   FilterDialog          筛选器编辑弹窗（主题化模态）+ FilterRuleEditor 规则编辑器
   MarkdownSurface       全应用唯一编辑器（Vditor IR）的适配层；preset = detail/composer/capture
+                        ※ 内容的 onChange 靠自己在宿主上听的 DOM `input` 事件（见下方经验），
+                          不要指望 Vditor 的 `options.input`——IR 模式手打时它不触发
   SnippetFields         片段的额外编辑项（嵌在详情的属性面板里）
   HotkeyInput / Lightbox / Picker / Capture
 src/styles/vditor-theme.css  Vditor 的 token 映射 + 三条硬编码浅色补丁（深色主题必需）
@@ -127,8 +129,13 @@ src/theme-light.css      主题引擎管不到的浅色补丁（--k-* / --shadow
 3. **CSS 的 import 顺序就是层叠顺序**：同优先级的选择器靠后覆盖，新增样式文件要插在
    正确的段位里，不能随手追加到末尾（`main.tsx` 里有注释说明）。
 
-**三条经验**：
+**几条经验**：
 
+- **编辑器的 onChange 不走 Vditor 的 `options.input`**：那个回调只在 Vditor 自己的渲染流程里
+  （`processAfterRender` / `setValue`）触发，**IR 模式手打文字不触发**（2.8.0 实测：草稿一直是空的，
+  只有点「清空」才回调）。`MarkdownSurface` 因此在宿主元素上自己听冒泡的 DOM `input`（+ 失焦）事件，
+  取 `getValue()` 后回调给调用方。任何"内容变了要做点什么"的功能（草稿落库、详情的未保存标记）
+  都依赖这条，别改成 `options.input`。
 - **主区竖向分两格**：`.pane-body`（当前视图）+ `.memo-composer`（全局输入框，`ComposerDock`）。
   输入框**不在任何视图内部**——它在 App 的最外层，所以切筛选器 / 待办 / 设置时位置和内容都不变；
   详情页是唯一的例外（那是在改一条已有的内容，不要两个"保存"抢地方）。草稿存 `meta.composer.draft`，

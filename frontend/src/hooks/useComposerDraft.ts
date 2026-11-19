@@ -107,3 +107,4 @@ export function useComposerDraft(onError: (message: string) => void): ComposerDr
 
   return { text, setText: setTextValue, reset, restored };
 }
+

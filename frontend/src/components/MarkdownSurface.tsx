@@ -175,6 +175,8 @@ const MarkdownSurface = forwardRef<MarkdownSurfaceHandle, Props>(function Markdo
     if (!host) return;
     let disposed = false;
     let instance: Vditor | null = null;
+    // 原生事件监听的解绑（实例真正建好之后才有）
+    let cleanupDom: (() => void) | null = null;
 
     // 换行符归一：Vditor 只认 \n。重建实例时优先用"上一次编辑器里的内容"
     const initial = (lastValueRef.current ?? initialValue.current).replace(/\r\n/g, "\n");
@@ -247,6 +249,27 @@ const MarkdownSurface = forwardRef<MarkdownSurfaceHandle, Props>(function Markdo
         // 只在没被卸载的时候登记句柄：否则 ref 会指向一个已经废掉的实例，
         // 后续 getValue()/setValue() 就会报 "reading 'options'"。
         if (!disposed) vditorRef.current = instance;
+
+        // 原生 input 事件兜底：Vditor 的 options.input 只在它自己的渲染流程里回调，
+        // 实测在 IR 模式下手打文字并不会触发（只有 setValue / 清空这类走 processAfterRender
+        // 的路径才会）。上层（草稿落库、详情的「未保存」标记）都指望这个回调，
+        // 所以直接在宿主上听一次冒泡的 input —— contenteditable 的每一次修改都会冒上来。
+        const onDomInput = () => {
+          if (disposed) return;
+          const v = vditorRef.current;
+          if (!v) return;
+          try {
+            onChangeRef.current(dehydrateImages(v.getValue()).replace(/\r\n/g, "\n"));
+          } catch {
+            /* 实例正在销毁：取不到内容就跳过，下一次输入会再来 */
+          }
+        };
+        host.addEventListener("input", onDomInput, true);
+        host.addEventListener("blur", onDomInput, true);
+        cleanupDom = () => {
+          host.removeEventListener("input", onDomInput, true);
+          host.removeEventListener("blur", onDomInput, true);
+        };
       } catch (err) {
         console.error("vditor init failed", err);
         setFailed(String(err));
@@ -256,6 +279,7 @@ const MarkdownSurface = forwardRef<MarkdownSurfaceHandle, Props>(function Markdo
     return () => {
       disposed = true;
       setReady(false);
+      cleanupDom?.();
       try {
         lastValueRef.current = dehydrateImages(instance?.getValue() ?? "");
       } catch {

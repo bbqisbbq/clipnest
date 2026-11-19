@@ -25,6 +25,17 @@
 
 详情页是唯一不显示输入框的地方：那是在改一条已有的条目，再摆一个"保存"在下面只会让人点错。
 
+### 1.1 顺带挖出来的真 bug：Vditor 的 `options.input` 在手打时不回调
+
+做完第一版、跑真机 e2e 时发现草稿永远是空的：文字在编辑器里，`meta.composer.draft` 却没写进去。
+排查结论——Vditor 的 `options.input` 只在它自己的渲染流程里（`processAfterRender` / `setValue`）
+被调用，**IR 模式下手打文字不触发**；只有"清空""换文档"这类走 `setValue` 的路径才回调。
+（旧版没暴露是因为「保存」按钮读的是 `editorRef.getValue()`，而不是上层 state；但详情页的
+「未保存」标记其实一直有这个隐患。）
+
+修法：`MarkdownSurface` 在自己的宿主元素上听冒泡的 DOM `input`（外加 `blur` 补一次），
+取 `getValue()` 后回调给调用方。这样"内容变了"对上层是可靠的，与 Vditor 的内部流程解耦。
+
 ## 2. 草稿落在库里，而不是前端的 localStorage
 
 `meta.composer.draft`（外加 `composer.draftAt` 记时间）。理由：
