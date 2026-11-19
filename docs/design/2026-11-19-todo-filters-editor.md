@@ -274,33 +274,78 @@ view: "entries" | "detail" | "settings"
   `entries` 与 `detail` 都在 DOM 里，详情用 `position:absolute; inset:0` 盖住主区，
   返回时列表滚动位置原样还在。这是「右栏打开」的关键细节。
 
-### 3.2 Vditor 集成（`components/VditorEditor.tsx`）
+### 3.2 Vditor 集成（`components/MarkdownSurface.tsx`）
 
-已核实（Vditor 4.0.1，本地已解包看过 `dist`）：
+已核实（Vditor **4.0.1，版本钉死**，本地解包 + 探针实测）：
 
 | 项 | 结论 |
 | --- | --- |
 | `options.cdn` | 可指向本地目录；默认 `https://unpkg.com/vditor@x.y.z`。**离线 app 必须换成本地** |
-| `options.mode` | `"wysiwyg" \| "ir" \| "sv"` → 用 `"ir"`（即时渲染） |
+| `options.mode` | `"wysiwyg" \| "ir" \| "sv"` → **默认 `"ir"`**（见 3.2.1 的决定） |
 | 运行时必需资源 | `index.min.js`(280KB) + `js/lute/lute.min.js`(3.6MB) + `js/icons/*`(62KB) + `js/i18n/zh_CN.js` + `css/index.css` + `css/content-theme/{light,dark}.css` |
 | 图片粘贴 | `options.upload.handler(files: File[]) => string \| null \| Promise<string>`（返回要插入的 Markdown） |
 | 保存快捷键 | `options.ctrlEnter(value)` 回调 |
 | 变更回调 | `options.input(value)`；`options.after()` 渲染完成；`options.esc(value)` |
-| 主题 | 编辑器壳 `theme: "classic" \| "dark"`（跟随我们的深浅主题）；正文预览 `preview.theme.current: "light" \| "dark"` |
+| 主题 | 编辑器壳 `theme: "classic" \| "dark"`（跟随我们的深浅主题）；正文 `preview.theme.current: "light" \| "dark"` |
 | 图标风格 | `icon: "ant" \| "material"`（用 `ant`，与现有线性图标更接近） |
 
-**离线资源落地（已定：全量拷贝）**：把 `node_modules/vditor/dist` **整个**拷到
-`frontend/public/vditor/dist/`（约 22MB），`cdn: import.meta.env.BASE_URL + "vditor"`。
+**离线资源落地（已定：全量拷贝）**：`scripts/sync-vditor.ps1` 把 `node_modules/vditor/dist`
+整份同步到 `frontend/public/vditor/dist/`（21.9MB），`cdn: import.meta.env.BASE_URL + "vditor"`。
+`frontend/package.json` 里挂了 `predev` / `prebuild` / `prebuild:dev` 三个钩子，构建前自动同步；
+脚本带**必需文件校验**（缺 `index.min.js` / `lute.min.js` / `icons/ant.js` / `i18n/zh_CN.js`
+直接失败，不让"装出来白屏"这种事静默发生）。这堆文件是 npm 包的纯拷贝，**不入库**（`.gitignore`）。
+
 全量拷贝意味着公式（katex/mathjax）、流程图（mermaid/flowchart）、思维导图（markmap）、
 图表（echarts）、五线谱、化学式这些渲染器**都能用**，代价只是安装包变大；
 它们都是按需加载（渲染到对应语法时才请求），不影响编辑器的启动速度。
-构建脚本里加一步校验：缺 `dist/js/lute/lute.min.js` 或 `dist/index.min.js` 就让
-`vite build` 失败（不然装出来是"打开编辑器白屏"）。
+
+#### 3.2.1 探针实测结论（2026-11-19）
+
+用 headless Chromium + 本地静态服务器跑同一个探针页（`?mode=ir` / `?mode=sv` 各一轮），
+`--dump-dom` 读回打点结果：
+
+| 测点 | 实测值 | 意义 |
+| --- | --- | --- |
+| 资源请求 | 全部 200，**唯一 404 是 favicon** | 本地 `cdn` 方案成立，零网络依赖 |
+| 冷启动（首次 `new Vditor`） | **249–320ms** | 主要是 lute(3.6MB) 的加载与初始化 |
+| 暖启动（同页第二个实例） | **10–19ms** | lute 只付一次钱 → **热键窗靠预热即可解决延迟** |
+| 工具栏 / 图标 | 27 个按钮，图标 `15×15` | 样式与图标集正常 |
+| 任务列表 / 表格 / 代码块 | 2 个勾选框（1 选中）、表格 1、代码块 1 | GFM 渲染正常，`- [ ]` 可用 |
+| IR `getValue()` 往返 | **不保真**：`- [ ]` 变 `- [ ]  `（多空格）、`[x]`→`[X]`、表格补空格对齐、空行数量调整 | 见 3.2.2 |
+| IR 规范化是否漂移 | **幂等**（把 Lute 输出再喂回去，不再变化） | 是"一次性整形"，不是每次保存都变 |
+| sv `getValue()` 往返 | **identical（逐字节一致）** | sv 是保真通道 |
+
+**两个必须记住的坑**：
+1. **深色主题下正文黑底黑字**：`index.css` 里 `.vditor-reset { color: #24292e }` 是硬编码浅色，
+   `theme:"dark"` 只切 CSS 变量、不改这条 → 必须由 `styles/vditor-theme.css` 把正文颜色接管
+   （`.vditor-reset { color: var(--text) }` 后实测正常）。**3.11.2 同样有此问题**，不是 4.x 独有。
+2. 表格/引用块背景也是硬编码浅色，一并接管，否则深色主题下是白块。
+
+Wails 侧（读源码确认，无需猜测）：`internal/assetserver/assetserver_windows.go` 的
+`baseURL = http://wails.localhost` —— 前端跑在**普通 http 源**上，不是自定义 scheme，
+所以 `<script src>` 相对路径、CSS `url()` 都按常规走；`webview_window_windows.go` 只拦
+`Host` 带 `wails.localhost` 的请求，外网请求交回 WebView2。这也是"必须本地化资源"的另一半理由：
+真断网时 unpkg 那条路根本不可用。
+
+#### 3.2.2 模式决定：默认 IR，接受规范化
+
+已拍板：**默认 `ir`**（要的就是即时渲染的观感）。代价写在这里，别后来当成 bug 报：
+
+- 只要这条条目被编辑并保存过**一次**，整篇就会被 Lute 规范重排一遍：表格补空格对齐、
+  `[x]` 变大写 `[X]`、任务行 `- [ ]` 后多一个空格、空行数量归位。
+- 规范化**幂等**：不会每次保存继续漂移。
+- 不改 `hash`（`SaveEntry` 只在 `hash == ""` 时重算）→ 同步配对不受影响。
+- todo 解析器已兼容 `[X]` 与多余空格（`todo.go` 的正则 `[\s+\[([ xX])\]\s+`），所以 UI 侧无感。
+- 因此详情视图的「保存」按钮旁边要有一句轻提示（第一次保存时 toast 一次）：
+  「已按 Markdown 规范整理格式」——避免用户以为内容被别人动过。
+
+剩余未知（只能人来验，自动化测不了）：**IR 模式下的中文 IME**（contenteditable + WebView2）。
 
 **必须实测的未知项（写进实施清单）**
-1. Wails 内嵌资源用 `wails://` / 自定义 scheme 时，`cdn` 相对路径能否被 lute 的 `<script src>` 加载。
-   失败则退路：用 `options._lutePath` 或把 lute 以 base64/内联方式注入（需评估）。
-2. IR 模式中文 IME 与 Tauri/Wails WebView2 的组合（Vditor 在 IR 下用 contenteditable，历史上 IME 有过问题）。
+1. ~~Wails 自定义 scheme 能否加载 lute~~ —— **已排除**：Windows 走 `http://wails.localhost`，探针 0 个 404（3.2.1）。
+
+2. IR 模式中文 IME 与 WebView2 的组合（Vditor 在 IR 下用 contenteditable，历史上 IME 有过问题）。
+   **只能人验**：装好后在详情视图与热键窗各敲一段中文、试候选词与退格。
 3. 我们的 `#tag` 高亮在 Vditor 里没有等价挂点（`customRenders` 只管代码块）→
    **接受编辑器内不高亮 tag**，卡片/收集页照旧显示 tag 徽标；文档里写清这是取舍。
 
@@ -315,14 +360,17 @@ toolbar: ["headings","bold","italic","strike","|","list","ordered-list","check",
 去掉：表情、录音、上传（用 `upload.handler` 接管粘贴，不要选文件上传）、插入图表/公式/五线谱。
 
 **主题映射（`styles/vditor-theme.css`）**：把 Vditor 的 CSS 变量接到我们的 token 上，
-不放任它自带配色：
+**并且必须覆盖它那几条硬编码浅色**（否则深色下黑底黑字 / 白块表格）：
 
 ```css
 .vditor { --panel-background-color: var(--surface); --textarea-background-color: var(--surface);
           --toolbar-background-color: var(--surface-2); --border-color: var(--border-soft);
-          --second-background-color: var(--surface-2); }
-.vditor-ir .vditor-reset { font-family: var(--font-ui); font-size: 14px; line-height: 1.8; color: var(--text); }
-.vditor-toolbar { border-bottom: 1px solid var(--border-soft); padding: 2px 6px; }
+          --toolbar-icon-color: var(--text-2); --textarea-text-color: var(--text); }
+/* 下面三条是硬编码补丁：只改变量不管用 */
+.vditor-reset { color: var(--text); }
+.vditor-reset table { background: transparent; }
+.vditor-ir .vditor-reset { font-family: var(--font-ui); font-size: 14px; line-height: 1.8; }
+.vditor-toolbar { border-bottom: 1px solid var(--border-soft); padding: 2px 6px; background: var(--surface); }
 /* 边框全部去掉：我们不要"低档边框"，用底色分层 */
 ```
 
@@ -347,8 +395,12 @@ type SurfacePreset = "detail" | "composer" | "capture";
 // preset 只决定：toolbar 数组 / toolbarConfig.hide / height / classes / cache.enable / 占位文案
 ```
 
-对外暴露 `MarkdownSurfaceHandle`：`getValue / setValue / focus / insertImageToken`，
-替换掉现在 `MarkdownEditorHandle` 的 `insert / wrap / focus`。
+对外暴露 `MarkdownSurfaceHandle`：`getValue / setValue / focus / insertImageToken / destroy`。
+
+**这一层是「引擎适配层」，不是薄包装**：既然全应用只留一个编辑器，选型风险就集中在这一个库上，
+所以壳子只碰 Vditor 的这 5 个动作 + `onChange/onReady` 两个回调；换引擎（例如 Toast UI Editor）
+只改这个文件。这条约束写在这里是为了防止将来在组件里直接 `import Vditor`。
+
 `MarkdownEditor.tsx`（CodeMirror 封装）**删除**，`package.json` 里 6 个
 `@codemirror/*` + `@lezer/highlight` 一起移除（`styles/timeline.css` 里 `.md-editor .cm-*`
 的规则改成 Vditor 的选择器，深色/浅色都走我们的 token）。
@@ -406,7 +458,9 @@ type SurfacePreset = "detail" | "composer" | "capture";
 
 ### 批 3 · 编辑框（一个编辑器）
 
-1. Vditor 资源落地（全量 dist）+ 构建校验 + `MarkdownSurface.tsx`（懒加载、预热、主题、上传 handler、ctrlEnter/esc）
+0. ~~技术验证~~ **已完成（2026-11-19）**：本地 cdn 可用、资源齐备、冷暖启动 249–320ms / 10–19ms、
+   深色主题硬编码补丁、IR 规范化（幂等）、sv 保真。资源同步脚本与版本钉死已落地。
+1. `styles/vditor-theme.css`（token 映射 + 三条硬编码补丁）+ `MarkdownSurface.tsx`（引擎适配层、懒加载、预热、上传 handler、ctrlEnter/esc）
 2. 三个 surface 逐个换装：`EntryDetailView`（新建，完整工具栏）→ `Composer`（精简 6 项）→ `Capture`（隐藏工具栏）
 3. 删除 `MarkdownEditor.tsx`（CodeMirror）与 `@codemirror/*` 依赖、`EntryEditor.tsx` 浮层、`styles/editor.css` 的 `.editor-*` 规则；把 `.md-editor .cm-*` 样式改成 Vditor 选择器
 4. 量热键唤起延迟（`Capture` 从按键到可打字），按 3.4 调预热；超 150ms 就查 lute 初始化而不是退回去加第二个编辑器
@@ -415,7 +469,7 @@ type SurfacePreset = "detail" | "composer" | "capture";
 **验收**：双击卡片 → 右侧整区打开编辑（无浮层、有工具栏），列表滚动位置在返回后不变；
 底部「记一条」只有精简工具栏、高度自适应；热键唤起的输入窗没有工具栏但能正常打字；
 三处粘贴截图都出现 `![](memoimg:…)` 且卡片渲染出图；断开网络启动 → 三个入口都能编辑（零 CDN 依赖）；
-`package.json` 里不再有 `@codemirror/*`。
+`package.json` 里不再有 `@codemirror/*`；**中文 IME 在详情视图与热键窗各敲一段，候选词/退格正常**。
 
 ### 验证命令（每批都跑）
 
@@ -432,7 +486,8 @@ pwsh -File scripts\visual-check\check-css.ps1     # 批 3 必跑
 
 | 风险 | 处置 |
 | --- | --- |
-| Vditor 的 lute 从 `cdn` 加载，Wails 自定义 scheme 可能拦 | 批 3 第一件事就是最小验证；失败退路写在 3.2 |
+| ~~Vditor 的 lute 从 `cdn` 加载，Wails 自定义 scheme 可能拦~~ | **已实测排除**：Windows 是 `http://wails.localhost`，探针 0 个 404（3.2.1） |
+| IR 模式把正文规范化重排（表格对齐、`[X]`、空格） | **已接受**（3.2.2）；规范化幂等、不改 hash、解析器兼容；首次保存时 toast 一句「已按 Markdown 规范整理格式」 |
 | lute 3.6MB + 全量 dist 22MB 拉大安装包 | 已明确接受：换「公式/流程图/思维导图/图表可渲染」；资源按需加载，编辑器仍是懒加载 |
 | IR 模式 IME | 批 3 装机实测中文输入（详情、Composer、Capture 三处都要试）；不行就退 `mode:"sv"`；不再退回 CodeMirror（已定单编辑器） |
 | 热键唤起的输入窗要秒开，但 Vditor 初始化有成本 | 模块 + lute 预热（3.4）+ 等高骨架；把「按键 → 可打字」当硬指标量出来，不靠感觉 |
