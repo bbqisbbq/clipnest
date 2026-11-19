@@ -61,10 +61,11 @@ function report(source: string, detail: unknown) {
   const text = detail instanceof Error ? `${detail.message}\n${detail.stack ?? ""}` : String(detail);
   console.error(source, detail);
   // Visible to the outside (window title is readable via Win32) in case the
-  // binding path itself is what's broken.
+  // binding path itself is what's broken. 带上窗口模式，否则日志里分不清是哪个窗炸的。
+  const where = mode ? `[${mode}] ` : "";
   document.title = `ClipNest ⚠ ${source}: ${text}`.slice(0, 120);
   try {
-    void ClipService.LogClient(`${source}: ${text}`);
+    void ClipService.LogClient(`${where}${source}: ${text}`);
   } catch {
     /* the binding itself may be what failed */
   }
@@ -76,6 +77,11 @@ window.addEventListener("unhandledrejection", (e) => report("unhandledrejection"
 // 编辑器引擎预热：lute（Markdown 引擎，3.6MB）的加载与初始化只付一次钱
 // （实测：首实例 250ms，后续实例 10~19ms）。热键窗本来就随应用一起创建，
 // 空闲时先烧热，按下热键时就不会卡在解析上。
+//
+// **只在真的有编辑器的窗口里预热**：隐写窗（stealth / stealthhud）是"看不见的
+// textarea + 输入法"，里面塞一个 Vditor 实例既没用、又可能抢焦点/卡主线程，
+// 那会把隐写模式搞坏；picker 是搜索列表，也不需要 Markdown 引擎。
+const usesEditor = !isPicker && !isStealth && !isStealthHud;
 const whenIdle = (cb: () => void) => {
   if (typeof window.requestIdleCallback === "function") {
     window.requestIdleCallback(cb, { timeout: 1200 });
@@ -83,7 +89,7 @@ const whenIdle = (cb: () => void) => {
     window.setTimeout(cb, 300);
   }
 };
-whenIdle(() => void warmUpMarkdown());
+if (usesEditor) whenIdle(() => void warmUpMarkdown());
 
 try {
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(

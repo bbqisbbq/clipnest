@@ -148,17 +148,31 @@
 /* ---------- 5. 两个窄场景的额外精简 ---------- */
 
 /* 底部「记一条」：工具栏压薄，字号略小 */
+.md-surface--composer {
+  /* Vditor 的工具栏高度由这个变量决定（默认 35px），在窄卡片里太占地方 */
+  --toolbar-height: 26px;
+}
 .md-surface--composer .vditor-toolbar {
-  padding: 1px 2px;
+  min-height: 26px;
+  padding: 0 2px;
   border-bottom: 0;
 }
 .md-surface--composer .vditor-toolbar__item {
-  min-width: 24px;
+  min-width: 22px;
   height: 24px;
+  padding: 0 2px;
+}
+.md-surface--composer .vditor-toolbar__item svg {
+  width: 13px;
+  height: 13px;
+}
+.md-surface--composer .vditor-toolbar__divider {
+  height: 12px;
+  margin: 6px 2px;
 }
 .md-surface--composer .vditor-reset {
   font-size: 13.5px;
-  padding: 4px 2px !important;
+  padding: 2px 2px !important;
 }
 .md-surface--composer .vditor {
   background: transparent;

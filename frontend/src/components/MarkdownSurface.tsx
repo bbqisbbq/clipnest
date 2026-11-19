@@ -80,25 +80,22 @@ export function warmUpMarkdown(): Promise<void> {
       const mod = await import("vditor");
       const V = mod.default;
       const host = document.createElement("div");
+      // 放在视口外、不接收任何交互：它只用来把 lute 与 CSS 预热一遍
       host.style.cssText =
-        "position:fixed;left:-9999px;top:0;width:120px;height:80px;opacity:0;pointer-events:none";
+        "position:fixed;left:-9999px;top:0;width:120px;height:80px;opacity:0;pointer-events:none;user-select:none";
+      host.setAttribute("aria-hidden", "true");
       document.body.appendChild(host);
       await new Promise<void>((resolve) => {
-        const tmp = new V(host, {
+        // 刻意**不销毁**这个实例：Vditor 内部有异步回调（渲染、缓存、hint），
+        // 销毁后它们再去读实例属性就是 "Cannot read properties of undefined (reading 'options')"。
+        // 留一个 120×80 的隐形实例，代价可以忽略，换来的是不会往控制台/日志里喷错误。
+        new V(host, {
           cdn: VDITOR_CDN,
           mode: "ir",
           cache: { enable: false },
           value: "warm",
           after() {
-            window.setTimeout(() => {
-              try {
-                tmp.destroy();
-              } catch {
-                /* 已经销毁 */
-              }
-              host.remove();
-              resolve();
-            }, 0);
+            resolve();
           },
         });
       });
@@ -186,7 +183,12 @@ const MarkdownSurface = forwardRef<MarkdownSurfaceHandle, Props>(function Markdo
           esc: () => onEscapeRef.current?.(),
           after: () => {
             if (disposed) {
-              instance?.destroy();
+              // StrictMode 下第一次挂载会被立刻卸载：这个实例谁也不该再用
+              try {
+                instance?.destroy();
+              } catch {
+                /* 已经销毁 */
+              }
               return;
             }
             vditorRef.current = instance;
@@ -194,7 +196,9 @@ const MarkdownSurface = forwardRef<MarkdownSurfaceHandle, Props>(function Markdo
             if (props.autoFocus) instance?.focus();
           },
         });
-        vditorRef.current = instance;
+        // 只在没被卸载的时候登记句柄：否则 ref 会指向一个已经废掉的实例，
+        // 后续 getValue()/setValue() 就会报 "reading 'options'"。
+        if (!disposed) vditorRef.current = instance;
       } catch (err) {
         console.error("vditor init failed", err);
         setFailed(String(err));

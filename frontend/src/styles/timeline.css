@@ -237,14 +237,12 @@ body.is-col-resizing .memo-splitter { background: var(--accent-tint); }
 .memo-composer .memo-preview { flex: 1; min-height: 0; overflow-y: auto; }
 /* Markdown 编辑器（CodeMirror 6）：容器只负责占位，内部样式由组件注入 */
 /* 编辑器容器（Vditor 包在 .md-surface 里，见 styles/vditor-theme.css）。
-   边框只留一圈极淡的，靠底色分层——不要粗边框。 */
+   刻意**没有边框**：详情视图里它铺满整块区域，外面套一圈圆角描边既多余又显得廉价；
+   需要分隔时靠底色与留白。聚焦也不加高亮描边（用户不会不知道光标在哪儿）。 */
 .md-surface {
-  border: 1px solid var(--border-soft);
-  border-radius: var(--r-md);
-  background: var(--surface);
+  background: transparent;
   overflow: hidden;
 }
-.md-surface:focus-within { border-color: var(--accent-line); }
 /* ---------------- 底部输入区（卡片式） ---------------- */
 .memo-composer {
   position: relative;

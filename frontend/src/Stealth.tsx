@@ -15,6 +15,20 @@ import { ClipService } from "./lib/api";
 
 const BLUR_GRACE_MS = 220;
 
+/**
+ * 隐写窗的诊断日志。
+ *
+ * 为什么这个模式要专门打日志：它按设计"什么都看不见"（透明窗口 + 透明文字），
+ * 一旦焦点没抢到，用户只会觉得"打了字什么都没发生"，而我们在外面完全看不出
+ * 是哪一步断的（窗口没显示 / 拿到了焦点但按键没进来 / 提交失败）。
+ * 每次激活只写 3 行左右，落在 clipnest.log 里，出问题能直接看出断点。
+ */
+function stealthLog(what: string, extra: string): void {
+  void ClipService.LogClient(`stealth ui: ${what} ${extra}`).catch(() => {
+    /* 日志失败不该影响输入 */
+  });
+}
+
 export default function Stealth() {
   const [text, setText] = useState("");
   const areaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -56,6 +70,7 @@ export default function Stealth() {
     setText("");
     textRef.current = "";
     progress("");
+    stealthLog("commit", `len=${body.length}`);
     try {
       await ClipService.StealthCommit(body);
     } catch {
@@ -97,6 +112,14 @@ export default function Stealth() {
       focusArea();
       window.setTimeout(focusArea, 40);
       window.setTimeout(focusArea, 120);
+      stealthLog("opened", "");
+      window.setTimeout(() => {
+        const active = document.activeElement as HTMLElement | null;
+        stealthLog(
+          "focus-check",
+          `hasFocus=${document.hasFocus()} active=${active?.tagName ?? "none"}/${active?.className ?? ""}`,
+        );
+      }, 160);
     };
     const off = Events.On("stealth:opened", onOpened);
     const onFocus = () => focusArea();
@@ -123,7 +146,11 @@ export default function Stealth() {
 
   const onBlur = () => {
     // 刚打开时的焦点抖动不算离开
-    if (Date.now() - openedAt.current < BLUR_GRACE_MS) return;
+    if (Date.now() - openedAt.current < BLUR_GRACE_MS) {
+      stealthLog("blur-ignored", `afterMs=${Date.now() - openedAt.current}`);
+      return;
+    }
+    stealthLog("blur-close", `afterMs=${Date.now() - openedAt.current} len=${textRef.current.length}`);
     void close();
   };
 
@@ -136,6 +163,7 @@ export default function Stealth() {
         spellCheck={false}
         autoComplete="off"
         onChange={(e) => {
+          if (textRef.current === "") stealthLog("first-input", `len=${e.target.value.length}`);
           setText(e.target.value);
           progress(e.target.value);
         }}
