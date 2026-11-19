@@ -111,6 +111,31 @@ powershell -File scripts\sign.ps1 -Path "bin\*.exe" -Timestamp http://timestamp.
 自签名不会自动消除"无法验证发布者"提示，但有两个实际好处：文件被篡改会被立刻发现，并且把
 `build\signing\clipnest-selfsigned.cer` 导入「受信任的根证书颁发机构 + 受信任的发布者」后不再报警。
 
+
+### 发布流程（自动更新强制验签）
+
+从 **2.7.1** 起，自动更新会校验安装包的 **ed25519 签名**，**失败即拒绝安装**（宁可让用户停在旧版本，
+也不装一个来源无法确认的可执行文件）。所以每次发布都必须把 `.sig` 和 `.exe` 一起传上去：
+
+```powershell
+# 1. 打包
+wails3 task windows:package
+Rename-Item bin\clipnest-amd64-installer.exe clipnest-<版本>-amd64-setup.exe
+
+# 2. 签名（生成 <安装包>.sig，并自检一遍）
+pwsh -File scripts\sign-release.ps1 -Installer bin\clipnest-<版本>-amd64-setup.exe
+
+# 3. 发布：两个资产都要传
+gh release create v<版本> "bin\clipnest-<版本>-amd64-setup.exe" "bin\clipnest-<版本>-amd64-setup.exe.sig" `
+  --title "ClipNest <版本>" --notes-file docs\release-notes-v<版本>.md
+```
+
+- 私钥在 `build\signing\ed25519.key`（**已 gitignore，丢了就再也签不出可被现有版本接受的包**，
+  需要重新发一版同时信任新旧公钥的过渡版本才能换根）。
+- 公钥硬编码在 `internal/clip/update_sign.go` 的 `updatePubKeyB64`。
+- 签名工具：`go run ./scratch/signinstaller keygen|pubkey|sign|verify`。
+- 漏传 `.sig` 的后果是可预期的：更新检查会明确报「发布缺少签名文件，已拒绝更新」，不会静默装。
+
 安装向导（简体中文）会问三件事：
 
 1. **安装位置**

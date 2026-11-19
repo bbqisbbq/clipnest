@@ -39,6 +39,7 @@ type UpdateInfo struct {
 	AssetName string `json:"assetName"`
 	AssetSize int64  `json:"assetSize"`
 	AssetURL  string `json:"assetUrl"`
+	AssetSigURL string `json:"assetSigUrl"`
 	Published string `json:"published"`
 	Error     string `json:"error,omitempty"`
 }
@@ -92,6 +93,17 @@ func (s *ClipService) CheckUpdate() UpdateInfo {
 	info.AssetName = asset.Name
 	info.AssetSize = asset.Size
 	info.AssetURL = asset.DownloadURL
+
+	// 强制验签：同一次发布里必须带 <安装包>.sig，否则宁可让用户停在旧版本，
+	// 也不装一个"来源无法确认"的可执行文件。
+	sig := resolveSigAsset(rel.Assets, asset.Name)
+	if sig == nil {
+		info.Available = false
+		info.Error = fmt.Sprintf("新版本 %s 的发布缺少签名文件（%s.sig），已拒绝更新", info.Version, asset.Name)
+		Logf(s.store.Dir(), "update check: %s has no signature asset for %s", info.Version, asset.Name)
+		return info
+	}
+	info.AssetSigURL = sig.DownloadURL
 	Logf(s.store.Dir(), "update available: %s -> %s (%s)", Version, info.Version, asset.Name)
 	s.emit("update:available", info)
 	return info
@@ -219,6 +231,18 @@ func (s *ClipService) DownloadUpdate() (string, error) {
 	if info.AssetSize > 0 && n != info.AssetSize {
 		_ = os.Remove(target)
 		return "", fmt.Errorf("安装包大小不符（%d/%d 字节）", n, info.AssetSize)
+	}
+
+	// 大小只能说明"传完了"，不能说明"是官方那份"：签名才是。校验失败立刻删文件，
+	// 免得临时目录里躺着半个可疑的安装包。
+	if info.AssetSigURL == "" {
+		_ = os.Remove(target)
+		return "", errors.New("发布缺少签名文件（.sig），已拒绝安装")
+	}
+	if err := verifyUpdateSignature(target, &ghAsset{Name: info.AssetName + ".sig", DownloadURL: info.AssetSigURL}); err != nil {
+		_ = os.Remove(target)
+		Logf(s.store.Dir(), "update signature check failed: %v", err)
+		return "", err
 	}
 	Logf(s.store.Dir(), "update downloaded: %s (%d bytes)", target, n)
 	return target, nil

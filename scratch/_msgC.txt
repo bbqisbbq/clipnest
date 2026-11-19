@@ -1,0 +1,15 @@
+feat(update): 自动更新强制验签（ed25519）；2.7.1
+
+以前只核对下载地址和字节数，拦不住"包被替换"（大小可以凑）。现在：
+
+- 新增 internal/clip/update_sign.go：ed25519 公钥作信任根、resolveSigAsset 找发布里的
+  <安装包>.sig、verifySignatureText / verifyUpdateSignature 校验本地文件；任何一步失败
+  一律 error（fail closed）
+- CheckUpdate：同一次发布里没有 .sig 就拒绝提供更新（Available=false，并说明原因）
+- DownloadUpdate：大小核对之后验签，验不过立刻删掉临时文件再报错
+- UpdateInfo 增加 assetSigUrl 字段（绑定已重生成）
+- 新增 scratch/signinstaller（keygen/pubkey/sign/verify）与 scripts/sign-release.ps1
+  （签名 + 验签自检 + 打印 SHA256 与发布命令）；私钥进 build/signing/（已 gitignore）
+- 测试：假 GitHub 现在连签名一起发（用现场生成的测试密钥注入 updatePubKey），
+  新增三条失败路径用例——漏签名、包被替换、签名长度异常；真实发布形状用例也补上 .sig
+- README 补「发布流程（自动更新强制验签）」，写明漏传 .sig 的后果与私钥丢失的代价

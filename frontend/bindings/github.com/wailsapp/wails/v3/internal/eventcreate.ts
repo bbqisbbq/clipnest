@@ -6,4 +6,25 @@
 // @ts-ignore: Unused imports
 import { Create as $Create } from "@wailsio/runtime";
 
-Object.freeze($Create.Events);
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as clip$0 from "../../../../bbqisbbq/clipnest/internal/clip/models.js";
+
+function configure() {
+    Object.freeze(Object.assign($Create.Events, {
+        "clip:bumped": $$createType0,
+        "clip:new": $$createType0,
+        "clip:stats": $$createType1,
+        "clip:updated": $$createType0,
+        "settings:changed": $$createType2,
+        "sync:status": $$createType3,
+    }));
+}
+
+// Private type creation functions
+const $$createType0 = clip$0.Entry.createFrom;
+const $$createType1 = clip$0.Stats.createFrom;
+const $$createType2 = clip$0.Settings.createFrom;
+const $$createType3 = clip$0.SyncStatus.createFrom;
+
+configure();

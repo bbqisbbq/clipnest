@@ -1,11 +1,15 @@
 package clip
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -50,14 +54,43 @@ func TestPickInstallerAsset(t *testing.T) {
 	}
 }
 
-// newFakeGitHub serves a release index and one fake installer.
+// fakeInstaller 是假发布里的安装包字节。
+const fakeInstaller = "FAKEINSTALL"
+
+// newFakeGitHub 起一个假的 GitHub：一个发布索引 + 一个安装包 + 它的 .sig。
+//
+// 强制验签之后，"发布忘了传 .sig"就等于"没有更新"，所以假服务必须连签名一起发；
+// 这里现生成一对测试密钥并注入 updatePubKey（不是写死固定签名，免得和内置公钥纠缠）。
 func newFakeGitHub(t *testing.T, version string) *httptest.Server {
 	t.Helper()
+	return newFakeGitHubWith(t, version, fakeInstaller, true)
+}
+
+// newFakeGitHubWith 允许换掉实际下发的字节（servedBody）或干脆不发签名（withSig），
+// 用来覆盖"安装包被替换"和"发布漏签名"两条失败路径。
+func newFakeGitHubWith(t *testing.T, version, servedBody string, withSig bool) *httptest.Server {
+	t.Helper()
+
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	oldPub := updatePubKey
+	updatePubKey = pub
+	t.Cleanup(func() { updatePubKey = oldPub })
+
+	sig := base64.StdEncoding.EncodeToString(ed25519.Sign(priv, []byte(fakeInstaller)))
+
 	var srv *httptest.Server
 	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/repos/" + updateRepo + "/releases/latest":
 			w.Header().Set("Content-Type", "application/json")
+			sigAsset := ""
+			if withSig {
+				sigAsset = fmt.Sprintf(`,{"name":"clipnest-%s-amd64-setup.exe.sig","size":%d,"browser_download_url":"%s/dl/sig"}`,
+					version, len(sig), srv.URL)
+			}
 			fmt.Fprintf(w, `{
 			  "tag_name": "v%s",
 			  "name": "ClipNest %s",
@@ -65,12 +98,15 @@ func newFakeGitHub(t *testing.T, version string) *httptest.Server {
 			  "published_at": "2026-11-17T07:00:00Z",
 			  "assets": [
 			    {"name":"clipnest-%s-amd64-setup-per-user.exe","size":11,"browser_download_url":"%s/dl/peruser.exe"},
-			    {"name":"clipnest-%s-amd64-setup.exe","size":11,"browser_download_url":"%s/dl/setup.exe"}
+			    {"name":"clipnest-%s-amd64-setup.exe","size":%d,"browser_download_url":"%s/dl/setup.exe"}%s
 			  ]
-			}`, version, version, version, srv.URL, version, srv.URL)
+			}`, version, version, version, srv.URL, version, len(servedBody), srv.URL, sigAsset)
 		case "/dl/setup.exe":
 			w.Header().Set("Content-Type", "application/octet-stream")
-			_, _ = w.Write([]byte("FAKEINSTALL"))
+			_, _ = w.Write([]byte(servedBody))
+		case "/dl/sig":
+			w.Header().Set("Content-Type", "application/octet-stream")
+			_, _ = w.Write([]byte(sig))
 		default:
 			http.NotFound(w, r)
 		}
@@ -200,5 +236,60 @@ func TestPublishedReleaseIsConsumable(t *testing.T) {
 	}
 	if !strings.Contains(asset.DownloadURL, "/download/v2.7.0/") {
 		t.Fatalf("download url = %q", asset.DownloadURL)
+	}
+}
+
+// 发布漏传 .sig：宁可停在旧版本，也不装"来源无法确认"的可执行文件。
+func TestCheckUpdateRejectsUnsignedRelease(t *testing.T) {
+	newFakeGitHubWith(t, "9.9.9", fakeInstaller, false)
+
+	svc := newTestService(t, t.TempDir())
+	info := svc.CheckUpdate()
+	if info.Available {
+		t.Fatalf("签名缺失时不应提供更新: %+v", info)
+	}
+	if !contains(info.Error, "签名") {
+		t.Fatalf("错误信息要说清是签名问题，实际 %q", info.Error)
+	}
+}
+
+// 安装包被替换（签名对不上）：下载阶段就必须拦下，并且把临时文件删掉。
+func TestDownloadUpdateRejectsTamperedInstaller(t *testing.T) {
+	newFakeGitHubWith(t, "9.9.9", "TAMPERED", true)
+
+	svc := newTestService(t, t.TempDir())
+	path, err := svc.DownloadUpdate()
+	if err == nil {
+		t.Fatalf("签名不符必须报错，实际返回 %q", path)
+	}
+	if !contains(err.Error(), "签名") {
+		t.Fatalf("err = %v, want a signature error", err)
+	}
+}
+
+// 纯函数三连：合法签名通过 / 内容被改不通过 / 签名长度异常不通过。
+func TestVerifySignatureText(t *testing.T) {
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	old := updatePubKey
+	updatePubKey = pub
+	t.Cleanup(func() { updatePubKey = old })
+
+	file := filepath.Join(t.TempDir(), "setup.exe")
+	if err := os.WriteFile(file, []byte(fakeInstaller), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	good := base64.StdEncoding.EncodeToString(ed25519.Sign(priv, []byte(fakeInstaller)))
+	if err := verifySignatureText(file, good); err != nil {
+		t.Fatalf("合法签名应通过: %v", err)
+	}
+	other := base64.StdEncoding.EncodeToString(ed25519.Sign(priv, []byte("other bytes")))
+	if err := verifySignatureText(file, other); err == nil {
+		t.Fatal("内容不符的签名不该通过")
+	}
+	if err := verifySignatureText(file, "AAAA"); err == nil {
+		t.Fatal("长度异常的签名不该通过")
 	}
 }
