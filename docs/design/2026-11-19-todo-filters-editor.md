@@ -549,3 +549,18 @@ restored=all,mine,clipboard,snippets,images,pinned,archived
 - 筛选器拖拽排序、导出导入、表达式语法。
 - 待办到期/提醒/子任务树。
 - 筛选器「恢复默认」目前只有服务端 API，还没挂到设置页按钮（侧栏删掉「置顶」后可用 `RestoreFilters` 找回）。
+
+### 发布（2.5.0）
+
+```
+task windows:package            # NSIS（machine scope）
+→ bin\clipnest-2.5.0-amd64-setup.exe   24.2 MB（安装数据 25.3 MB / zlib 48.2%）
+```
+
+- 版本号三处同步：`internal/clip/service.go` 的 `Version`、`build/windows/info.json`
+  （`file_version` / `ProductVersion`）、`build/windows/nsis/wails_tools.nsh`
+  的 `INFO_PRODUCTVERSION`。**最后这个最容易漏** —— 漏了安装包"程序和功能"里还是旧版本号。
+- 安装包比 2.4.0 大 5.6 MB（18.6 → 24.2），全部来自 `frontend/public/vditor/dist`（22 MB 未压缩），
+  这是"编辑器能用公式/流程图/思维导图"的代价，是明确选择。
+- 构建机需要：`wails3`（D:\Go\bin）、`go-task`（`go install github.com/go-task/task/v3/cmd/task@latest`）、
+  NSIS（`C:\Program Files (x86)\NSIS`）。
