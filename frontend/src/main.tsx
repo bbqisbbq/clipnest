@@ -24,17 +24,23 @@ import "./styles/picker.css";
 import "./styles/snippets.css";
 import "./styles/timeline.css";
 import "./styles/editor.css";
+// Vditor 自带样式必须先于我们的补丁层：同优先级选择器靠后覆盖。
+// 补丁层负责三件事：把它的 CSS 变量接到我们的 token、覆盖它写死的浅色（深色主题
+// 下那是黑底黑字）、去掉它自带的边框。
+import "vditor/dist/index.css";
+import "./styles/vditor-theme.css";
+import "./styles/detail.css";
 import "./styles/stealth.css";
 import "./theme-light.css";
 import { applyTheme } from "./lib/themes";
+import { warmUpMarkdown } from "./components/MarkdownSurface";
 
 // The same bundle serves every Wails window: the manager (default), the hotkey
 // popup (?mode=picker), quick capture (?mode=capture), and the two 隐写 windows
 // (?mode=stealth = invisible input, ?mode=stealthhud = corner indicator).
 const mode = new URLSearchParams(window.location.search).get("mode");
 const isPicker = mode === "picker";
-const isCapture = mode === "capture";
-// 隐写模式两个窗口：stealth = 全透明输入窗，stealthhud = 角落状态灯。
+const isCapture = mode === "capture";// 隐写模式两个窗口：stealth = 全透明输入窗，stealthhud = 角落状态灯。
 const isStealth = mode === "stealth";
 const isStealthHud = mode === "stealthhud";
 // Apply the theme as early as possible so the first paint is not the wrong colour.
@@ -64,6 +70,18 @@ function report(source: string, detail: unknown) {
 
 window.addEventListener("error", (e) => report("error", e.error ?? e.message));
 window.addEventListener("unhandledrejection", (e) => report("unhandledrejection", e.reason));
+
+// 编辑器引擎预热：lute（Markdown 引擎，3.6MB）的加载与初始化只付一次钱
+// （实测：首实例 250ms，后续实例 10~19ms）。热键窗本来就随应用一起创建，
+// 空闲时先烧热，按下热键时就不会卡在解析上。
+const whenIdle = (cb: () => void) => {
+  if (typeof window.requestIdleCallback === "function") {
+    window.requestIdleCallback(cb, { timeout: 1200 });
+  } else {
+    window.setTimeout(cb, 300);
+  }
+};
+whenIdle(() => void warmUpMarkdown());
 
 try {
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(

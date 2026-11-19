@@ -1,0 +1,171 @@
+/* 条目详情（右侧整区）。
+   结构：workspace 是 grid（侧栏 | 主区），主区里 EntriesView 常驻、详情绝对定位盖在上面
+   —— 这样返回列表时滚动位置还在（见 docs/design/2026-11-19-todo-filters-editor.md 3.1）。 */
+
+.main-pane {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.main-pane > .entries {
+  flex: 1;
+  min-width: 0;
+}
+
+.detail {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg);
+}
+
+/* ---------------- 详情条 ---------------- */
+
+.detail-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: none;
+  padding: 7px 14px;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--surface);
+}
+.detail-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 220px;
+  padding: 4px 9px 4px 7px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.12s var(--ease), color 0.12s var(--ease);
+}
+.detail-back:hover {
+  background: var(--accent-tint);
+  color: var(--accent);
+}
+.detail-sub {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.detail-head-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+}
+.detail-dirty {
+  font-size: 11px;
+  color: var(--warn);
+}
+.detail-saved {
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+/* ---------------- 正文 + 右栏 ---------------- */
+
+.detail-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 296px;
+}
+.detail-editor {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding: 6px 16px 12px;
+}
+.detail-error {
+  margin: 6px 0 0;
+}
+
+.detail-side {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+  padding: 12px 12px 28px;
+  border-left: 1px solid var(--border-soft);
+  background: var(--surface);
+  overflow-y: auto;
+}
+.detail-block {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.detail-block h4 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 550;
+  letter-spacing: 0.02em;
+  color: var(--text-3);
+}
+.detail-block--danger {
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-soft);
+}
+.detail-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.detail-field span {
+  flex: none;
+  min-width: 34px;
+}
+.detail-field .input {
+  flex: 1;
+  min-width: 0;
+}
+.detail-meta {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 4px 8px;
+  margin: 0;
+  font-size: 11.5px;
+}
+.detail-meta dt {
+  color: var(--text-3);
+}
+.detail-meta dd {
+  margin: 0;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.detail-meta dd.is-mono {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+.detail-ops {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+}

@@ -179,7 +179,7 @@ body.is-capture { background: transparent; }
 .capture-close:hover { color: var(--danger); }
 
 .capture-box { flex: 1; min-height: 0; }
-.capture-box .md-editor { padding: 0; }
+.capture-box .md-surface { padding: 0; }
 .capture-actions { padding: 5px 8px 6px 8px; }
 .capture-tools { display: flex; align-items: center; gap: 2px; flex-wrap: nowrap; overflow: hidden; }
 .capture-tool {
@@ -236,17 +236,15 @@ body.is-col-resizing .memo-splitter { background: var(--accent-tint); }
 /* 底部输入区的预览块 */
 .memo-composer .memo-preview { flex: 1; min-height: 0; overflow-y: auto; }
 /* Markdown 编辑器（CodeMirror 6）：容器只负责占位，内部样式由组件注入 */
-.md-editor {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-  border: 1px solid var(--border);
+/* 编辑器容器（Vditor 包在 .md-surface 里，见 styles/vditor-theme.css）。
+   边框只留一圈极淡的，靠底色分层——不要粗边框。 */
+.md-surface {
+  border: 1px solid var(--border-soft);
   border-radius: var(--r-md);
   background: var(--surface);
+  overflow: hidden;
 }
-.md-editor .cm-editor { height: 100%; }
-.md-editor .cm-scroller { padding: 6px 10px; }
-.md-editor:focus-within { border-color: var(--accent-line); }
+.md-surface:focus-within { border-color: var(--accent-line); }
 /* ---------------- 底部输入区（卡片式） ---------------- */
 .memo-composer {
   position: relative;
@@ -293,7 +291,7 @@ body.is-col-resizing .memo-splitter { background: var(--accent-tint); }
   transition: border-color .12s var(--ease);
 }
 .composer-box:focus-within { border-color: var(--accent-line); }
-.composer-box .md-editor {
+.composer-box .md-surface {
   flex: 1;
   min-height: 0;
   border: 0;

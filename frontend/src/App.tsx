@@ -1,17 +1,21 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useToast } from "./hooks/useToast";
 import { useTheme } from "./hooks/useTheme";
 import { useAppData } from "./hooks/useAppData";
-import { ClipService, type EntryFilter, type UpdateInfo } from "./lib/api";
+import { ClipService, type Entry, type EntryFilter, type UpdateInfo } from "./lib/api";
 import TitleBar from "./components/TitleBar";
 import Sidebar from "./components/Sidebar";
 import EntriesView from "./components/EntriesView";
+import EntryDetailView from "./components/EntryDetailView";
 import SettingsView from "./components/SettingsView";
 
 // App 只做三件事：装全局状态（hooks 里）、切换视图、转发通知。
-// 具体内容全部在 EntriesView / SettingsView / Sidebar，这里不写业务逻辑。
+// 具体内容全部在 EntriesView / EntryDetailView / SettingsView / Sidebar，这里不写业务。
+//
+// 三个视图里 detail 不是"另一个页面"：它盖在 entries 上面（EntriesView 保持挂载），
+// 这样返回时列表的滚动位置、展开状态都还在。
 
-type View = "entries" | "settings";
+type View = "entries" | "detail" | "settings";
 type Confirm = { message: string; action: () => void } | null;
 
 const DEFAULT_FILTER: EntryFilter = {
@@ -36,6 +40,8 @@ export default function App() {
   useTheme(settings);
 
   const [view, setView] = useState<View>("entries");
+  const [detailEntry, setDetailEntry] = useState<Entry | null>(null);
+  const detailDirty = useRef(false);
   const [activeFilterId, setActiveFilterId] = useState("all");
   const [selectedDay, setSelectedDay] = useState(todayKey);
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
@@ -104,13 +110,31 @@ export default function App() {
     return typeof r === "string" ? r : JSON.stringify(r);
   }, []);
 
+  // 离开详情：有未保存修改就先问一句（详情自己的返回按钮也走同一个判断）
+  const leaveDetail = useCallback((then?: () => void) => {
+    const finish = () => {
+      detailDirty.current = false;
+      setDetailEntry(null);
+      setView("entries");
+      then?.();
+    };
+    if (view === "detail" && detailDirty.current) {
+      setConfirm({
+        message: "这条内容有未保存的修改，确定放弃并离开？",
+        action: finish,
+      });
+      return;
+    }
+    finish();
+  }, [view]);
+
   return (
     <div className="app is-entries">
       <TitleBar capturing={capturing} enabled={capturing} onToggleCapture={() => void toggleCapture()} />
 
       <div className="workspace">
         <Sidebar
-          view={view}
+          view={view === "settings" ? "settings" : "entries"}
           capturing={capturing}
           syncActive={settings?.syncEnabled ?? false}
           filterProps={{
@@ -118,45 +142,95 @@ export default function App() {
             activeFilterId,
             onSelectFilter: (f) => {
               setActiveFilterId(f.id);
-              setView("entries");
+              setSelectedDay("");
+              leaveDetail();
             },
             selectedDay,
             onPickDay: (d) => {
               setSelectedDay(d);
-              setView("entries");
+              leaveDetail();
             },
             onEditFilter: editFilter,
             entryStats,
           }}
-          onOpenSettings={() => setView("settings")}
+          onOpenSettings={() => {
+            if (view === "detail" && detailDirty.current) {
+              setConfirm({
+                message: "这条内容有未保存的修改，确定放弃并去设置？",
+                action: () => {
+                  detailDirty.current = false;
+                  setDetailEntry(null);
+                  setView("settings");
+                },
+              });
+              return;
+            }
+            setDetailEntry(null);
+            setView("settings");
+          }}
           onToggleCapture={() => void toggleCapture()}
         />
 
-        {view === "entries" ? (
-          <EntriesView
-            filter={activeFilter}
-            day={selectedDay}
-            onNotify={notify}
-            onChanged={() => void data.refreshMeta()}
-          />
-        ) : (
-          <SettingsView
-            settings={settings}
-            appInfo={appInfo}
-            storageBytes={stats?.storageBytes ?? 0}
-            syncStatus={syncStatus}
-            onSave={(next) => void data.saveSettings(next)}
-            onClearHistory={clearHistory}
-            onOpenDataDir={() => void ClipService.OpenDataDir()}
-            onQuit={() => void ClipService.Quit()}
-            updateInfo={updateInfo}
-            onCheckUpdate={checkUpdate}
-            onInstallUpdate={() => void ClipService.InstallUpdate()}
-            onOpenRelease={() => void ClipService.OpenReleasePage()}
-            onTestSync={testSync}
-            onSyncNow={() => void runSync()}
-          />
-        )}
+        <div className="main-pane">
+          {/* 详情是"盖在上面"而不是替换：EntriesView 常驻，返回时列表位置还在 */}
+          {view !== "settings" ? (
+            <EntriesView
+              filter={activeFilter}
+              day={selectedDay}
+              onNotify={notify}
+              onChanged={() => void data.refreshMeta()}
+              onOpenDetail={(e) => {
+                setDetailEntry(e);
+                setView("detail");
+              }}
+            />
+          ) : null}
+
+          {view === "detail" && detailEntry ? (
+            <EntryDetailView
+              entry={detailEntry}
+              backLabel={activeFilter.name}
+              onBack={() => {
+                detailDirty.current = false;
+                setDetailEntry(null);
+                setView("entries");
+              }}
+              onDirtyChange={(d) => {
+                detailDirty.current = d;
+              }}
+              onSaved={(next) => {
+                setDetailEntry(next);
+                void data.refreshMeta();
+              }}
+              onDeleted={() => {
+                detailDirty.current = false;
+                setDetailEntry(null);
+                setView("entries");
+                void data.refreshMeta();
+              }}
+              onNotify={notify}
+            />
+          ) : null}
+
+          {view === "settings" ? (
+            <SettingsView
+              settings={settings}
+              appInfo={appInfo}
+              storageBytes={stats?.storageBytes ?? 0}
+              syncStatus={syncStatus}
+              onSave={(next) => void data.saveSettings(next)}
+              onClearHistory={clearHistory}
+              onOpenDataDir={() => void ClipService.OpenDataDir()}
+              onQuit={() => void ClipService.Quit()}
+              updateInfo={updateInfo}
+              onCheckUpdate={checkUpdate}
+              onInstallUpdate={() => void ClipService.InstallUpdate()}
+              onOpenRelease={() => void ClipService.OpenReleasePage()}
+              onTestSync={testSync}
+              onSyncNow={() => void runSync()}
+            />
+          ) : null}
+        </div>
       </div>
 
       {toast ? <div className="toast">{toast}</div> : null}

@@ -1,20 +1,21 @@
-import { useMemo, useRef, useState } from "react";
-import { marked } from "marked";
-import MarkdownEditor from "./MarkdownEditor";
-import { resolveImages } from "../lib/images";
+import { useRef, useState } from "react";
+import MarkdownSurface, { type MarkdownSurfaceHandle } from "./MarkdownSurface";
 
 // 底部输入卡片：只负责"记一条新的"。
-// 编辑已有内容走 EntryEditor（全屏），两者不要混在一起——
+// 编辑已有内容走右侧详情视图（EntryDetailView），两者不要混在一起——
 // 一个要窄、要连续输入；一个要宽、要看全文。
+//
+// 编辑器与详情视图是同一个引擎（Vditor），差别只在 preset："composer" 只留
+// 6 个最常用的工具栏按钮，因为这一块的高度是用户自己拖出来的。
 
 type Props = {
   value: string;
   onChange: (next: string) => void;
-  onSave: () => void;
-  onImagePaste: (dataUrl: string) => void;
+  onSave: (content?: string) => void;
+  /** 粘贴图片：收 data URL，返回正文里要写的 token（Vditor 负责插进正文） */
+  onImageFile: (dataUrl: string) => Promise<string | null>;
   busy?: boolean;
   error?: string;
-  imageCache: Record<string, string>;
 };
 
 const MIN_H = 120;
@@ -26,21 +27,12 @@ function maxHeight(): number {
 }
 
 export default function Composer(props: Props) {
-  const [preview, setPreview] = useState(false);
   const [height, setHeight] = useState(() => {
     const saved = Number(localStorage.getItem(STORAGE_KEY));
     return Number.isFinite(saved) && saved >= MIN_H ? saved : DEFAULT_H;
   });
   const hostRef = useRef<HTMLDivElement>(null);
-
-  const previewHtml = useMemo(() => {
-    const raw = marked.parse(props.value, { async: false }) as string;
-    return raw
-      .replace(/<script[\s\S]*?<\/script>/gi, "")
-      .replace(/<iframe[\s\S]*?<\/iframe>/gi, "")
-      .replace(/ on[a-z]+="[^"]*"/gi, "")
-      .replace(/javascript:/gi, "");
-  }, [props.value]);
+  const editorRef = useRef<MarkdownSurfaceHandle | null>(null);
 
   const startResize = (ev: React.PointerEvent<HTMLDivElement>) => {
     ev.preventDefault();
@@ -61,6 +53,20 @@ export default function Composer(props: Props) {
     window.addEventListener("pointerup", onUp);
   };
 
+  const save = () => {
+    // 状态里的 value 可能落后一个 keystroke（Vditor 的 input 回调是异步的），
+    // 保存一律以编辑器里的真实内容为准。
+    const live = editorRef.current?.getValue() ?? props.value;
+    if (live !== props.value) props.onChange(live);
+    props.onSave(live);
+  };
+
+  const clear = () => {
+    editorRef.current?.setValue("");
+    props.onChange("");
+    editorRef.current?.focus();
+  };
+
   return (
     <div className="memo-composer" style={{ height: `${height}px` }} ref={hostRef}>
       <div
@@ -77,33 +83,25 @@ export default function Composer(props: Props) {
       />
 
       <div className="composer-box">
-        {preview ? (
-          <div
-            className="snip-preview composer-preview"
-            dangerouslySetInnerHTML={{ __html: resolveImages(previewHtml, props.imageCache) }}
-          />
-        ) : (
-          <MarkdownEditor
-            value={props.value}
-            onChange={props.onChange}
-            onSave={props.onSave}
-            onImagePaste={props.onImagePaste}
-            placeholder="随手记点什么…（Ctrl+Enter 保存）"
-          />
-        )}
+        <MarkdownSurface
+          ref={editorRef}
+          preset="composer"
+          value={props.value}
+          onChange={props.onChange}
+          onSave={save}
+          onImageFile={props.onImageFile}
+          placeholder="随手记点什么…（Ctrl+Enter 保存，写 - [ ] 就是待办）"
+        />
 
         <div className="composer-actions">
           <span className="composer-tags">
-            <span className="composer-hint">写 #标签 就能归类 · Ctrl+Enter 保存</span>
+            <span className="composer-hint">写 #标签 归类 · - [ ] 待办 · Ctrl+Enter 保存</span>
           </span>
           <div className="composer-btns">
-            <button className="link-btn" onClick={() => setPreview((v) => !v)}>
-              {preview ? "编辑" : "预览"}
-            </button>
-            <button className="link-btn" onClick={() => props.onChange("")}>
+            <button className="link-btn" onClick={clear}>
               清空
             </button>
-            <button className="btn btn-primary btn-sm" onClick={props.onSave} disabled={props.busy}>
+            <button className="btn btn-primary btn-sm" onClick={save} disabled={props.busy}>
               {props.busy ? "保存中…" : "保存"}
             </button>
           </div>

@@ -97,10 +97,12 @@ src/components/
   settings/             七个分区：Capture / Interaction / Sync / Snippets / Appearance / Update / About + ui.tsx
   EntriesView           统一内容视图（搜索、写新条目、卡片操作编排）
   entries/EntryCard     单条卡片：折叠、图片点击、操作按钮
-  EntryEditor           全屏条目编辑器；Composer 是底部"记一条"输入卡
-  MarkdownEditor        CodeMirror 6 封装；SnippetFields 是片段的额外编辑项
+  EntryDetailView       条目详情：占右侧整区（不是浮层），顶部面包屑返回 + 属性面板
+  MarkdownSurface       全应用唯一编辑器（Vditor IR）的适配层；preset = detail/composer/capture
+  SnippetFields         片段的额外编辑项（嵌在详情的属性面板里）
   HotkeyInput / Lightbox / Picker / Capture
   Stealth / StealthHud  隐写模式：全透明的输入窗 + 角落状态灯
+src/styles/vditor-theme.css  Vditor 的 token 映射 + 三条硬编码浅色补丁（深色主题必需）
 src/styles/
   fonts → base → layout → entries → controls → settings → picker → snippets → timeline → editor → stealth
   （fonts.css 里是 @font-face：自带 Maple Mono NF CN 三字重，字体文件在 src/assets/fonts/）

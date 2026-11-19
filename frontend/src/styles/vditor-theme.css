@@ -1,0 +1,178 @@
+/* Vditor 与我们的设计系统之间的唯一补丁层。
+   规则顺序敏感：本文件必须在 vditor 自带的 index.css 之后加载（main.tsx 里已排好）。
+
+   为什么需要它：Vditor 自带一套配色，其中几条是硬编码浅色（见下面的 !important），
+   只改 CSS 变量改不动。不接管这些，深色主题下就是「黑底黑字」和「白块表格」——
+   2026-11-19 的探针实测过，Vditor 4.0.1 与 3.11.2 都一样。 */
+
+/* ---------- 1. 变量接到我们的 token ---------- */
+.vditor {
+  --panel-background-color: var(--surface);
+  --toolbar-background-color: var(--surface);
+  --textarea-background-color: transparent;
+  --textarea-text-color: var(--text);
+  --border-color: var(--border-soft);
+  --second-color: var(--border);
+  --toolbar-icon-color: var(--text-2);
+  --toolbar-icon-hover-color: var(--text);
+  --toolbar-background-hover-color: var(--accent-tint);
+  --panel-shadow: none;
+  --blockquote-border-color: var(--border-strong);
+  --blockquote-text-color: var(--text-2);
+  --ir-heading-color: var(--accent);
+  --ir-title-color: var(--text-3);
+  --ir-bi-color: var(--text);
+  --ir-link-color: var(--accent);
+  --ir-bracket-color: var(--text-3);
+  --ir-paren-color: var(--text-3);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+/* ---------- 2. 三条硬编码补丁（改变量没用，只能覆盖规则） ---------- */
+.vditor-reset {
+  color: var(--text) !important;
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.8;
+  background: transparent;
+}
+/* 表格、行内代码块的底色在它自己的规则里写死成浅色 */
+.vditor-reset table {
+  background: transparent !important;
+}
+.vditor-reset table tr {
+  background: transparent !important;
+  border-color: var(--border-soft) !important;
+}
+.vditor-reset table th,
+.vditor-reset table td {
+  border-color: var(--border-soft) !important;
+}
+.vditor-reset code:not(.hljs):not(.highlight-chroma) {
+  background: var(--accent-tint) !important;
+  color: var(--accent-2) !important;
+}
+.vditor-reset blockquote {
+  border-left-color: var(--border-strong) !important;
+  color: var(--text-2) !important;
+}
+/* 标题不要下划线：Vditor 的 content-theme 会给 h1/h2 加一条横线，跟我们的排版不搭 */
+.vditor-reset h1,
+.vditor-reset h2 {
+  border-bottom: 0 !important;
+  padding-bottom: 0 !important;
+}
+
+/* ---------- 3. 工具栏：去掉"低档边框"，用底色分层 ---------- */
+.vditor-toolbar {
+  border-bottom: 1px solid var(--border-soft);
+  padding: 3px 4px;
+  background: transparent;
+}
+.vditor-toolbar__item {
+  min-width: 26px;
+  height: 26px;
+  border-radius: var(--r-sm);
+}
+.vditor-toolbar__item .vditor-tooltipped::before,
+.vditor-toolbar__divider {
+  background-color: var(--border);
+}
+.vditor-toolbar__divider {
+  height: 16px;
+  margin: 5px 4px;
+}
+
+/* ---------- 4. 编辑区：撑满容器，不要它自带的滚动槽 ---------- */
+.md-surface {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+.md-surface-host {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.md-surface-host .vditor {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+.md-surface-host .vditor-content {
+  flex: 1;
+  min-height: 0;
+}
+.md-surface-host .vditor-ir,
+.md-surface-host .vditor-sv,
+.md-surface-host .vditor-wysiwyg {
+  height: 100%;
+}
+.md-surface-host .vditor-reset {
+  padding: 10px 2px !important;
+}
+.md-surface-host .vditor-ir pre.vditor-reset {
+  overflow-y: auto;
+}
+
+/* 加载态：等高骨架，避免闪白 */
+.md-surface-skeleton,
+.md-surface-error {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-3);
+  background: var(--surface);
+  pointer-events: none;
+}
+.md-surface-error {
+  color: var(--danger);
+  pointer-events: auto;
+}
+.md-surface-error code {
+  font-family: var(--font-mono);
+  color: var(--text-2);
+}
+
+/* ---------- 5. 两个窄场景的额外精简 ---------- */
+
+/* 底部「记一条」：工具栏压薄，字号略小 */
+.md-surface--composer .vditor-toolbar {
+  padding: 1px 2px;
+  border-bottom: 0;
+}
+.md-surface--composer .vditor-toolbar__item {
+  min-width: 24px;
+  height: 24px;
+}
+.md-surface--composer .vditor-reset {
+  font-size: 13.5px;
+  padding: 4px 2px !important;
+}
+.md-surface--composer .vditor {
+  background: transparent;
+}
+
+/* 热键快速输入窗：完全没有工具栏，正文贴边 */
+.md-surface--capture .vditor-toolbar {
+  display: none;
+}
+.md-surface--capture .vditor-reset {
+  font-size: 14px;
+  padding: 6px 8px !important;
+  line-height: 1.7;
+}
+.md-surface--capture .vditor-content::after {
+  display: none;
+}

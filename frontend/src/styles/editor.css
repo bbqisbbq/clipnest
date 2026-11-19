@@ -31,58 +31,6 @@
 }
 .lightbox-close:hover { background: rgba(255, 255, 255, 0.26); }
 
-/* ---------------- 全屏条目编辑器 ---------------- */
-.editor-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 55;
-  display: grid;
-  place-items: center;
-  padding: 28px;
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(2px);
-}
-.editor-panel {
-  display: flex;
-  flex-direction: column;
-  width: min(920px, 100%);
-  height: min(78vh, 760px);
-  border: 1px solid var(--border);
-  border-radius: var(--r-lg);
-  background: var(--surface);
-  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.35);
-  overflow: hidden;
-}
-.editor-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--border-soft);
-}
-.editor-head h3 { margin: 0; font-size: 13px; color: var(--text-2); font-weight: 550; }
-.editor-head-actions { display: flex; align-items: center; gap: 14px; }
-.editor-body { flex: 1; min-height: 0; display: flex; padding: 12px 16px; }
-.editor-body .md-editor { flex: 1; min-height: 0; }
-.editor-preview {
-  flex: 1;
-  overflow-y: auto;
-  font-size: 13.5px;
-  line-height: 1.75;
-}
-.editor-preview img { max-width: 100%; border-radius: var(--r-md); cursor: zoom-in; }
-.editor-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px 16px 14px;
-  border-top: 1px solid var(--border-soft);
-  background: var(--surface-2);
-}
-.editor-action-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.editor-delete { margin-left: auto; }
-.editor-error { margin: 0 16px 10px; }
-
 /* ---------------- 快速输入窗 ---------------- */
 body.is-capture { background: transparent; }
 .capture {
@@ -137,7 +85,7 @@ body.is-capture { background: transparent; }
   overflow: hidden;
 }
 .capture-box:focus-within { border-color: var(--accent-line); }
-.capture-box .md-editor { flex: 1; min-height: 0; border: 0; background: transparent; }
+.capture-box .md-surface { flex: 1; min-height: 0; border: 0; border-radius: 0; background: transparent; }
 
 .capture-foot {
   display: flex;

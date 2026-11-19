@@ -1,6 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
 import Composer from "./Composer";
-import EntryEditor from "./EntryEditor";
 import Lightbox from "./Lightbox";
 import EntryCard from "./entries/EntryCard";
 import { ClipService, type Entry, type EntryFilter, type EntryQuery } from "../lib/api";
@@ -11,7 +10,7 @@ import { useEntryImages } from "../hooks/useEntryImages";
 //
 // 交互约定：
 //   点卡片      → 展开/收起（看全文）
-//   双击卡片     → 全屏 EntryEditor
+//   双击卡片     → 右侧打开条目详情（onOpenDetail，由 App 切视图）
 //   点「编辑」   → 同上（按钮留着，双击是快捷方式）
 //   点图片      → 大图
 //   底部输入框   → 只负责记新的
@@ -24,13 +23,13 @@ type Props = {
   day: string;
   onNotify: (message: string) => void;
   onChanged: () => void;
+  onOpenDetail: (entry: Entry) => void;
 };
 
-export default function EntriesView({ filter, day, onNotify, onChanged }: Props) {
+export default function EntriesView({ filter, day, onNotify, onChanged, onOpenDetail }: Props) {
   const [query, setQuery] = useState("");
 
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [editing, setEditing] = useState<Entry | null>(null);
   const [lightbox, setLightbox] = useState<string | null>(null);
 
   const [draft, setDraft] = useState("");
@@ -53,33 +52,39 @@ export default function EntriesView({ filter, day, onNotify, onChanged }: Props)
 
   // ---- 写新的 ------------------------------------------------------------
 
-  const save = useCallback(async () => {
-    if (!draft.trim()) {
-      setError("写点什么再保存");
-      return;
-    }
-    setBusy(true);
-    setError("");
-    try {
-      await ClipService.SaveEntry({ content: draft, source: "manual", kind: "text" } as never);
-      onNotify("已记下");
-      setDraft("");
-      stickToBottom.current = true;
-      await loadLatest();
-      onChanged();
-    } catch (err) {
-      setError(String(err));
-    } finally {
-      setBusy(false);
-    }
-  }, [draft, loadLatest, onChanged, onNotify, stickToBottom]);
+  const save = useCallback(
+    async (content?: string) => {
+      // content 由 Composer 从编辑器里直接读（state 可能落后一个 keystroke）
+      const text = (content ?? draft).trim();
+      if (!text) {
+        setError("写点什么再保存");
+        return;
+      }
+      setBusy(true);
+      setError("");
+      try {
+        await ClipService.SaveEntry({ content: text, source: "manual", kind: "text" } as never);
+        onNotify("已记下");
+        setDraft("");
+        stickToBottom.current = true;
+        await loadLatest();
+        onChanged();
+      } catch (err) {
+        setError(String(err));
+      } finally {
+        setBusy(false);
+      }
+    },
+    [draft, loadLatest, onChanged, onNotify, stickToBottom],
+  );
 
+  // 粘贴/拖入图片：存成附件，返回正文要写的 token，由编辑器自己插进光标处
   const pasteImage = useCallback(async (dataUrl: string) => {
     try {
-      const token = await ClipService.SaveImage(dataUrl);
-      setDraft((prev) => prev + (prev && !prev.endsWith("\n") ? "\n" : "") + `![](${token})\n`);
+      return await ClipService.SaveImage(dataUrl);
     } catch (err) {
       setError(String(err));
+      return null;
     }
   }, []);
 
@@ -201,7 +206,7 @@ export default function EntriesView({ filter, day, onNotify, onChanged }: Props)
                     expanded={expanded.has(e.id)}
                     imgCache={imgCache}
                     onToggleExpand={() => toggleExpand(e.id)}
-                    onEdit={() => setEditing(e)}
+                    onEdit={() => onOpenDetail(e)}
                     onImage={(src) => setLightbox(src)}
                     onTogglePin={() => void patchEntry(e, { pinned: !e.pinned })}
                     onToggleArchive={() => void patchEntry(e, { archived: !e.archived })}
@@ -219,25 +224,11 @@ export default function EntriesView({ filter, day, onNotify, onChanged }: Props)
       <Composer
         value={draft}
         onChange={setDraft}
-        onSave={() => void save()}
-        onImagePaste={(u) => void pasteImage(u)}
+        onSave={(content) => void save(content)}
+        onImageFile={pasteImage}
         busy={busy}
         error={error}
-        imageCache={imgCache}
       />
-
-      {editing ? (
-        <EntryEditor
-          entry={editing}
-          imageCache={imgCache}
-          onClose={() => setEditing(null)}
-          onSaved={() => {
-            void loadLatest();
-            onChanged();
-          }}
-          onNotify={onNotify}
-        />
-      ) : null}
 
       {lightbox ? <Lightbox src={lightbox} onClose={() => setLightbox(null)} /> : null}
     </div>
