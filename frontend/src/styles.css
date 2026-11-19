@@ -4,7 +4,7 @@
 
 :root {
   --bg: #0a0b0f;
-  --surface: var(--surface);
+  --surface: #0e1015;
   --surface-2: #13161c;
   --surface-3: #191d25;
   --border: #21252e;
@@ -14,11 +14,11 @@
   --scrollbar-hover: rgba(148, 163, 196, 0.55);
 
   --text: #e9ebf0;
-  --text-2: var(--text-2);
+  --text-2: #a4abba;
   --text-3: #6e7686;
 
   --accent: #7d8cff;
-  --accent-2: var(--accent-2);
+  --accent-2: #9d7bff;
   --accent-tint: rgba(125, 140, 255, 0.14);
   --accent-line: rgba(125, 140, 255, 0.42);
 
@@ -26,12 +26,12 @@
   --warn: #e0a253;
   --danger: #ee6a6a;
 
-  --k-text: var(--k-text);
+  --k-text: #8fa2ff;
   --k-link: #45c9bd;
   --k-image: #eaa94f;
   --k-files: #ad8bf2;
   --k-rich: #ec7aa4;
-  --k-custom: var(--k-custom);
+  --k-custom: #8b93a5;
 
   --r-sm: 6px;
   --r-md: 8px;
@@ -2443,7 +2443,7 @@ body.is-col-resizing .memo-splitter { background: var(--accent-tint); }
   border-radius: var(--r-sm);
   padding: 0 5px;
 }
-.entry-image img { max-width: 100%; border-radius: var(--r-md); }
+.entry-image img { display: block; max-width: 100%; border-radius: var(--r-md); }
 
 /* ---------------- 日历 ---------------- */
 .cal {
@@ -2552,14 +2552,21 @@ body.is-col-resizing .memo-splitter { background: var(--accent-tint); }
 .hotkey-clear { font-size: 11px; color: var(--text-3); }
 .hotkey-hint { font-size: 11px; color: var(--text-3); }
 
-/* ---------------- 卡片：折叠 / 展开 ---------------- */
+/* ---------------- 卡片：折叠 / 展开 ----------------
+   折叠要覆盖两种卡片：文字卡片（.memo-body.clampable）和图片卡片
+   （.entry-image.clampable）。图片卡片以前只有 .entry-image，没有可折叠的
+   高度，点卡片只会切状态、界面看不出变化 → 必须一起给折叠高度。 */
 .entry-card { cursor: pointer; }
-.memo-body.clampable {
-  max-height: 7.2em;
+.memo-body.clampable,
+.entry-image.clampable {
   overflow: hidden;
   position: relative;
 }
-.memo-body.clampable::after {
+/* 正文按行数折叠；图片是一整块，给高一点才能看出是哪张图 */
+.memo-body.clampable { max-height: 7.2em; }
+.entry-image.clampable { max-height: 10em; }
+.memo-body.clampable.is-clipped::after,
+.entry-image.clampable.is-clipped::after {
   content: "";
   position: absolute;
   left: 0; right: 0; bottom: 0;
@@ -2567,11 +2574,14 @@ body.is-col-resizing .memo-splitter { background: var(--accent-tint); }
   background: linear-gradient(transparent, var(--surface));
   pointer-events: none;
 }
-.entry-card.is-collected .memo-body.clampable::after {
+.entry-card.is-collected .memo-body.clampable.is-clipped::after,
+.entry-card.is-collected .entry-image.clampable.is-clipped::after {
   background: linear-gradient(transparent, var(--surface-2));
 }
-.entry-card.is-expanded .memo-body.clampable { max-height: none; }
-.entry-card.is-expanded .memo-body.clampable::after { display: none; }
+.entry-card.is-expanded .memo-body.clampable,
+.entry-card.is-expanded .entry-image.clampable { max-height: none; }
+.entry-card.is-expanded .memo-body.clampable::after,
+.entry-card.is-expanded .entry-image.clampable::after { display: none; }
 
 /* 图片可点开大图 */
 .entry-image img,

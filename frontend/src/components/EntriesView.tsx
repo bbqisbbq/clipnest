@@ -386,21 +386,58 @@ function EntryCard(props: CardProps) {
   const inClipboard = (e.actions ?? []).includes("clipboard");
   const html = resolveImages(marked.parse(e.content, { async: false }) as string, imgCache);
 
+  // 折叠遮罩只在内容真的被裁掉时才显示：短文本、小图不该被底部渐变压暗。
+  // 图片是异步换进来的（data URL 高度后到），所以除了 ResizeObserver 还听
+  // img 的 load 和窗口 resize。只在折叠态测量（展开后 scrollHeight 就等于
+  // clientHeight，会把"有溢出"这件事忘掉，收起来就点不动了）。
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const [overflows, setOverflows] = useState(false);
+  useEffect(() => {
+    const el = bodyRef.current;
+    if (!el || expanded) return;
+    const measure = () => setOverflows(el.scrollHeight - el.clientHeight > 1);
+    measure();
+    const imgs = Array.from(el.querySelectorAll("img"));
+    imgs.forEach((img) => img.addEventListener("load", measure));
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    window.addEventListener("resize", measure);
+    return () => {
+      imgs.forEach((img) => img.removeEventListener("load", measure));
+      ro.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [expanded, html]);
+
+  const folded = !expanded && overflows;
+
   return (
     <article
       className={`memo-card entry-card ${collected ? "is-collected" : ""} ${
         e.pinned ? "is-pinned" : ""
       } ${expanded ? "is-expanded" : ""}`}
-      onClick={props.onToggleExpand}
-      title={expanded ? "点击收起" : "点击展开全文"}
+      // 本来就没折起来的内容，点它不该做无反馈的空动作
+      onClick={() => {
+        if (expanded || overflows) props.onToggleExpand();
+      }}
+      title={expanded ? "点击收起" : overflows ? "点击展开全文" : undefined}
     >
       <div
-        className={e.kind === "image" ? "entry-image" : "memo-body clampable"}
+        ref={bodyRef}
+        className={`${e.kind === "image" ? "entry-image" : "memo-body"} clampable${
+          folded ? " is-clipped" : ""
+        }`}
         dangerouslySetInnerHTML={{ __html: html }}
         onClick={(ev) => {
           const t = ev.target as HTMLElement;
           if (t.tagName === "IMG") {
             ev.stopPropagation();
+            // 图片卡片整张就是图，点图等于点卡片：折叠时先展开看全图，
+            // 已展开（或本来就没折）再点才进大图。
+            if (e.kind === "image" && folded) {
+              props.onToggleExpand();
+              return;
+            }
             props.onImage((t as HTMLImageElement).src);
           }
         }}
