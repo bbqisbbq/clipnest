@@ -68,7 +68,14 @@ func (s *ClipService) SaveEntry(e Entry) (Entry, error) {
 			e.Kind = existing.Kind
 		}
 	}
-	return s.store.SaveEntry(e)
+	saved, err := s.store.SaveEntry(e)
+	if err != nil {
+		return saved, err
+	}
+	// 缩写在这次保存里被设置/改掉/清掉，都要重建内存里的触发器索引，
+	// 否则「设为片段」要重启才生效（见 refreshTriggers 的说明）。
+	s.refreshTriggers()
+	return saved, nil
 }
 
 // DeleteEntry removes an entry and records a tombstone so peers drop theirs.
@@ -76,7 +83,12 @@ func (s *ClipService) DeleteEntry(id string) bool {
 	if e, ok := s.store.GetEntry(id); ok && e.Hash != "" {
 		s.store.AddTombstoneScoped("entry", e.Hash, nowUTC(), hostName())
 	}
-	return s.store.DeleteEntry(id)
+	ok := s.store.DeleteEntry(id)
+	if ok {
+		// 删掉的可能是片段：索引里不能留着它
+		s.refreshTriggers()
+	}
+	return ok
 }
 
 // SetEntryPinned flips the pin flag. The quick-paste list only carries ids, so
@@ -98,7 +110,8 @@ func (s *ClipService) SetEntryArchived(id string, archived bool) (Entry, error) 
 		return Entry{}, errors.New("条目不存在")
 	}
 	e.Archived = archived
-	return s.store.SaveEntry(e)
+	// 归档会把条目从可展开的片段里摘掉（EntryTriggers 只看未归档的）
+	return s.SaveEntry(e)
 }
 
 // PromoteToSnippet turns any entry into an abbreviation-triggered snippet.
@@ -113,7 +126,7 @@ func (s *ClipService) PromoteToSnippet(id, trigger string) (Entry, error) {
 	}
 	e.TriggerKey = trigger
 	e.SetAction(ActionSnippet, true)
-	return s.store.SaveEntry(e)
+	return s.SaveEntry(e)
 }
 
 // DemoteFromSnippet removes the trigger but keeps the content and the tag.
@@ -124,7 +137,7 @@ func (s *ClipService) DemoteFromSnippet(id string) (Entry, error) {
 	}
 	e.TriggerKey = ""
 	e.SetAction(ActionSnippet, false)
-	return s.store.SaveEntry(e)
+	return s.SaveEntry(e)
 }
 
 // PromoteToManual keeps a collected entry from expiring (it becomes "mine").

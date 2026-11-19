@@ -154,3 +154,35 @@ textarea:focus-visible {
   font-family: var(--font-mono);
   font-size: 12px;
 }
+
+/* ---------------- 片段模板变量（详情页编辑器下面那排） ---------------- */
+/* 2026-11-19 从旧片段编辑器删掉后一度丢失，随「模板变量」功能一起补回。 */
+.var-chips {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 2px 0;
+}
+
+.var-chips-label {
+  margin-right: 2px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.var-chip {
+  padding: 2px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.var-chip:hover {
+  border-color: var(--accent-line);
+  background: var(--accent-tint);
+  color: var(--accent);
+}

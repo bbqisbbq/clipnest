@@ -29,6 +29,11 @@ var (
 )
 
 // refreshTriggers rebuilds the in-memory index from the snippet table.
+//
+// 调用点：启动、保存设置、以及**任何可能改变缩写集合的条目写入**
+// （ClipService.SaveEntry / DeleteEntry，片段提升与取消也走这条路）。
+// 以前只有保存片段（SaveSnippet）与保存设置会重建，于是「设为片段」之后
+// 必须重启或动一下设置才会展开——这是 2026-11-19 修掉的 bug。
 func (s *ClipService) refreshTriggers() {
 	next := triggerIndex{exact: map[string]expand.Trigger{}, folded: map[string]expand.Trigger{}}
 	for _, sp := range s.store.AllSnippets() {

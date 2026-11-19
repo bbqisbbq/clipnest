@@ -3,6 +3,7 @@ import MarkdownSurface, { type MarkdownSurfaceHandle } from "./MarkdownSurface";
 import SnippetFields from "./SnippetFields";
 import { ClipService, type Entry } from "../lib/api";
 import { useChoose, useConfirm } from "./Dialog";
+import { SNIPPET_VARS } from "../lib/snippetTemplate";
 
 // 条目详情：占右侧整块区域，不是一个浮层。
 //
@@ -203,6 +204,22 @@ export default function EntryDetailView(props: Props) {
             autoFocus
             placeholder="内容支持 Markdown；写 #标签 归类，写 - [ ] 一件事 就会进待办"
           />
+          {/* 片段模板变量：展开成文本时才替换，普通条目用不上，所以只在片段时出现 */}
+          {actions.includes("snippet") || trigger !== "" ? (
+            <div className="var-chips">
+              <span className="var-chips-label">模板变量</span>
+              {SNIPPET_VARS.map((v) => (
+                <button
+                  key={v.token}
+                  className="var-chip"
+                  title={v.hint}
+                  onClick={() => editorRef.current?.insert(v.token)}
+                >
+                  {v.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
           {error ? <p className="snip-error detail-error">{error}</p> : null}
         </div>
 
