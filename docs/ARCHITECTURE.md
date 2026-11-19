@@ -6,7 +6,7 @@
 ## 一、后端（Go）
 
 ```
-main.go                  Wails 装配：四个窗口（管理 / picker / capture / stealth+HUD）、托盘、快捷键、钩子注入、单实例
+main.go                  Wails 装配：三个窗口（管理 / picker / capture）、托盘、快捷键、钩子注入、单实例
 internal/expand/         缩写展开引擎（零业务知识，只认 Host 接口）
 internal/clip/           业务层：条目、捕获、片段、同步、绑定 API
 ```
@@ -37,7 +37,6 @@ internal/clip/           业务层：条目、捕获、片段、同步、绑定 
 | `service_capture.go` | 采集管线（合并 45ms、去重、回写抑制）+ 快速输入窗 |
 | `service_paste.go` | 条目 → 系统：复制回剪贴板、打开、picker 弹窗三件套 |
 | `service_settings.go` | 设置保存与副作用（自启、展开器、两个后台循环） |
-| `service_stealth.go` | 隐写模式：`@名称@` 解析、透明输入窗的会话状态、提交/追加到目标条目 |
 | `entry_api.go` | 绑定给前端的条目 API + 筛选器 CRUD |
 | `syncpanel.go` | 设置页「设备包」面板的数据形状 |
 
@@ -79,7 +78,6 @@ internal/clip/           业务层：条目、捕获、片段、同步、绑定 
 ## 二、前端（React + TS）
 
 ```
-src/main.tsx             入口：模式分流（主窗 / picker / capture / stealth / stealthhud）+ 样式顺序 + 主题预应用
 src/App.tsx              薄壳：装 hooks、切视图、转发通知（不写业务）
 src/hooks/
   useToast.ts            全局通知
@@ -105,10 +103,9 @@ src/components/
   MarkdownSurface       全应用唯一编辑器（Vditor IR）的适配层；preset = detail/composer/capture
   SnippetFields         片段的额外编辑项（嵌在详情的属性面板里）
   HotkeyInput / Lightbox / Picker / Capture
-  Stealth / StealthHud  隐写模式：全透明的输入窗 + 角落状态灯
 src/styles/vditor-theme.css  Vditor 的 token 映射 + 三条硬编码浅色补丁（深色主题必需）
 src/styles/
-  fonts → base → layout → entries → controls → settings → picker → snippets → timeline → editor → stealth
+  fonts → base → layout → entries → controls → settings → picker → snippets → timeline → editor → vditor-theme → detail → todo → filter
   （fonts.css 里是 @font-face：自带 Maple Mono NF CN 三字重，字体文件在 src/assets/fonts/）
 src/theme-light.css      主题引擎管不到的浅色补丁（--k-* / --shadow-pop / 原生控件）
 ```
@@ -146,7 +143,7 @@ meta           键值对（设备 id、一次性标记、filters.hidden）
 （`todo.go` 的 `deriveTodo`）。勾选改的是正文那一个字符，`hash` 不变，所以同步配对不受影响。
 派生列**不跨端传**：`mergeEntry` 一律本端重算，否则版本混跑时旧客户端会把状态抹掉。
 
-`entries.title` 只有隐写模式在写（作为 `@名称@` 的落点）；空标题的条目在卡片上不多一行。
+`entries.title` 目前没有界面在写（旧版隐写模式用它做 `@名称@` 的落点）；空标题的条目在卡片上不多一行。
 表结构是 `CREATE TABLE IF NOT EXISTS`，**新增列必须同时加 `ensureColumn` 迁移**（见 `store.go`），
 否则老库不会自动长出新列。
 
@@ -189,7 +186,7 @@ meta           键值对（设备 id、一次性标记、filters.hidden）
 
 ```powershell
 go build -o bin\clipnest-dev.exe .        # 后端 + 内嵌前端产物
-go test ./internal/...                    # 存储/查询/同步/展开引擎/隐写模式
+go test ./internal/...                    # 存储/查询/待办/筛选规则/同步/展开引擎
 cd frontend; npx tsc --noEmit; npx vite build --mode production
 pwsh -File scripts\visual-check\check-css.ps1   # 样式回归截图（改 CSS 后跑）
 ```

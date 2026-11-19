@@ -3,8 +3,6 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import Picker from "./Picker";
 import Capture from "./Capture";
-import Stealth from "./Stealth";
-import StealthHud from "./StealthHud";
 import { ClipService } from "./lib/api";
 
 // 自带字体（SIL OFL / Google Fonts）：
@@ -32,19 +30,16 @@ import "./styles/vditor-theme.css";
 import "./styles/detail.css";
 import "./styles/todo.css";
 import "./styles/filter.css";
-import "./styles/stealth.css";
 import "./theme-light.css";
 import { applyTheme } from "./lib/themes";
 import { warmUpMarkdown } from "./components/MarkdownSurface";
+import { applyToolbarSettings } from "./lib/editorToolbar";
 
 // The same bundle serves every Wails window: the manager (default), the hotkey
-// popup (?mode=picker), quick capture (?mode=capture), and the two 隐写 windows
-// (?mode=stealth = invisible input, ?mode=stealthhud = corner indicator).
+// popup (?mode=picker) and quick capture (?mode=capture).
 const mode = new URLSearchParams(window.location.search).get("mode");
 const isPicker = mode === "picker";
-const isCapture = mode === "capture";// 隐写模式两个窗口：stealth = 全透明输入窗，stealthhud = 角落状态灯。
-const isStealth = mode === "stealth";
-const isStealthHud = mode === "stealthhud";
+const isCapture = mode === "capture";
 // Apply the theme as early as possible so the first paint is not the wrong colour.
 applyTheme(
   (localStorage.getItem("clipnest.theme") as "system" | "dark" | "light") ?? "system",
@@ -52,8 +47,10 @@ applyTheme(
 );
 document.body.classList.toggle("is-picker", isPicker);
 document.body.classList.toggle("is-capture", isCapture);
-document.body.classList.toggle("is-stealth", isStealth);
-document.body.classList.toggle("is-stealthhud", isStealthHud);
+// 工具栏配置：capture 窗不跑 useAppData，所以在这里也取一次（异步，取不到就用默认）
+void ClipService.GetSettings()
+  .then((st) => applyToolbarSettings(st.editorToolbar, st.composerToolbar))
+  .catch(() => undefined);
 
 // Forward frontend failures to the Go log. Without this a render error just
 // leaves an empty window and there is nothing to debug from outside.
@@ -78,10 +75,8 @@ window.addEventListener("unhandledrejection", (e) => report("unhandledrejection"
 // （实测：首实例 250ms，后续实例 10~19ms）。热键窗本来就随应用一起创建，
 // 空闲时先烧热，按下热键时就不会卡在解析上。
 //
-// **只在真的有编辑器的窗口里预热**：隐写窗（stealth / stealthhud）是"看不见的
-// textarea + 输入法"，里面塞一个 Vditor 实例既没用、又可能抢焦点/卡主线程，
-// 那会把隐写模式搞坏；picker 是搜索列表，也不需要 Markdown 引擎。
-const usesEditor = !isPicker && !isStealth && !isStealthHud;
+// picker 是搜索列表，不需要 Markdown 引擎，别在那儿白烧一遍。
+const usesEditor = !isPicker;
 const whenIdle = (cb: () => void) => {
   if (typeof window.requestIdleCallback === "function") {
     window.requestIdleCallback(cb, { timeout: 1200 });
@@ -94,17 +89,7 @@ if (usesEditor) whenIdle(() => void warmUpMarkdown());
 try {
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>
-      {isPicker ? (
-        <Picker />
-      ) : isCapture ? (
-        <Capture />
-      ) : isStealth ? (
-        <Stealth />
-      ) : isStealthHud ? (
-        <StealthHud />
-      ) : (
-        <App />
-      )}
+      {isPicker ? <Picker /> : isCapture ? <Capture /> : <App />}
     </React.StrictMode>,
   );
 } catch (err) {

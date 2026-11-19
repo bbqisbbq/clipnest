@@ -32,16 +32,6 @@ type Settings struct {
 	Hotkey string `json:"hotkey"`
 	// CaptureHotkey opens the quick-capture popup (a memo in one keystroke).
 	CaptureHotkey string `json:"captureHotkey"`
-	// StealthHotkey activates 隐写模式: no visible box, the caret stays where it
-	// was, and what you type lands in a memo only when you hit Ctrl+Enter.
-	// Empty disables it.
-	StealthHotkey string `json:"stealthHotkey"`
-	// StealthCommit is the key that commits the invisible buffer (Wails
-	// accelerator, "Ctrl+Enter" by default).
-	StealthCommit string `json:"stealthCommit"`
-	// StealthNewEntry decides what happens when the buffer has no `@名称@`:
-	// true = every commit creates a new memo, false = append to the last target.
-	StealthNewEntry bool `json:"stealthNewEntry"`
 	// PasteOnPick synthesises Ctrl+V after the picker writes the entry to the
 	// clipboard. Turning it off makes the picker copy-only.
 	PasteOnPick bool `json:"pasteOnPick"`
@@ -65,6 +55,10 @@ type Settings struct {
 	ThemePreset string `json:"themePreset"`
 	// ThemeCustomCSS is user-authored CSS applied on top of the preset.
 	ThemeCustomCSS string `json:"themeCustomCss"`
+	// EditorToolbar / ComposerToolbar 决定工具栏显示哪些按钮（Vditor 的 item 名）。
+	// 空数组 = 用默认的一整套；`|` 表示分隔线。见 frontend/src/lib/editorToolbar.ts。
+	EditorToolbar   []string `json:"editorToolbar"`
+	ComposerToolbar []string `json:"composerToolbar"`
 
 	// UpdateCheck polls GitHub for a newer release shortly after startup.
 	UpdateCheck bool `json:"updateCheck"`
@@ -104,14 +98,10 @@ func DefaultSettings() Settings {
 		MaxTextLength: 100_000,
 		Hotkey:        "Ctrl+Shift+V",
 		CaptureHotkey: "Ctrl+Shift+N",
-		// 隐写模式的激活键：留空表示不注册。默认给一个不常被占用的组合。
-		StealthHotkey:   "Ctrl+Alt+N",
-		StealthCommit:   "Ctrl+Enter",
-		StealthNewEntry: true,
-		PasteOnPick:     true,
-		ShowOnLaunch:    false,
-		AutoStart:       false,
-		Theme:           "system",
+		PasteOnPick:   true,
+		ShowOnLaunch:  false,
+		AutoStart:     false,
+		Theme:         "system",
 
 		SyncEnabled:      false,
 		SyncURL:          "",

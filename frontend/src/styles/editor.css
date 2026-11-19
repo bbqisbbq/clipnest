@@ -33,15 +33,19 @@
 
 /* ---------------- 快速输入窗 ---------------- */
 body.is-capture { background: transparent; }
+/* 快速输入窗（Ctrl+Shift+N）：**无边界的整块浮层**。
+   没有外框、没有第二层卡片、没有聚焦描边 —— 它是一闪而过的输入口，不是对话框。
+   注意：不要试图让窗口本身透明再上 backdrop-filter：WebView2 的页面背后没有
+   桌面内容可糊，结果只是一片黑。要"轻"，靠去边框 + 一档底色就够。 */
 .capture {
   display: flex;
   flex-direction: column;
   gap: 6px;
   height: 100vh;
-  padding: 8px 10px 9px;
+  padding: 10px 12px 11px;
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--r-lg);
+  border: 0;
+  border-radius: 10px;
   overflow: hidden;
 }
 .capture-head {
@@ -79,12 +83,11 @@ body.is-capture { background: transparent; }
   flex: 1;
   min-height: 0;
   display: flex;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--r-md);
-  background: var(--surface-2);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   overflow: hidden;
 }
-.capture-box:focus-within { border-color: var(--accent-line); }
 .capture-box .md-surface { flex: 1; min-height: 0; border: 0; border-radius: 0; background: transparent; }
 
 .capture-foot {

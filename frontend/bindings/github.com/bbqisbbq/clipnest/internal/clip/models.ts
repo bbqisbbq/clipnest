@@ -343,25 +343,6 @@ export interface Settings {
     "captureHotkey": string;
 
     /**
-     * StealthHotkey activates 隐写模式: no visible box, the caret stays where it
-     * was, and what you type lands in a memo only when you hit Ctrl+Enter.
-     * Empty disables it.
-     */
-    "stealthHotkey": string;
-
-    /**
-     * StealthCommit is the key that commits the invisible buffer (Wails
-     * accelerator, "Ctrl+Enter" by default).
-     */
-    "stealthCommit": string;
-
-    /**
-     * StealthNewEntry decides what happens when the buffer has no `@名称@`:
-     * true = every commit creates a new memo, false = append to the last target.
-     */
-    "stealthNewEntry": boolean;
-
-    /**
      * PasteOnPick synthesises Ctrl+V after the picker writes the entry to the
      * clipboard. Turning it off makes the picker copy-only.
      */
@@ -406,6 +387,13 @@ export interface Settings {
      * ThemeCustomCSS is user-authored CSS applied on top of the preset.
      */
     "themeCustomCss": string;
+
+    /**
+     * EditorToolbar / ComposerToolbar 决定工具栏显示哪些按钮（Vditor 的 item 名）。
+     * 空数组 = 用默认的一整套；`|` 表示分隔线。见 frontend/src/lib/editorToolbar.ts。
+     */
+    "editorToolbar": string[] | null;
+    "composerToolbar": string[] | null;
 
     /**
      * UpdateCheck polls GitHub for a newer release shortly after startup.
@@ -577,49 +565,6 @@ export interface Stats {
     "byKind": { [_ in string]?: number } | null;
     "storageBytes": number;
     "lastCapture": string;
-}
-
-/**
- * StealthResult is what one commit reports back to the input window.
- */
-export interface StealthResult {
-    "target": string;
-    "chars": number;
-    "created": boolean;
-    "message": string;
-}
-
-/**
- * StealthState drives the corner HUD. It is polled, so it stays boring on
- * purpose: no events, no cross-window plumbing.
- */
-export interface StealthState {
-    "active": boolean;
-
-    /**
-     * 目标条目名（"" = 每次新建一条）
-     */
-    "target": string;
-
-    /**
-     * 当前缓冲的字数
-     */
-    "chars": number;
-
-    /**
-     * 缓冲里有内容
-     */
-    "pending": boolean;
-
-    /**
-     * 最近一次提交写到了哪个条目
-     */
-    "saved": string;
-
-    /**
-     * 一句提示（错误或结果）
-     */
-    "message": string;
 }
 
 /**

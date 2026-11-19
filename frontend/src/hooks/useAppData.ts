@@ -8,6 +8,7 @@ import {
   type Stats,
   type SyncStatus,
 } from "../lib/api";
+import { applyToolbarSettings } from "../lib/editorToolbar";
 
 // 全局数据：设置、应用信息、同步状态、筛选器、条目统计。
 // 这些是"整个窗口共用"的状态，集中在这里，组件只订阅需要的部分。
@@ -59,6 +60,9 @@ export function useAppData(onError: (msg: string) => void): AppData {
       setSettings(st);
       setAppInfo(info);
       setSyncStatus(sync);
+      // 工具栏是"只在编辑器初始化时读一次"的配置：设置一变就先更新这里，
+      // 下次挂载编辑器（回到列表 / 重开详情）就是新的按钮组。
+      applyToolbarSettings(st.editorToolbar, st.composerToolbar);
     } catch (err) {
       console.error(err);
     }
@@ -72,7 +76,9 @@ export function useAppData(onError: (msg: string) => void): AppData {
   const saveSettings = useCallback(
     async (next: Settings) => {
       try {
-        setSettings(await ClipService.SaveSettings(next));
+        const saved = await ClipService.SaveSettings(next);
+        applyToolbarSettings(saved.editorToolbar, saved.composerToolbar);
+        setSettings(saved);
         setSyncStatus(await ClipService.GetSyncStatus());
         return true;
       } catch (err) {

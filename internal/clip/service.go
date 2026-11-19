@@ -15,7 +15,7 @@ import (
 // 设置与开机自启（service_settings.go）。
 
 // Version is shown in the UI and written to the log on start.
-const Version = "2.5.2"
+const Version = "2.6.0"
 
 // AppInfo is static information the frontend needs for the about/settings view.
 type AppInfo struct {
@@ -52,17 +52,6 @@ type Hooks struct {
 	ShowCaptureAt func(x, y int) bool
 	// HideCapture hides the quick-capture popup.
 	HideCapture func()
-	// ShowStealthAt shows the invisible 隐写 input window at the given point.
-	ShowStealthAt func(x, y int) bool
-	// RefocusStealth re-activates the 隐写 window. 显示时 Windows 的前台锁可能拒绝
-	// 我们的 SetForegroundWindow，于是按键会落到用户原来的程序里（等于把内容
-	// 打进了别人的窗口）。前端发现没拿到焦点时用它再抢一次。
-	RefocusStealth func() bool
-	// HideStealth hides the invisible input window.
-	HideStealth func()
-	// ShowStealthHud / HideStealthHud toggle the corner indicator.
-	ShowStealthHud func()
-	HideStealthHud func()
 	// ApplyChrome paints the native window parts (borders, caption) to match the
 	// current theme. Implemented by main.go because only it knows the window handles.
 	ApplyChrome func(dark bool, borderHex string)
@@ -96,15 +85,6 @@ type ClipService struct {
 	syncStatus  SyncStatus
 	syncRestart sync.Mutex
 	syncCancel  context.CancelFunc
-
-	// 隐写模式的会话状态（见 service_stealth.go）。
-	stealthMu      sync.Mutex
-	stealthOn      bool
-	stealthTarget  string // 粘住的目标条目名（`@名称@` 决定，`@-@` 清除）
-	stealthChars   int
-	stealthSaved   string
-	stealthMessage string
-	stealthHwnd    uintptr
 }
 
 // NewService opens the store inside dataDir.

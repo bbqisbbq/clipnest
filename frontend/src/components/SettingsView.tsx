@@ -5,6 +5,7 @@ import InteractionSection from "./settings/InteractionSection";
 import SyncSection from "./settings/SyncSection";
 import SnippetsSection from "./settings/SnippetsSection";
 import AppearanceSection from "./settings/AppearanceSection";
+import EditorSection from "./settings/EditorSection";
 import UpdateSection from "./settings/UpdateSection";
 import AboutSection from "./settings/AboutSection";
 
@@ -96,6 +97,7 @@ export default function SettingsView(props: Props) {
           <SnippetsSection draft={draft} patch={patch} />
 
           <AppearanceSection draft={draft} patch={patch} />
+        <EditorSection draft={draft} patch={patch} />
 
           <UpdateSection
             draft={draft}

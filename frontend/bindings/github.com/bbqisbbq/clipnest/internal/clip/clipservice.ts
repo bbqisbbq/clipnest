@@ -48,14 +48,6 @@ export function CloseCapture(): $CancellablePromise<void> {
 }
 
 /**
- * CloseStealth leaves the mode and gives focus back to the window that had it.
- * A non-empty buffer is saved first: Esc must never lose what you typed.
- */
-export function CloseStealth(text: string): $CancellablePromise<$models.StealthResult> {
-    return $Call.ByID(1768132338, text);
-}
-
-/**
  * CommandOutput runs a command trigger and returns its output for typing.
  */
 export function CommandOutput(t: expand$0.Trigger): $CancellablePromise<string> {
@@ -463,17 +455,6 @@ export function ReconcileAutoStart(): $CancellablePromise<void> {
 }
 
 /**
- * RefocusStealth re-activates the invisible input window.
- * 
- * 存在的理由：ShowStealth 时 Windows 可能拒绝我们的前台请求（前台锁），
- * 窗口明明显示了却收不到键盘 —— 用户打出来的字会落进他原来的程序里。
- * 前端在显示后 200ms 检查 document.hasFocus()，没焦点就调这里再抢一次。
- */
-export function RefocusStealth(): $CancellablePromise<boolean> {
-    return $Call.ByID(2112460047);
-}
-
-/**
  * Render substitutes template variables for text-like triggers and reports the
  * {{cursor}} offset.
  */
@@ -606,14 +587,6 @@ export function ShowPicker(): $CancellablePromise<void> {
 }
 
 /**
- * ShowStealth activates the mode: capture the target window, drop the invisible
- * input window at the caret and show the corner HUD.
- */
-export function ShowStealth(): $CancellablePromise<void> {
-    return $Call.ByID(106630507);
-}
-
-/**
  * ShowWindow brings the manager window back from the tray.
  */
 export function ShowWindow(): $CancellablePromise<void> {
@@ -632,36 +605,6 @@ export function Shutdown(): $CancellablePromise<void> {
  */
 export function Start(): $CancellablePromise<void> {
     return $Call.ByID(2502949559);
-}
-
-/**
- * StealthCommit writes the buffer to its target entry and reports where it went.
- * The buffer is the caller's; the frontend clears it on success.
- */
-export function StealthCommit(text: string): $CancellablePromise<$models.StealthResult> {
-    return $Call.ByID(3686102657, text);
-}
-
-/**
- * StealthHotkey returns the accelerator that activates the mode ("" = disabled).
- */
-export function StealthHotkey(): $CancellablePromise<string> {
-    return $Call.ByID(589547702);
-}
-
-/**
- * StealthProgress is called by the input window on every edit so the HUD can
- * show how much is buffered and where it will land.
- */
-export function StealthProgress(text: string): $CancellablePromise<$models.StealthState> {
-    return $Call.ByID(1073317471, text);
-}
-
-/**
- * StealthState is the HUD's read side.
- */
-export function StealthState(): $CancellablePromise<$models.StealthState> {
-    return $Call.ByID(412567401);
 }
 
 /**

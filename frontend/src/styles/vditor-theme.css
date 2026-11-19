@@ -126,7 +126,14 @@
   height: 100%;
 }
 .md-surface-host .vditor-reset {
-  padding: 10px 2px !important;
+  /* 左边距 = 工具栏第一个图标的左边缘（工具条容器 0 + 按钮内边距 5px），
+     这样正文与工具栏在一条竖线上，不会一个 31px 一个 68px 地错开。 */
+  padding: 10px 6px 10px 5px !important;
+}
+.md-surface-host .vditor-toolbar {
+  /* IR 模式会给工具栏塞一个内联的 padding-left（35px，给块标记留的空），
+     内联样式只能靠 !important 压掉，否则正文和工具栏会错开 30px。 */
+  padding-left: 0 !important;
 }
 .md-surface-host .vditor-ir pre.vditor-reset {
   overflow-y: auto;

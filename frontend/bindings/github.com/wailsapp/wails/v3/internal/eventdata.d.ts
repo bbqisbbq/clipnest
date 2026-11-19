@@ -22,9 +22,6 @@ declare module "@wailsio/runtime" {
             "picker:opened": string;
             "picker:paste-failed": string;
             "settings:changed": clip$0.Settings;
-            "stealth:close-request": string;
-            "stealth:closed": string;
-            "stealth:opened": string;
             "sync:status": clip$0.SyncStatus;
         }
     }

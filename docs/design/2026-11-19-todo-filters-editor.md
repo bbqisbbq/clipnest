@@ -383,11 +383,8 @@ toolbar: ["headings","bold","italic","strike","|","list","ordered-list","check",
 | --- | --- | --- | --- | --- | --- |
 | 详情视图 `EntryDetailView` | `MarkdownSurface preset="detail"` | `ir` | **完整**（见下） | 撑满右栏 | `⌘S` 保存、`Esc` 返回 |
 | 底部「记一条」`Composer` | `preset="composer"` | `ir` | **精简 6 项**：粗体 / 斜体 / 列表 / 任务 / 行内代码 / 链接 | 3 行起，内容多了自动长到 40vh 封顶 | `⌘Enter` 存下、`Esc` 清空焦点 |
-| 快速输入窗 `Capture`（热键唤起） | `preset="capture"` | `ir` | **隐藏**（`toolbarConfig.hide`） | 无边框、无内边距，透明底接窗卡 | `⌘Enter` 存下、`Esc` 关窗 |
-| 隐写窗 `Stealth` | **保持现在的 `<textarea>`** | — | — | 全透明 | — |
+| 快速输入窗 `Capture`（热键唤起） | `preset="capture"` | `ir` | **隐藏**（`toolbarConfig.hide`，按钮由 Capture.tsx 自己画） | 无边框整块浮层，无内层卡片 | `⌘Enter` 存下、`Esc` 关窗 |
 
-为什么隐写窗不换：它故意不用富文本 —— 那一窗的要求是「看不见、但 IME 必须正常」，
-textarea 是刻意的正确选择（`Stealth.tsx` 顶部注释就是写这件事）。它不是「编辑器」，是盲输入。
 
 实现：一个薄包装 `components/MarkdownSurface.tsx`，
 
@@ -418,7 +415,7 @@ type SurfacePreset = "detail" | "composer" | "capture";
 - `lute.min.js` 3.6MB + `index.min.js` 280KB 是**按需**加载：任一 surface 首次挂载时
   `const { default: Vditor } = await import("vditor")`，先渲染一个等高的骨架，不闪白。
 - **预热**：主窗 `App` 挂载后 idle 阶段（`requestIdleCallback`）就执行一次 `import("vditor")`，
-  让模块与 lute 提前进内存；`Capture` / `Stealth` 这类独立窗口在 `main.tsx` 分流时就预热
+  让模块与 lute 提前进内存；`Capture` 这类独立窗口在 `main.tsx` 分流时就预热
   （它们的窗口在热键前已经存在，预热不占用户可感知的时间）。
 - 安装包增大约 22MB（public 里全量 `vditor/dist`）。这是明确选择：**买下「公式/流程图/思维导图/图表都能渲染」**，
   而不是把 15MB 花在"反正用不上"的猜测上。若日后体积成为问题，再按需裁剪并加构建白名单。
@@ -564,3 +561,14 @@ task windows:package            # NSIS（machine scope）
   这是"编辑器能用公式/流程图/思维导图"的代价，是明确选择。
 - 构建机需要：`wails3`（D:\Go\bin）、`go-task`（`go install github.com/go-task/task/v3/cmd/task@latest`）、
   NSIS（`C:\Program Files (x86)\NSIS`）。
+
+### 2.6.0 · 去掉隐写，快速输入框与工具栏重做
+
+- **隐写模式整块删除**（后端 `service_stealth.go` + 两个透明窗 + 热键 + 设置项 + 前端 `Stealth/StealthHud` + `docs/STEALTH.md`）。
+  它的维护成本（透明窗、焦点、IME 全是坑）远高于收益，而「热键记一笔」已经把同一个需求覆盖了。
+- **快速输入框**（`Ctrl+Shift+N`）：去掉外框与内层卡片，变成一整块无边界浮层。
+  试过把窗口本身做透明 + `backdrop-filter`，实测 WebView2 里页面背后没有桌面像素可糊，只会变一片黑，所以退回纯色无边框。
+- **工具栏可自定义**：设置 → 编辑器工具栏，详情视图与底部输入框各一套，含分隔线；存在
+  `Settings.editorToolbar` / `composerToolbar`，默认值在 `frontend/src/lib/editorToolbar.ts`。
+- **工具栏与正文左对齐**：Vditor 给 IR 工具栏塞了**内联** `padding-left: 35px`（给块标记留空），
+  必须 `!important` 才能压掉；压掉后工具图标与正文首字同在 `left=21px`（实测）。

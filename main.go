@@ -37,9 +37,6 @@ func init() {
 	application.RegisterEvent[string]("picker:opened")
 	application.RegisterEvent[string]("picker:paste-failed")
 	application.RegisterEvent[string]("capture:opened")
-	application.RegisterEvent[string]("stealth:opened")
-	application.RegisterEvent[string]("stealth:closed")
-	application.RegisterEvent[string]("stealth:close-request")
 }
 
 func main() {
@@ -58,15 +55,11 @@ func main() {
 		win                  *application.WebviewWindow
 		picker               *application.WebviewWindow
 		capture              *application.WebviewWindow
-		stealth              *application.WebviewWindow
-		stealthHud           *application.WebviewWindow
 		pauseItem            *application.MenuItem
 		autoStartItem        *application.MenuItem
 		currentHotkey        string
 		currentCaptureHotkey string
-		currentStealthHotkey string
 		applyCaptureHotkey   func(string) error
-		applyStealthHotkey   func(string) error
 		svc                  *clip.ClipService
 	)
 
@@ -138,59 +131,6 @@ func main() {
 		}
 	}
 
-	// 隐写模式：一个全透明的输入窗（拿焦点、跑输入法、什么都看不见）+
-	// 屏幕角落的小提示条（WS_EX_NOACTIVATE，永远不抢焦点）。
-	showStealthAt := func(x, y int) bool {
-		if stealth == nil {
-			return false
-		}
-		sx, sy := clip.ClampToWorkArea(x, y, clip.StealthWidth, clip.StealthHeight)
-		application.InvokeSync(func() {
-			stealth.SetPosition(sx, sy)
-			stealth.Show()
-			if hwnd := uintptr(stealth.NativeWindow()); hwnd != 0 {
-				clip.ActivateWindow(hwnd)
-			}
-			stealth.Focus()
-			clip.Logf(dataDir, "stealth window: pos=(%d,%d) hwnd=%#x",
-				sx, sy, uintptr(stealth.NativeWindow()))
-		})
-		return true
-	}
-	hideStealth := func() {
-		if stealth != nil {
-			stealth.Hide()
-		}
-	}
-	// 显示后没拿到焦点时再抢一次（Windows 的前台锁偶尔会拒绝第一次请求）
-	refocusStealth := func() bool {
-		if stealth == nil {
-			return false
-		}
-		application.InvokeSync(func() {
-			if hwnd := uintptr(stealth.NativeWindow()); hwnd != 0 {
-				clip.ActivateWindow(hwnd)
-			}
-			stealth.Focus()
-		})
-		return true
-	}
-	showStealthHud := func() {
-		if stealthHud == nil {
-			return
-		}
-		hx, hy := clip.WorkAreaBottomRight(clip.StealthHudWidth, clip.StealthHudHeight)
-		application.InvokeSync(func() {
-			stealthHud.SetPosition(hx, hy)
-			stealthHud.Show()
-		})
-	}
-	hideStealthHud := func() {
-		if stealthHud != nil {
-			stealthHud.Hide()
-		}
-	}
-
 	// 原生边框跟随主题：把 DWM 的系统边框/标题区刷成当前配色
 	applyChrome := func(dark bool, borderHex string) {
 		application.InvokeSync(func() {
@@ -253,30 +193,6 @@ func main() {
 		return nil
 	}
 
-	applyStealthHotkey = func(accel string) error {
-		if accel == currentStealthHotkey {
-			return nil
-		}
-		if currentStealthHotkey != "" && app.GlobalShortcut.IsRegistered(currentStealthHotkey) {
-			_ = app.GlobalShortcut.Unregister(currentStealthHotkey)
-		}
-		currentStealthHotkey = ""
-		if accel == "" {
-			return nil
-		}
-		if err := app.GlobalShortcut.Register(accel, func() {
-			if err := svc.ShowStealth(); err != nil {
-				clip.Logf(dataDir, "open stealth window failed: %v", err)
-			}
-		}); err != nil {
-			clip.Logf(dataDir, "stealth hotkey register failed: %q: %v", accel, err)
-			return err
-		}
-		currentStealthHotkey = accel
-		clip.Logf(dataDir, "stealth hotkey registered: %s", accel)
-		return nil
-	}
-
 	quit := func() {
 		if svc != nil {
 			svc.Shutdown()
@@ -312,22 +228,17 @@ func main() {
 				app.Event.Emit(name, data)
 			}
 		},
-		ShowWindow:     showWindow,
-		HideWindow:     hideWindow,
-		Quit:           quit,
-		ExePath:        exePath,
-		PlatformWorks:  true,
-		ShowPickerAt:   showPickerAt,
-		ShowCaptureAt:  showCaptureAt,
-		HideCapture:    hideCapture,
-		ShowStealthAt:  showStealthAt,
-		HideStealth:    hideStealth,
-		RefocusStealth: refocusStealth,
-		ShowStealthHud: showStealthHud,
-		HideStealthHud: hideStealthHud,
-		ApplyChrome:    applyChrome,
-		HidePicker:     hidePicker,
-		OpenURL:        clip.OpenExternal,
+		ShowWindow:    showWindow,
+		HideWindow:    hideWindow,
+		Quit:          quit,
+		ExePath:       exePath,
+		PlatformWorks: true,
+		ShowPickerAt:  showPickerAt,
+		ShowCaptureAt: showCaptureAt,
+		HideCapture:   hideCapture,
+		ApplyChrome:   applyChrome,
+		HidePicker:    hidePicker,
+		OpenURL:       clip.OpenExternal,
 		OnSettings: func(st clip.Settings) error {
 			if pauseItem != nil {
 				setPauseLabel(pauseItem, st.Capture)
@@ -336,7 +247,6 @@ func main() {
 				autoStartItem.SetChecked(st.AutoStart)
 			}
 			_ = applyCaptureHotkey(st.CaptureHotkey)
-			_ = applyStealthHotkey(st.StealthHotkey)
 			return applyHotkey(st.Hotkey)
 		},
 	})
@@ -432,59 +342,13 @@ func main() {
 		Windows: application.WindowsWindow{
 			Theme: application.SystemDefault,
 		},
-		BackgroundColour: application.NewRGB(18, 21, 28),
+		BackgroundColour: application.NewRGB(14, 16, 21),
 		URL:              "/?mode=capture",
 	})
-
-	// 隐写模式（Ctrl+Alt+N）：光标处不出现任何输入框，焦点交给这个全透明的
-	// 窗口；字只进内存缓冲，Ctrl+Enter 才落成备忘。它必须是「能拿焦点、能跑
-	// 输入法」的真窗口，所以不能用 HideOnFocusLost——退出与否由前端决定
-	// （失焦 = 存一次再退出，绝不丢字）。
-	stealth = app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Name:              "stealth",
-		Title:             "ClipNest",
-		Width:             clip.StealthWidth,
-		Height:            clip.StealthHeight,
-		Frameless:         true,
-		AlwaysOnTop:       true,
-		Hidden:            true,
-		DisableResize:     true,
-		IgnoreMouseEvents: true,
-		BackgroundType:    application.BackgroundTypeTransparent,
-		Windows: application.WindowsWindow{
-			Theme:           application.SystemDefault,
-			HiddenOnTaskbar: true,
-		},
-		BackgroundColour: application.NewRGBA(0, 0, 0, 0),
-		URL:              "/?mode=stealth",
-	})
-
-	// 角落提示条：显示「@目标@ · N 字」，永远不抢焦点。
-	stealthHud = app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Name:              "stealth-hud",
-		Title:             "ClipNest",
-		Width:             clip.StealthHudWidth,
-		Height:            clip.StealthHudHeight,
-		Frameless:         true,
-		AlwaysOnTop:       true,
-		Hidden:            true,
-		DisableResize:     true,
-		IgnoreMouseEvents: true,
-		BackgroundType:    application.BackgroundTypeTransparent,
-		Windows: application.WindowsWindow{
-			Theme:           application.SystemDefault,
-			HiddenOnTaskbar: true,
-		},
-		BackgroundColour: application.NewRGBA(0, 0, 0, 0),
-		URL:              "/?mode=stealthhud",
-	})
-	clip.MakeNonActivating(uintptr(stealthHud.NativeWindow()))
 
 	applyHotkey(preSettings.Hotkey)
 	clip.Logf(dataDir, "capture hotkey configured: %q", preSettings.CaptureHotkey)
 	applyCaptureHotkey(preSettings.CaptureHotkey)
-	clip.Logf(dataDir, "stealth hotkey configured: %q", preSettings.StealthHotkey)
-	applyStealthHotkey(preSettings.StealthHotkey)
 
 	// Tray icon + menu.
 	tray := app.SystemTray.New()
@@ -512,15 +376,6 @@ func main() {
 		go func() {
 			if _, err := svc.QuickMemo(); err != nil {
 				log.Printf("记一笔失败: %v", err)
-			}
-		}()
-	})
-
-	// 隐写输入：不弹输入框，字先进内存缓冲，Ctrl+Enter 才落成备忘
-	menu.Add("隐写输入（无输入框）").OnClick(func(_ *application.Context) {
-		go func() {
-			if err := svc.ShowStealth(); err != nil {
-				log.Printf("打开隐写输入失败: %v", err)
 			}
 		}()
 	})
@@ -584,12 +439,6 @@ func main() {
 			return true
 		}
 		if capture != nil && fg == uintptr(capture.NativeWindow()) {
-			return true
-		}
-		if stealth != nil && fg == uintptr(stealth.NativeWindow()) {
-			return true
-		}
-		if stealthHud != nil && fg == uintptr(stealthHud.NativeWindow()) {
 			return true
 		}
 		return false

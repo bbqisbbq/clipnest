@@ -2,6 +2,7 @@ import { useEffect, useImperativeHandle, useRef, useState, forwardRef } from "re
 import type Vditor from "vditor";
 import { ClipService } from "../lib/api";
 import { MEMO_IMG_RE } from "../lib/images";
+import { toolbarFor } from "../lib/editorToolbar";
 
 // 全应用唯一的 Markdown 编辑器：Vditor（IR 即时渲染）。
 //
@@ -41,16 +42,6 @@ type Props = {
   placeholder?: string;
   autoFocus?: boolean;
 };
-
-const TOOLBAR_DETAIL = [
-  "headings", "bold", "italic", "strike", "|",
-  "list", "ordered-list", "check", "|",
-  "quote", "line", "code", "inline-code", "table", "link", "|",
-  "undo", "redo", "|",
-  "edit-mode", "both", "fullscreen",
-];
-
-const TOOLBAR_COMPOSER = ["bold", "italic", "list", "check", "inline-code", "link"];
 
 /** 静态资源一律走本地：离线可用，这是 Vditor 能在桌面端跑的前提。 */
 export const VDITOR_CDN = `${import.meta.env.BASE_URL}vditor`;
@@ -187,8 +178,8 @@ const MarkdownSurface = forwardRef<MarkdownSurfaceHandle, Props>(function Markdo
         const V = mod.default;
         const theme = currentScheme();
         const hideToolbar = preset === "capture";
-        const toolbar =
-          preset === "detail" ? TOOLBAR_DETAIL : preset === "composer" ? TOOLBAR_COMPOSER : [];
+        // 谁显示哪些按钮由设置决定（见 lib/editorToolbar.ts）
+        const toolbar = toolbarFor(preset);
 
         // 令牌 → data URL（要在 Lute 解析之前完成，否则会渲染成破图卡片）
         const hydrated = await hydrateImages(initial);
