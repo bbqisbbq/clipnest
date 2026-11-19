@@ -23,6 +23,8 @@ export type {
     Settings,
     Snippet,
     Stats,
+    StealthResult,
+    StealthState,
     SyncDetail,
     SyncDeviceInfo,
     SyncPanel,

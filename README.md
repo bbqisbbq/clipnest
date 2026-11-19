@@ -19,7 +19,8 @@ ClipNest 在你使用电脑时安静地记录进入过系统剪贴板的一切�
 ## 特性
 
 - **光标处快速粘贴**：`Ctrl+Shift+V` 在文本光标旁弹出列表，`↑↓` 选择、`Enter` 直接粘贴进
-  当前程序、`Ctrl+Enter` 只复制不粘贴、`Esc` 关掉并把焦点还回去。
+  当前程序、`Ctrl+Enter` 只复制不粘贴、`Esc` 关掉并把焦点还回去；每行末尾还能直接
+  **置顶 / 归档 / 删除**，整理历史不用打开主窗口。
 - **托盘常驻**：关闭窗口只是隐藏窗口，进程继续监听；只有托盘菜单的「退出 ClipNest」才真正退出。
 - **静默收集**：基于 Win32 `AddClipboardFormatListener` + `WM_CLIPBOARDUPDATE`，不做轮询、几乎零开销。
 - **多格式，且不漏**：文本、链接、图片（`PNG`/`CF_DIB`/`CF_DIBV5`）、富文本（`HTML Format` / RTF）、
@@ -33,6 +34,8 @@ ClipNest 在你使用电脑时安静地记录进入过系统剪贴板的一切�
 - **两级导航**：左侧是「内容」筛选器（全部 / 我写的 / 剪贴板 / 片段 / 图片 / 置顶 / 已归档，可双击改名换图标）
   加一个月历；右侧是同一条时间线，所有内容都在这里，靠属性区分来源。
 - **快捷键记一笔**：`Ctrl+Shift+N` 在光标处弹出小编辑框（Enter 保存 / Esc 关闭），不打断手上的事。
+- **隐写输入**：`Ctrl+Alt+N` 激活后光标处**不出现任何输入框**，打的字只进缓冲（中文、输入法照常），
+  `Ctrl+Enter` 才落成备忘，可以一条接一条地写；写 `@名称@` 就落进同名条目。详见 [docs/STEALTH.md](docs/STEALTH.md)。
 - **统一条目视图（Memos 形态）**：整页上下结构 —— 上面时间线，下面固定输入框（可拖高）；
   编辑器用 **CodeMirror 6**（Markdown 语法着色、`#标签`高亮、IME 原生支持、Ctrl+Enter 保存）。
   正文里写 `#标签` 自动归类、可置顶/归档、中文子串搜索（SQLite FTS5 trigram）；没有用户、分享、评论，也没有服务端。
@@ -44,7 +47,8 @@ ClipNest 在你使用电脑时安静地记录进入过系统剪贴板的一切�
 - **本地数据库**：历史和图片存在一个 SQLite 文件里（`clipnest.db`），搜索走索引、写入事务化，
   备份就是复制一个文件。
 - **自动更新**：启动后检查 GitHub Releases，发现新版本在窗口顶部提示，一键下载并静默安装。
-- **自带字体**：打包 Inter（拉丁）+ Noto Sans SC（中文）+ JetBrains Mono（等宽），
+- **自带字体**：界面正文用 Inter（拉丁）+ Noto Sans SC（中文）做比例排版，代码块、编辑器、
+  快捷键框用 [Maple Mono Normal NF CN](https://github.com/subframe7536/maple-font)（SIL OFL 1.1，等宽）；
   不再依赖系统「微软雅黑」，125%/150% 缩放下也不发虚。
 - **去重**：按内容哈希去重，重复复制只更新时间戳与次数，不产生垃圾条目。
 - **置顶 / 搜索 / 归类**：全部、我写的、剪贴板、片段、图片、置顶、已归档（筛选器可保存、可自定义）；
@@ -178,9 +182,30 @@ wails3 package      # 生成 NSIS 安装包（需要 NSIS，模板已内置配�
 | `Enter` / 单击 | 写入剪贴板并**自动粘贴**到刚才那个窗口 |
 | `Ctrl+Enter` | 只写入剪贴板，不自动粘贴 |
 | `Esc` | 关闭并把焦点还给原窗口 |
+| 行尾三个按钮 / `Alt+P` `Alt+A` `Ctrl+Del` | 置顶 / 归档 / 删除（只动 ClipNest 数据，**不会粘贴**） |
 
 弹窗位置：优先贴住文本框的光标（`GetGUIThreadInfo` 的 `rcCaret`），没有光标（资源管理器、
 部分游戏）就用鼠标位置；靠近屏幕边缘时会自动翻转/夹到工作区内。
+
+### 隐写输入（不弹输入框）
+
+`Ctrl+Alt+N`（设置页「交互与启动」里可改）激活后，光标旁**不会出现任何输入框**，焦点被交给一个
+全透明的输入窗——你看不见它，但它是一个真控件，所以输入法照常工作，中文拼音候选框还在光标旁边。
+
+| 按键 | 效果 |
+| --- | --- |
+| 直接输入 | 只进 ClipNest 的缓冲，屏幕上一个字都不多 |
+| `Ctrl+Enter` | 把缓冲写进备忘，然后清空缓冲、模式继续（可以一条接一条地写） |
+| `Enter` | 普通换行（正文可以是多段） |
+| `Esc`（或再次按 `Ctrl+Alt+N`、或点了别的窗口） | 退出；缓冲非空时**先自动保存一次**，不丢字 |
+
+缓冲里可以写两个标记：
+
+- `@名称@` —— 这次内容写进标题为「名称」的条目（不存在就新建；之后的提交一直沿用这个名字）；
+- `@-@` —— 忘掉名称，之后每次提交都存成新的一条。
+
+屏幕右下角有个小状态灯（`WS_EX_NOACTIVATE`，永不抢焦点），显示「`@目标@` · 12」这样的目标与字数。
+细节与边界见 [docs/STEALTH.md](docs/STEALTH.md)。
 
 ### 管理窗口
 
@@ -220,7 +245,7 @@ wails3 package      # 生成 NSIS 安装包（需要 NSIS，模板已内置配�
 ## 目录结构
 
 ```
-main.go                       应用装配：托盘、两个无边框窗口（管理窗 + 弹窗）、关窗不退出、快捷键、单实例
+main.go                       应用装配：托盘、四个无边框窗口（管理 / picker / capture / stealth+HUD）、关窗不退出、快捷键、单实例
 internal/clip/
   model.go                    Kind / FileRef / Captured 等纯数据
   settings.go                 设置结构与默认值（含 WebDAV、主题字段）
@@ -234,6 +259,7 @@ internal/clip/
   service_capture.go          采集管线 + 快速输入窗
   service_paste.go            条目 → 剪贴板 / 打开 / picker 弹窗
   service_settings.go         设置保存与副作用（自启、展开器、后台循环）
+  service_stealth.go          隐写模式：@名称@ 解析、透明输入窗会话、追加到目标条目
   entry_api.go                绑定给前端的条目 API 与筛选器 CRUD
   snippet*.go                 片段：条目适配、动作、缩写主机、模板变量
   sync.go / sync_dav.go       同步门面 + WebDAV 传输层
@@ -252,6 +278,7 @@ internal/clip/
 frontend/                     React + TS + Vite
   src/App.tsx                 管理窗薄壳：装 hooks、切视图、转发通知
   src/Picker.tsx              快速粘贴弹窗（`?mode=picker`）；src/Capture.tsx 是快速输入窗
+  src/Stealth.tsx             隐写模式的透明输入窗（`?mode=stealth`）；src/StealthHud.tsx 是角落状态灯
   src/hooks/                  useAppData / useEntries / useEntryImages / useTheme / useToast
   src/components/
     TitleBar / Sidebar / Calendar / Tip / Icons     布局与小组件
@@ -259,7 +286,7 @@ frontend/                     React + TS + Vite
     SettingsView + settings/*                       设置页编排者与七个分区
     EntryEditor / Composer / MarkdownEditor / SnippetFields / HotkeyInput / Lightbox
   src/lib/                    api（绑定封装）、themes（配色预设与对比度自检）、images、format、window
-  src/styles/                 按域拆开的样式（base/layout/entries/controls/settings/picker/snippets/timeline/editor）
+  src/styles/                 按域拆开的样式（base/layout/entries/controls/settings/picker/snippets/timeline/editor/stealth）
   src/theme-light.css         主题引擎管不到的浅色补丁
   bindings/                   wails3 生成的 TS 绑定（改了 Go 导出面要重新生成）
 scripts/make_icon.py          生成 appicon.png 与 windows/icon.ico
@@ -273,6 +300,7 @@ docs/ARCHITECTURE.md          分层、文件职责表、扩展点与"怎么验�
 docs/CAPTURE.md               收集机制、格式覆盖矩阵与已知缺口
 docs/SYNC.md                  WebDAV 同步配置、合并规则与限制
 docs/SNIPPETS.md              片段库/缩写触发/触发选项/同步行为
+docs/STEALTH.md               隐写输入：为什么用透明窗、@名称@ 语义、边界与手测清单
 docs/FILE-STRATEGY.md         文件复制的方案对比与数据模型
 docs/design/                  历史设计记录（Memos 集成、统一条目模型、触发引擎评估）
 ```
@@ -314,6 +342,8 @@ docs/design/                  历史设计记录（Memos 集成、统一条目�
 - **不做跨屏 DPI 特调**：窗口按系统 DPI 缩放，多屏不同缩放下位置由 Wails/WebView2 决定。
 - **删除靠墓碑传播**：删除标记保留 180 天；超出期限或离线太久的机器可能仍留有旧条目（见 [docs/SYNC.md](docs/SYNC.md)）。
 - **更新需要联网**：GitHub Releases 检查在无网络或 API 限流时会失败，日志里有原始原因，不影响其它功能。
+- **隐写输入会抢焦点**：那个输入窗看不见，但它是真窗口——激活期间原应用失去焦点（光标停止闪烁），
+  退出时自动还回去；提权窗口里打字时热键能触发但输入窗拿不到焦点。见 [docs/STEALTH.md](docs/STEALTH.md)。
 
 ## 隐私
 
@@ -330,6 +360,9 @@ docs/design/                  历史设计记录（Memos 集成、统一条目�
 - [x] 同步面板：每台设备的包大小/最后更新/本轮拉取明细（0.5.0）
 - [ ] 同步增强：字段级冲突合并、可选 DPAPI 加密密码
 - [x] 弹窗：图片缩略图 + 数字键 1–9 直选（0.5.0）
+- [x] 弹窗：行内置顶 / 归档 / 删除（2.4.0）
+- [x] 时间线：卡片收成固定阅读列、操作按钮悬停才出现、双击直接编辑（2.4.0）
+- [x] 隐写输入：无输入框的快速备忘，`@名称@` 指定落点（2.4.0）
 - [x] 片段：变量占位符（{{date}} / {{clipboard}} / {{cursor}}）、Markdown 预览、从历史存为片段（0.7.0）
 - [ ] 分类规则（按来源程序自动打标签）
 - [ ] 条目内图片压缩 / 缩略图缓存，降低 blob 体积

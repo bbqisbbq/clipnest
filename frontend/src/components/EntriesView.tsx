@@ -11,7 +11,8 @@ import { useEntryImages } from "../hooks/useEntryImages";
 //
 // 交互约定：
 //   点卡片      → 展开/收起（看全文）
-//   点「编辑」   → 全屏 EntryEditor
+//   双击卡片     → 全屏 EntryEditor
+//   点「编辑」   → 同上（按钮留着，双击是快捷方式）
 //   点图片      → 大图
 //   底部输入框   → 只负责记新的
 //
@@ -186,8 +187,8 @@ export default function EntriesView({ filter, day, onNotify, onChanged }: Props)
 
           {grouped.length === 0 ? (
             <p className="snip-empty">
-              {day ? `${day} 还没有内容。` : `${filter.name}里还没有内容。`}
-              在下面写一句，或点日历换一天 / 换个筛选器。
+              {day ? `${day} ${filter.id === "all" ? "" : `· ${filter.name} `}还没有内容。` : `${filter.name}里还没有内容。`}
+              换个筛选器、点日历换一天，或在下面写一句。
             </p>
           ) : (
             grouped.map((g) => (

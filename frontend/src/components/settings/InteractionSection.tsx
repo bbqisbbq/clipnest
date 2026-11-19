@@ -17,6 +17,12 @@ export default function InteractionSection({ draft, patch, appInfo }: Props) {
       <Row label="快速粘贴快捷键" tip="点一下然后按下组合键即可录制；留空表示不注册全局快捷键。">
         <HotkeyInput value={draft.hotkey} onChange={(v) => patch({ hotkey: v })} />
       </Row>
+      <Row
+        label="隐写输入快捷键"
+        tip="按下后光标处不出现任何输入框：你打的字只进 ClipNest 的缓冲（看不见，但输入法照常工作），按 Ctrl+Enter 才写进备忘。在缓冲里写 @名称@ 可以把内容写进标题为「名称」的条目，@-@ 取消这个指定。再次按这个键退出。留空表示不注册。"
+      >
+        <HotkeyInput value={draft.stealthHotkey} onChange={(v) => patch({ stealthHotkey: v })} />
+      </Row>
       <Row label="选中后自动粘贴" tip="关闭后只写入剪贴板，需要自己按 Ctrl+V。">
         <Switch checked={draft.pasteOnPick} onChange={(v) => patch({ pasteOnPick: v })} />
       </Row>

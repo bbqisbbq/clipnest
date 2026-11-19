@@ -68,6 +68,28 @@ func (s *ClipService) DeleteEntry(id string) bool {
 	return s.store.DeleteEntry(id)
 }
 
+// SetEntryPinned flips the pin flag. The quick-paste list only carries ids, so
+// patching a flag must not require the caller to hand back a whole Entry (that
+// is how tags and triggers get silently reset).
+func (s *ClipService) SetEntryPinned(id string, pinned bool) (Entry, error) {
+	e, ok := s.store.GetEntry(id)
+	if !ok {
+		return Entry{}, errors.New("条目不存在")
+	}
+	e.Pinned = pinned
+	return s.store.SaveEntry(e)
+}
+
+// SetEntryArchived flips the archive flag (same reasoning as SetEntryPinned).
+func (s *ClipService) SetEntryArchived(id string, archived bool) (Entry, error) {
+	e, ok := s.store.GetEntry(id)
+	if !ok {
+		return Entry{}, errors.New("条目不存在")
+	}
+	e.Archived = archived
+	return s.store.SaveEntry(e)
+}
+
 // PromoteToSnippet turns any entry into an abbreviation-triggered snippet.
 func (s *ClipService) PromoteToSnippet(id, trigger string) (Entry, error) {
 	e, ok := s.store.GetEntry(id)
@@ -208,7 +230,10 @@ type DayCount struct {
 
 // GetEntryCalendar returns per-day counts for a month ("YYYY-MM"), so the
 // calendar can show which days actually have content.
-func (s *ClipService) GetEntryCalendar(month string) []DayCount {
+//
+// q 是当前侧栏筛选器的查询：日历的圆点必须和"点进去能看到什么"用同一套条件，
+// 否则会在「片段 / 图片 / 置顶」这类筛选下画出点却一条也点不出来。
+func (s *ClipService) GetEntryCalendar(month string, q EntryQuery) []DayCount {
 	if len(month) != 7 {
 		return nil
 	}
@@ -217,35 +242,7 @@ func (s *ClipService) GetEntryCalendar(month string) []DayCount {
 	if err != nil {
 		return nil
 	}
-	from := encodeTime(startLocal)
-	to := encodeTime(startLocal.AddDate(0, 1, 0))
-
-	rows, err := s.store.db.Query(
-		`SELECT created_at FROM entries WHERE created_at >= ? AND created_at < ?`, from, to)
-	if err != nil {
-		return nil
-	}
-	defer rows.Close()
-
-	counts := map[string]int{}
-	for rows.Next() {
-		var raw string
-		if rows.Scan(&raw) != nil {
-			continue
-		}
-		t := decodeTime(raw)
-		if t.IsZero() {
-			continue
-		}
-		counts[t.Local().Format("2006-01-02")]++
-	}
-
-	out := make([]DayCount, 0, len(counts))
-	for day, n := range counts {
-		out = append(out, DayCount{Day: day, Count: n})
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Day < out[j].Day })
-	return out
+	return s.store.CountByDay(q, encodeTime(startLocal), encodeTime(startLocal.AddDate(0, 1, 0)))
 }
 
 // parseMonthStart turns "YYYY-MM" into the local first-of-month instant.

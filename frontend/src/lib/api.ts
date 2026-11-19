@@ -20,3 +20,5 @@ export type Snippet = Models.Snippet;
 export type SnippetKind = Models.SnippetKind;
 export type SyncDeviceInfo = Models.SyncDeviceInfo;
 export type SyncDetail = Models.SyncDetail;
+export type StealthState = Models.StealthState;
+export type StealthResult = Models.StealthResult;

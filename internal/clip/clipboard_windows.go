@@ -213,6 +213,31 @@ func readHDrop() ([]FileRef, bool) {
 }
 
 // ---- capture builders ---------------------------------------------------
+//
+// 三个 hashXxx 是采集侧的唯一哈希口径：Captured.Hash 用它们算，写回剪贴板时
+// （entryEchoHash）也用它们算，这样"自己刚写出去的内容"才能被认出来并丢掉。
+// 千万不要在这里改用 contentHash()：entry 的 hash 列是另一套口径（同步配对用），
+// 两者混用会让手写备忘复制回去时"抑制"失效、凭空多出一条采集条目。
+
+func textHash(text string) string {
+	sum := sha256.Sum256([]byte("text\x00" + text))
+	return hex.EncodeToString(sum[:16])
+}
+
+func htmlHash(plain, fragment string) string {
+	sum := sha256.Sum256([]byte("rich\x00" + plain + "\x00" + fragment))
+	return hex.EncodeToString(sum[:16])
+}
+
+func rtfHash(plain, rtf string) string {
+	sum := sha256.Sum256([]byte("rtf\x00" + plain + "\x00" + rtf))
+	return hex.EncodeToString(sum[:16])
+}
+
+func filesHash(paths []string) string {
+	sum := sha256.Sum256([]byte("files\x00" + strings.Join(paths, "\x00")))
+	return hex.EncodeToString(sum[:16])
+}
 
 func buildTextCapture(text string) *Captured {
 	kind := KindText
@@ -220,38 +245,35 @@ func buildTextCapture(text string) *Captured {
 	if isSingleURL(trimmed) {
 		kind = KindLink
 	}
-	sum := sha256.Sum256([]byte("text\x00" + text))
 	return &Captured{
 		Kind:      kind,
 		Text:      text,
 		Preview:   makePreview(trimmed, 240),
-		Hash:      hex.EncodeToString(sum[:16]),
+		Hash:      textHash(text),
 		Size:      len(text),
 		SourceApp: foregroundAppName(),
 	}
 }
 
 func buildHTMLCapture(plain, htmlFragment string) *Captured {
-	sum := sha256.Sum256([]byte("rich\x00" + plain + "\x00" + htmlFragment))
 	return &Captured{
 		Kind:      KindRichText,
 		Text:      plain,
 		HTML:      htmlFragment,
 		Preview:   makePreview(strings.TrimSpace(plain), 240),
-		Hash:      hex.EncodeToString(sum[:16]),
+		Hash:      htmlHash(plain, htmlFragment),
 		Size:      len(plain) + len(htmlFragment),
 		SourceApp: foregroundAppName(),
 	}
 }
 
 func buildRTFCapture(plain, rtf string) *Captured {
-	sum := sha256.Sum256([]byte("rtf\x00" + plain + "\x00" + rtf))
 	return &Captured{
 		Kind:      KindRichText,
 		Text:      plain,
 		RTF:       rtf,
 		Preview:   makePreview(strings.TrimSpace(plain), 240),
-		Hash:      hex.EncodeToString(sum[:16]),
+		Hash:      rtfHash(plain, rtf),
 		Size:      len(plain) + len(rtf),
 		SourceApp: foregroundAppName(),
 	}
@@ -286,15 +308,44 @@ func buildFilesCapture(files []FileRef) *Captured {
 		paths = append(paths, f.Path)
 		total += f.Size
 	}
-	sum := sha256.Sum256([]byte("files\x00" + strings.Join(paths, "\x00")))
 	preview := strings.Join(names, ", ")
 	return &Captured{
 		Kind:      KindFiles,
 		Text:      strings.Join(paths, "\r\n"),
 		Files:     files,
 		Preview:   makePreview(preview, 240),
-		Hash:      hex.EncodeToString(sum[:16]),
+		Hash:      filesHash(paths),
 		Size:      int(total),
 		SourceApp: foregroundAppName(),
+	}
+}
+
+// entryEchoHash returns the capture-side hash that re-reading this entry from the
+// clipboard would produce. writeEntryToClipboard records it so the listener can
+// drop the echo of our own copy-back — without it, copying a hand-written memo
+// back to the clipboard creates a second entry that looks like it came from
+// ClipNest itself (来源 = clipnest).
+//
+// 图片走的是 entry.Hash：采集与写回用的是同一个 PNG 编码器，字节一致。
+// 自定义格式没有可重算的口径，返回 ""（交给 SaveCapture 的内容去重兜底）。
+func entryEchoHash(e Entry) string {
+	switch e.Kind {
+	case KindImage:
+		return e.Hash
+	case KindFiles:
+		paths := make([]string, 0, len(e.Files))
+		for _, f := range e.Files {
+			paths = append(paths, f.Path)
+		}
+		return filesHash(paths)
+	case KindRichText:
+		if e.RTF != "" {
+			return rtfHash(e.Content, e.RTF)
+		}
+		return htmlHash(e.Content, e.HTML)
+	case KindCustom:
+		return ""
+	default: // KindText / KindLink：写的是 CF_UNICODETEXT，读回来是同一个字符串
+		return textHash(e.Content)
 	}
 }

@@ -36,6 +36,40 @@ func (s *Store) ListEntries(q EntryQuery) []Entry {
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
+	where, args := q.where()
+	order := "ASC"
+	if q.Tail {
+		order = "DESC"
+	}
+	sqlText := `SELECT ` + entryColumns + ` FROM entries WHERE ` + strings.Join(where, " AND ") +
+		` ORDER BY created_at ` + order + `, updated_at ` + order + ` LIMIT ?`
+	args = append(args, limit)
+
+	rows, err := s.db.Query(sqlText, args...)
+	if err != nil {
+		Logf(s.dir, "entry list failed: %v", err)
+		return nil
+	}
+	defer rows.Close()
+	out := make([]Entry, 0, 32)
+	for rows.Next() {
+		e, err := scanEntry(rows)
+		if err != nil {
+			return out
+		}
+		out = append(out, e)
+	}
+	if q.Tail {
+		for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+			out[i], out[j] = out[j], out[i]
+		}
+	}
+	return out
+}
+
+// where compiles the query into SQL predicates. Both the list and the calendar
+// use it, so a heat dot can never disagree with what clicking that day shows.
+func (q EntryQuery) where() ([]string, []any) {
 	where := []string{"archived = ?"}
 	args := []any{boolInt(q.Archived)}
 
@@ -88,38 +122,54 @@ func (s *Store) ListEntries(q EntryQuery) []Entry {
 			args = append(args, `"`+strings.ReplaceAll(text, `"`, `""`)+`"`)
 		} else {
 			like := "%" + escapeLike(text) + "%"
-			where = append(where, `(content LIKE ? ESCAPE '\' OR tags LIKE ? ESCAPE '\')`)
-			args = append(args, like, like)
+			where = append(where, `(content LIKE ? ESCAPE '\' OR tags LIKE ? ESCAPE '\' OR title LIKE ? ESCAPE '\')`)
+			args = append(args, like, like, like)
 		}
 	}
+	return where, args
+}
 
-	order := "ASC"
-	if q.Tail {
-		order = "DESC"
-	}
-	sqlText := `SELECT ` + entryColumns + ` FROM entries WHERE ` + strings.Join(where, " AND ") +
-		` ORDER BY created_at ` + order + `, updated_at ` + order + ` LIMIT ?`
-	args = append(args, limit)
+// CountByDay counts entries per local calendar day in [from, to), using the same
+// predicates as ListEntries (minus the day/paging part, which the month range
+// replaces). This is what feeds the calendar's heat dots.
+//
+// 必须有 archived 这层：日历点某天要显示的条目 = 数出来的那批条目，
+// 否则会出现"这一天有 3 条"却没有一条能点开的情况。
+func (s *Store) CountByDay(q EntryQuery, from, to string) []DayCount {
+	// 日历自己给时间范围，游标/分页/按天这些条件必须忽略
+	q.Day, q.From, q.To, q.Before = "", "", "", ""
+	q.Limit, q.Tail = 0, false
 
-	rows, err := s.db.Query(sqlText, args...)
+	where, args := q.where()
+	where = append(where, "created_at >= ? AND created_at < ?")
+	args = append(args, from, to)
+
+	rows, err := s.db.Query(
+		`SELECT created_at FROM entries WHERE `+strings.Join(where, " AND "), args...)
 	if err != nil {
-		Logf(s.dir, "entry list failed: %v", err)
+		Logf(s.dir, "calendar count failed: %v", err)
 		return nil
 	}
 	defer rows.Close()
-	out := make([]Entry, 0, 32)
+
+	counts := map[string]int{}
 	for rows.Next() {
-		e, err := scanEntry(rows)
-		if err != nil {
-			return out
+		var raw string
+		if rows.Scan(&raw) != nil {
+			continue
 		}
-		out = append(out, e)
-	}
-	if q.Tail {
-		for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
-			out[i], out[j] = out[j], out[i]
+		t := decodeTime(raw)
+		if t.IsZero() {
+			continue
 		}
+		counts[t.Local().Format("2006-01-02")]++
 	}
+
+	out := make([]DayCount, 0, len(counts))
+	for day, n := range counts {
+		out = append(out, DayCount{Day: day, Count: n})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Day < out[j].Day })
 	return out
 }
 

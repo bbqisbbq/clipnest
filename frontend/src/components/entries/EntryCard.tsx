@@ -40,6 +40,13 @@ export default function EntryCard(props: EntryCardProps) {
   const inClipboard = (e.actions ?? []).includes("clipboard");
   const html = resolveImages(marked.parse(e.content, { async: false }) as string, imgCache);
 
+  // 单击 = 展开/收起，双击 = 打开编辑器。单击要延迟 180ms 再执行，否则双击的
+  // 第一次点击已经把卡片折起来了（一开一合，看着像闪了一下）。
+  const clickTimer = useRef<number | null>(null);
+  useEffect(() => () => {
+    if (clickTimer.current) window.clearTimeout(clickTimer.current);
+  }, []);
+
   // 折叠遮罩只在内容真的被裁掉时才显示：短文本、小图不该被底部渐变压暗。
   // 图片是异步换进来的（data URL 高度后到），所以除了 ResizeObserver 还听
   // img 的 load 和窗口 resize。只在折叠态测量（展开后 scrollHeight 就等于
@@ -49,7 +56,8 @@ export default function EntryCard(props: EntryCardProps) {
   useEffect(() => {
     const el = bodyRef.current;
     if (!el || expanded) return;
-    const measure = () => setOverflows(el.scrollHeight - el.clientHeight > 1);
+    // 阈值不能太小：只溢出 1~2px 时遮罩会白亮一道，看着像渲染坏了。
+    const measure = () => setOverflows(el.scrollHeight - el.clientHeight > 8);
     measure();
     const imgs = Array.from(el.querySelectorAll("img"));
     imgs.forEach((img) => img.addEventListener("load", measure));
@@ -65,17 +73,33 @@ export default function EntryCard(props: EntryCardProps) {
 
   const folded = !expanded && overflows;
 
+  const handleClick = () => {
+    if (clickTimer.current) return;
+    clickTimer.current = window.setTimeout(() => {
+      clickTimer.current = null;
+      // 本来就没折起来的内容，点它不该做无反馈的空动作
+      if (expanded || overflows) props.onToggleExpand();
+    }, 180);
+  };
+
+  const handleDoubleClick = () => {
+    if (clickTimer.current) {
+      window.clearTimeout(clickTimer.current);
+      clickTimer.current = null;
+    }
+    props.onEdit();
+  };
+
   return (
     <article
       className={`memo-card entry-card ${collected ? "is-collected" : ""} ${
         e.pinned ? "is-pinned" : ""
-      } ${expanded ? "is-expanded" : ""}`}
-      // 本来就没折起来的内容，点它不该做无反馈的空动作
-      onClick={() => {
-        if (expanded || overflows) props.onToggleExpand();
-      }}
-      title={expanded ? "点击收起" : overflows ? "点击展开全文" : undefined}
+      } ${overflows ? "is-collapsible" : ""} ${expanded ? "is-expanded" : ""}`}
+      onClick={handleClick}
+      onDoubleClick={handleDoubleClick}
+      title={expanded ? "点击收起 · 双击编辑" : overflows ? "点击展开全文 · 双击编辑" : undefined}
     >
+      {e.title ? <h3 className="memo-card-title">{e.title}</h3> : null}
       <div
         ref={bodyRef}
         className={`${e.kind === "image" ? "entry-image" : "memo-body"} clampable${
@@ -96,6 +120,20 @@ export default function EntryCard(props: EntryCardProps) {
           }
         }}
       />
+
+      {/* 折叠与否的显式提示：只靠底部渐变，用户看不出来这张卡片还能点开。
+          只在真的被裁掉时出现，短卡片不凭空多一行。 */}
+      {overflows ? (
+        <button
+          className={`entry-toggle ${expanded ? "is-open" : ""}`}
+          onClick={(ev) => {
+            ev.stopPropagation();
+            props.onToggleExpand();
+          }}
+        >
+          {expanded ? "收起 ⌃" : "展开全文 ⌄"}
+        </button>
+      ) : null}
 
       <footer className="memo-meta">
         <span>{timeLabel(e.createdAt)}</span>

@@ -40,10 +40,15 @@ $tokens = @"
 $svg = '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1600"><rect width="1200" height="1600" fill="#1b2436"/><rect width="1200" height="200" fill="#2f6fed"/><rect y="1400" width="1200" height="200" fill="#e0a253"/><text x="60" y="130" font-family="sans-serif" font-size="72" fill="#fff">TOP</text><text x="60" y="1540" font-family="sans-serif" font-size="72" fill="#20180f">BOTTOM</text></svg>'
 $img = "data:image/svg+xml;base64," + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($svg))
 
+# Vite 打出来的 @font-face 是绝对路径 /assets/xxx.woff2（app 里从根路径服务）。
+# 标本页是本地文件，得换成相对路径，字体才会真的加载 —— 否则量出来的行高、
+# 折叠高度都是回退字体的，改了字体以后这个脚本就失去意义了。
+$cssText = ($css | Get-Content -Raw) -replace 'url\(/assets/', 'url(./'
+
 $html = @"
 <!doctype html>
 <html lang="zh-CN" data-theme="dark"><head><meta charset="utf-8"><title>visual check</title>
-<style>$($css | Get-Content -Raw)</style>
+<style>$cssText</style>
 <style>:root { $tokens } body { margin:0; padding:20px; } .lbl { color: var(--text-3); font-size:12px; margin:16px 0 6px; } .wrap { max-width:560px; }</style>
 </head><body><div class="wrap">
   <div class="lbl">A 图片条目 · 折叠：应为一截预览 + 底部渐变，不该顶满屏</div>
@@ -59,15 +64,22 @@ $html = @"
   <div class="lbl">C 文字条目 · 短：不该有底部遮罩</div>
   <article class="memo-card entry-card"><div class="memo-body clampable"><p>短句一条，全部可见。</p></div>
     <footer class="memo-meta"><span>09:43</span></footer></article>
-  <div class="lbl">D 文字条目 · 长 · 折叠：应被 7.2em 截断且有遮罩</div>
-  <article class="memo-card entry-card"><div class="memo-body clampable is-clipped">
+  <div class="lbl">D 文字条目 · 长 · 折叠：应被 7.2em 截断、有遮罩、右下角「展开全文」</div>
+  <article class="memo-card entry-card is-collapsible"><div class="memo-body clampable is-clipped">
     <p>第一行文字，用来撑开卡片高度。</p><p>第二行文字，继续堆内容。</p><p>第三行文字，继续堆内容。</p>
     <p>第四行文字，继续堆内容。</p><p>第五行文字，继续堆内容。</p><p>第六行文字，继续堆内容。</p></div>
+    <button class="entry-toggle">展开全文 ⌄</button>
     <footer class="memo-meta"><span>09:44</span></footer></article>
+  <div class="lbl">E 文字条目 · 长 · 已展开：提示应弱化成「收起」</div>
+  <article class="memo-card entry-card is-collapsible is-expanded"><div class="memo-body clampable">
+    <p>展开之后不该有遮罩，提示变成弱化的「收起」。</p></div>
+    <button class="entry-toggle is-open">收起 ⌃</button>
+    <footer class="memo-meta"><span>09:45</span></footer></article>
 </div></body></html>
 "@
 
-$tmp = Join-Path $env:TEMP ("clipnest-visual-" + [Guid]::NewGuid().ToString("N") + ".html")
+# 写在 dist\assets 里而不是 %TEMP%：上面的 ./xxx.woff2 要能找到同目录的字体文件。
+$tmp = Join-Path (Join-Path $root "frontend\dist\assets") ("_visual-check-" + [Guid]::NewGuid().ToString("N") + ".html")
 Set-Content -Path $tmp -Value $html -Encoding UTF8
 
 if (-not (Test-Path $Chrome)) { throw "找不到 Chrome：$Chrome（可用 -Chrome 指定路径）" }

@@ -48,9 +48,14 @@ func (s *ClipService) CopyEntry(id string) error {
 
 // writeEntryToClipboard puts an entry on the clipboard and suppresses the
 // capture echo that the listener would otherwise turn into a new entry.
+//
+// 抑制的 key 必须是「采集侧会算出来的那个哈希」（entryEchoHash），
+// 不能用 e.Hash：那是条目自己的内容哈希，两种口径算出来的值从来就不相等，
+// 于是手写/导入的备忘被复制回剪贴板时不会被认作"自己写的"，会多出一条
+// 来源显示 clipnest 的采集条目。
 func (s *ClipService) writeEntryToClipboard(e Entry) error {
 	s.mu.Lock()
-	s.suppressHash = e.Hash
+	s.suppressHash = entryEchoHash(e)
 	s.suppressAt = time.Now()
 	s.mu.Unlock()
 

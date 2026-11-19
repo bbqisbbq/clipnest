@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS entries (
   content      TEXT NOT NULL DEFAULT '',
   kind         TEXT NOT NULL DEFAULT 'text',
   source       TEXT NOT NULL DEFAULT 'manual',
+  title        TEXT NOT NULL DEFAULT '',
   tags         TEXT NOT NULL DEFAULT '',
   actions      TEXT NOT NULL DEFAULT '',
   auto_tags    TEXT NOT NULL DEFAULT '',
@@ -81,7 +82,7 @@ CREATE TABLE IF NOT EXISTS entry_filters (
 );
 `
 
-const entryColumns = `id, content, kind, source, tags, actions, pinned, archived,
+const entryColumns = `id, content, kind, source, title, tags, actions, pinned, archived,
 	hash, seen_count, copy_count, source_app, width, height, html, rtf, format_name, format_id, files,
 	trigger_key, case_sensitive, keep_trigger, apps, exclude_apps, group_name, use_count,
 	expires_at, created_at, updated_at`
@@ -99,7 +100,7 @@ func scanEntry(sc scannable) (Entry, error) {
 		expiresAt                  string
 		createdAt, updatedAt       string
 	)
-	err := sc.Scan(&e.ID, &e.Content, &kind, &source, &tags, &actionsSpec, &pinned, &archived,
+	err := sc.Scan(&e.ID, &e.Content, &kind, &source, &e.Title, &tags, &actionsSpec, &pinned, &archived,
 		&e.Hash, &e.SeenCount, &e.CopyCount, &e.SourceApp, &e.Width, &e.Height,
 		&e.HTML, &e.RTF, &e.FormatName, &formatID, &files,
 		&e.TriggerKey, &caseSensitive, &keepTrigger, &apps, &excludeApps, &e.GroupName, &e.UseCount,
@@ -145,6 +146,7 @@ func decodeFiles(raw string) []FileRef {
 // FTS index.
 func (s *Store) SaveEntry(in Entry) (Entry, error) {
 	in.Content = strings.TrimSpace(in.Content)
+	in.Title = truncateRunes(strings.TrimSpace(in.Title), 60)
 	if in.Source == "" {
 		in.Source = SourceManual
 	}
@@ -172,9 +174,10 @@ func (s *Store) SaveEntry(in Entry) (Entry, error) {
 
 	if _, err := s.db.Exec(`
 		INSERT INTO entries (`+entryColumns+`)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(id) DO UPDATE SET
 			content=excluded.content, kind=excluded.kind, source=excluded.source,
+			title=excluded.title,
 			tags=excluded.tags, actions=excluded.actions,
 			pinned=excluded.pinned, archived=excluded.archived,
 			hash=excluded.hash, source_app=excluded.source_app,
@@ -186,7 +189,7 @@ func (s *Store) SaveEntry(in Entry) (Entry, error) {
 			keep_trigger=excluded.keep_trigger, apps=excluded.apps,
 			exclude_apps=excluded.exclude_apps, group_name=excluded.group_name,
 			expires_at=excluded.expires_at, updated_at=excluded.updated_at`,
-		in.ID, in.Content, string(in.Kind), string(in.Source),
+		in.ID, in.Content, string(in.Kind), string(in.Source), in.Title,
 		TagSpec(in.Tags), actionSpec(in.Actions), boolInt(in.Pinned), boolInt(in.Archived),
 		in.Hash, in.SeenCount, in.CopyCount, in.SourceApp, in.Width, in.Height,
 		in.HTML, in.RTF, in.FormatName, in.FormatID, encodeFiles(in.Files),
@@ -213,8 +216,13 @@ func (s *Store) indexEntry(e Entry) error {
 	if _, err := s.db.Exec(`DELETE FROM entries_fts WHERE id = ?`, e.ID); err != nil {
 		return err
 	}
+	// 标题也进索引：`@随记@` 这类目标条目要靠名字搜得到。
+	fields := strings.Join(e.AllTags(), " ")
+	if t := strings.TrimSpace(e.Title); t != "" {
+		fields = strings.TrimSpace(fields + " " + t)
+	}
 	_, err := s.db.Exec(`INSERT INTO entries_fts (id, content, tags) VALUES (?,?,?)`,
-		e.ID, e.Content, strings.Join(e.AllTags(), " "))
+		e.ID, e.Content, fields)
 	return err
 }
 
@@ -265,9 +273,10 @@ func (s *Store) mergeEntry(e Entry) error {
 	}
 	if _, err := s.db.Exec(`
 		INSERT INTO entries (`+entryColumns+`)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(id) DO UPDATE SET
 			content=excluded.content, kind=excluded.kind, source=excluded.source,
+			title=excluded.title,
 			tags=excluded.tags, actions=excluded.actions,
 			pinned=excluded.pinned, archived=excluded.archived,
 			hash=excluded.hash, source_app=excluded.source_app,
@@ -279,7 +288,7 @@ func (s *Store) mergeEntry(e Entry) error {
 			keep_trigger=excluded.keep_trigger, apps=excluded.apps,
 			exclude_apps=excluded.exclude_apps, group_name=excluded.group_name,
 			expires_at=excluded.expires_at, updated_at=excluded.updated_at`,
-		e.ID, e.Content, string(e.Kind), string(e.Source),
+		e.ID, e.Content, string(e.Kind), string(e.Source), e.Title,
 		TagSpec(e.Tags), actionSpec(e.Actions), boolInt(e.Pinned), boolInt(e.Archived),
 		e.Hash, e.SeenCount, e.CopyCount, e.SourceApp, e.Width, e.Height,
 		e.HTML, e.RTF, e.FormatName, e.FormatID, encodeFiles(e.Files),
@@ -290,4 +299,42 @@ func (s *Store) mergeEntry(e Entry) error {
 		return err
 	}
 	return s.indexEntry(e)
+}
+
+// FindEntryByTitle returns the live entry whose title matches name
+// (case-insensitive). 隐写模式 uses it to resolve `@名称@` to a landing entry.
+func (s *Store) FindEntryByTitle(name string) (Entry, bool) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return Entry{}, false
+	}
+	row := s.db.QueryRow(`SELECT `+entryColumns+` FROM entries
+		WHERE LOWER(title) = LOWER(?) AND archived = 0
+		ORDER BY updated_at DESC LIMIT 1`, name)
+	e, err := scanEntry(row)
+	if err != nil {
+		return Entry{}, false
+	}
+	return e, true
+}
+
+// AppendTextToEntry appends text to an entry, separated by a blank line.
+//
+// It re-reads the row and saves it back whole: a partial Entry from the caller
+// would silently reset tags, actions or the trigger key.
+func (s *Store) AppendTextToEntry(id, text string) (Entry, error) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return Entry{}, errors.New("内容不能为空")
+	}
+	e, ok := s.GetEntry(id)
+	if !ok {
+		return Entry{}, errors.New("条目不存在")
+	}
+	if strings.TrimSpace(e.Content) == "" {
+		e.Content = text
+	} else {
+		e.Content = strings.TrimRight(e.Content, "\n") + "\n\n" + text
+	}
+	return s.SaveEntry(e)
 }

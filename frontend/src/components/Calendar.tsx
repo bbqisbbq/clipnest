@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ClipService } from "../lib/api";
+import { ClipService, type EntryQuery } from "../lib/api";
 
 // 日历：月视图，有内容的日子显示热度点，点某天 = 只看那天。
 // 这是统一时间线的"导航器"——不需要滚一条无限长的列表。
+//
+// 圆点必须跟当前筛选器一致：以前这里只按"全库"统计，于是选了「片段 / 图片 /
+// 置顶」之后日历照样画点，点进去却一条都没有，看着像日期筛选坏了。
 
 type Props = {
   selectedDay: string; // "" = 不按天筛
   onPickDay: (day: string) => void;
+  query: EntryQuery; // 当前侧栏筛选器的查询
 };
 
 const WEEKDAYS = ["一", "二", "三", "四", "五", "六", "日"];
@@ -19,17 +23,19 @@ function dayKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-export default function Calendar({ selectedDay, onPickDay }: Props) {
+export default function Calendar({ selectedDay, onPickDay, query }: Props) {
   const [cursor, setCursor] = useState(() => new Date());
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(false);
 
   const month = monthKey(cursor);
+  // 查询对象每次渲染都是新引用，用序列化后的值做依赖才不会无限重载
+  const queryKey = JSON.stringify(query ?? {});
 
   const load = useCallback(async (m: string) => {
     setLoading(true);
     try {
-      const list = (await ClipService.GetEntryCalendar(m)) ?? [];
+      const list = (await ClipService.GetEntryCalendar(m, JSON.parse(queryKey) as EntryQuery)) ?? [];
       const map: Record<string, number> = {};
       for (const d of list) map[d.day] = d.count;
       setCounts(map);
@@ -38,7 +44,7 @@ export default function Calendar({ selectedDay, onPickDay }: Props) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [queryKey]);
 
   useEffect(() => {
     void load(month);

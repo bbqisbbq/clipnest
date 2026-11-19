@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Events } from "@wailsio/runtime";
 import { ClipService, type Entry, type Snippet } from "./lib/api";
 import { formatBytes, formatRelative } from "./lib/format";
-import { IconSearch, kindIcon } from "./components/Icons";
+import { IconPin, IconSearch, IconTrash, IconFolder, kindIcon } from "./components/Icons";
 
 // 片段在弹窗里的显示名与 Enter 行为（和后端 SnippetAction 对应）
 const SNIPPET_LABEL: Record<string, string> = {
@@ -27,6 +27,9 @@ const SNIPPET_ACTION: Record<string, string> = {
 
 type Row = { kind: "entry"; entry: Entry } | { kind: "snippet"; snippet: Snippet };
 
+// 行内管理动作：只动 ClipNest 自己的数据，不触发粘贴。
+type RowAction = "pin" | "archive" | "delete";
+
 export default function Picker() {
   const [items, setItems] = useState<Entry[]>([]);
   const [snippets, setSnippets] = useState<Snippet[]>([]);
@@ -34,6 +37,8 @@ export default function Picker() {
   const [active, setActive] = useState(0);
   const [status, setStatus] = useState("");
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
+  const [snippetTick, setSnippetTick] = useState(0);
+  const [acting, setActing] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -49,7 +54,9 @@ export default function Picker() {
   const loadItems = useCallback(async () => {
     try {
       const list = await ClipService.GetEntries({ action: "clipboard", limit: 60, tail: true } as never);
-      setItems(list ?? []);
+      const next = list ?? [];
+      setItems(next);
+      setActive((i) => Math.min(Math.max(0, i), Math.max(0, next.length - 1)));
     } catch (err) {
       setStatus(`读取失败：${String(err)}`);
     }
@@ -71,7 +78,7 @@ export default function Picker() {
     return () => offs.forEach((off) => off());
   }, [loadItems]);
 
-  // 片段查询（防抖，随输入变化）
+  // 片段查询（防抖，随输入变化；tick 用于动作后手动刷新）
   useEffect(() => {
     if (!snippetMode) {
       setSnippets([]);
@@ -95,7 +102,7 @@ export default function Picker() {
       alive = false;
       clearTimeout(timer);
     };
-  }, [snippetMode, snippetQuery]);
+  }, [snippetMode, snippetQuery, snippetTick]);
 
   // 缩略图：只为前 10 条图片条目按需拉取
   useEffect(() => {
@@ -132,6 +139,42 @@ export default function Picker() {
     }
   }, []);
 
+  // 行内管理：置顶 / 归档 / 删除。列表原地刷新，弹窗不关、不粘贴。
+  const act = useCallback(
+    async (row: Row | undefined, action: RowAction) => {
+      if (!row) return;
+      const id = row.kind === "snippet" ? row.snippet.id : row.entry.id;
+      const entry = row.kind === "entry" ? row.entry : null;
+      setActing(id);
+      try {
+        if (action === "delete") {
+          await ClipService.DeleteEntry(id);
+          setStatus("已删除");
+        } else if (action === "pin") {
+          const next = !(entry?.pinned ?? false);
+          await ClipService.SetEntryPinned(id, next);
+          setStatus(next ? "已置顶" : "已取消置顶");
+        } else {
+          const next = !(entry?.archived ?? false);
+          await ClipService.SetEntryArchived(id, next);
+          setStatus(next ? "已归档" : "已恢复");
+        }
+        setThumbs((prev) => {
+          if (!(id in prev)) return prev;
+          const { [id]: _drop, ...rest } = prev;
+          return rest;
+        });
+        await loadItems();
+        if (snippetMode) setSnippetTick((n) => n + 1);
+      } catch (err) {
+        setStatus(`操作失败：${String(err)}`);
+      } finally {
+        setActing("");
+      }
+    },
+    [loadItems, snippetMode],
+  );
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -147,6 +190,23 @@ export default function Picker() {
       if (e.key === "ArrowUp" || (e.ctrlKey && e.key.toLowerCase() === "p")) {
         e.preventDefault();
         setActive((i) => Math.max(0, i - 1));
+        return;
+      }
+      // 行内管理（不用鼠标也能整理）：Alt+P 置顶 / Alt+A 归档 / Ctrl+Del 删除。
+      // 删除必须带 Ctrl：搜索框一直有焦点，裸 Del 是删字符，不是删条目。
+      if (e.altKey && e.key.toLowerCase() === "p") {
+        e.preventDefault();
+        void act(rows[active], "pin");
+        return;
+      }
+      if (e.altKey && e.key.toLowerCase() === "a") {
+        e.preventDefault();
+        void act(rows[active], "archive");
+        return;
+      }
+      if (e.ctrlKey && e.key === "Delete") {
+        e.preventDefault();
+        void act(rows[active], "delete");
         return;
       }
       if (e.key === "1" && snippetMode && query === "-") {
@@ -168,7 +228,57 @@ export default function Picker() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [rows, active, pick, snippetMode, query]);
+  }, [rows, active, pick, act, snippetMode, query]);
+
+  const actions = (row: Row) => {
+    const entry = row.kind === "entry" ? row.entry : null;
+    const id = row.kind === "snippet" ? row.snippet.id : row.entry.id;
+    const busy = acting === id;
+    return (
+      <span className="picker-actions" onMouseDown={(e) => e.stopPropagation()}>
+        {snippetMode ? null : (
+          <button
+            type="button"
+            className={`picker-act ${entry?.pinned ? "is-on" : ""}`}
+            title={entry?.pinned ? "取消置顶（Alt+P）" : "置顶（Alt+P）"}
+            disabled={busy}
+            onClick={(e) => {
+              e.stopPropagation();
+              void act(row, "pin");
+            }}
+          >
+            <IconPin size={12} filled={entry?.pinned} />
+          </button>
+        )}
+        {snippetMode ? null : (
+          <button
+            type="button"
+            className={`picker-act ${entry?.archived ? "is-on" : ""}`}
+            title={entry?.archived ? "取消归档（Alt+A）" : "归档（Alt+A）"}
+            disabled={busy}
+            onClick={(e) => {
+              e.stopPropagation();
+              void act(row, "archive");
+            }}
+          >
+            <IconFolder size={12} />
+          </button>
+        )}
+        <button
+          type="button"
+          className="picker-act is-danger"
+          title="删除（Ctrl+Del）"
+          disabled={busy}
+          onClick={(e) => {
+            e.stopPropagation();
+            void act(row, "delete");
+          }}
+        >
+          <IconTrash size={12} />
+        </button>
+      </span>
+    );
+  };
 
   return (
     <div className="picker">
@@ -221,6 +331,7 @@ export default function Picker() {
                       {masked ? "••••••" : sp.body.replace(/\s+/g, " ").slice(0, 48)}
                     </span>
                   </div>
+                  {actions(row)}
                   {index < 9 ? <span className="picker-num">{index + 1}</span> : null}
                   {index === active ? <kbd>{SNIPPET_ACTION[sp.kind] ?? "执行"}</kbd> : null}
                 </div>
@@ -248,6 +359,7 @@ export default function Picker() {
                     {formatBytes((item.content || "").length)} · {formatRelative(item.updatedAt)}
                   </span>
                 </div>
+                {actions(row)}
                 {index < 9 ? <span className="picker-num">{index + 1}</span> : null}
                 {index === active ? <kbd>↵</kbd> : null}
               </div>
@@ -270,10 +382,12 @@ export default function Picker() {
         ) : (
           <>
             <span>↑↓ 选择</span>
-            <span>1–9 直选</span>
             <span>↵ 粘贴</span>
+            <span>1–9 直选</span>
             <span>-- 搜片段</span>
-            <span>Esc 关闭</span>
+            <span>Alt+P 置顶</span>
+            <span>Alt+A 归档</span>
+            <span>Ctrl+Del 删除</span>
           </>
         )}
       </div>

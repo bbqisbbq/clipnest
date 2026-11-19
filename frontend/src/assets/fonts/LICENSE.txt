@@ -1,0 +1,24 @@
+ClipNest 自带的字体
+===================
+
+1) 界面正文（比例宽度）：Inter + Noto Sans SC
+   - 由 @fontsource-variable 提供，`frontend/src/main.tsx` 里 import，
+     打包进 dist（按 unicode-range 分片，浏览器只加载用到的那几片）。
+   - 授权：SIL OFL 1.1（Inter 另可用 Apache-2.0），许可证随 npm 包一起分发。
+
+2) 等宽语境（代码块 / 编辑器 / 快捷键框）：Maple Mono Normal NF CN
+   - 本目录的 `maple-mono-nf-cn-regular.woff2`（约 6.2 MB），
+     `frontend/src/styles/fonts.css` 里声明 `@font-face`。
+   - 来源：上游 v7.9 的静态 TTF `MapleMonoNormal-NF-CN-Regular.ttf`，
+     用 fontTools 全字符集转 woff2（未做子集裁剪，中文不会缺字）：
+
+       pyftsubset MapleMonoNormal-NF-CN-Regular.ttf \
+         --output-file=maple-mono-nf-cn-regular.woff2 \
+         --flavor=woff2 --unicodes="U+0-10FFFF" --layout-features="*"
+
+   - 只打一个 400 字面：等宽语境没有真正需要粗体的地方，body 上又关了
+     `font-synthesis`，多带 600/700 只会白背 12 MB。
+   - Copyright 2022 The Maple Mono Project Authors
+     https://github.com/subframe7536/maple-font
+     授权：SIL Open Font License 1.1，全文见同目录 `OFL.txt`
+     （字体 name 表 ID 13/14 也内嵌了同一句声明）。

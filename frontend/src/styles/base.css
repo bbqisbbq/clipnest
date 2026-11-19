@@ -44,11 +44,11 @@
   --shadow-pop: 0 20px 48px rgba(0, 0, 0, 0.5);
   --ease: cubic-bezier(0.2, 0.6, 0.3, 1);
 
-  /* Bundled fonts: Inter (Latin), Noto Sans SC (CJK), JetBrains Mono (code).
-     Both are hinted for screens, which is why they look sharper than the
-     system CJK face at 125%/150% scaling. */
+  /* 界面（比例字体）：Inter 管拉丁与数字，Noto Sans SC 管中文 —— 与正文行长
+     匹配，长段落读起来不硬。两者都随包分发，不依赖系统雅黑。
+     等宽语境（代码块 / 编辑器 / 快捷键）另用 Maple Mono NF CN（styles/fonts.css）。 */
   --font-ui: "Inter Variable", "Noto Sans SC Variable", "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
-  --font-mono: "JetBrains Mono Variable", "Cascadia Mono", Consolas, monospace;
+  --font-mono: "Maple Mono NF CN", "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
 }
 
 * {
@@ -75,7 +75,7 @@ body {
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
-  font-feature-settings: "tnum" 1, "cv05" 1;
+  font-feature-settings: "tnum" 1;
 }
 
 button {
@@ -145,5 +145,20 @@ textarea {
 
 .mono {
   font-family: var(--font-mono);
+}
+
+/* 代码语境：等宽字体 + 打开 Maple 的编程连字（== != -> => 这些在代码里才需要连笔） */
+code,
+pre,
+kbd,
+samp,
+.mono,
+.is-mono,
+.memo-input,
+.composer-input,
+.cm-editor {
+  font-family: var(--font-mono);
+  font-variant-ligatures: normal;
+  font-feature-settings: "calt" 1;
 }
 

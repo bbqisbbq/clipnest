@@ -185,3 +185,86 @@ func TestEntryBlobContentAddressed(t *testing.T) {
 		t.Errorf("mime = %q", mime)
 	}
 }
+
+func TestCalendarCountsMatchFilter(t *testing.T) {
+	svc := newTestService(t, t.TempDir())
+	month := time.Now().Format("2006-01")
+
+	if _, err := svc.store.SaveEntry(Entry{Content: "手写一"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.store.SaveEntry(Entry{Content: "手写二"}); err != nil {
+		t.Fatal(err)
+	}
+	captured, err := svc.store.SaveEntry(Entry{
+		Content: "复制来的", Source: SourceClipboard, Kind: KindText,
+		Actions: []string{ActionClipboard},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sum := func(days []DayCount) int {
+		n := 0
+		for _, d := range days {
+			n += d.Count
+		}
+		return n
+	}
+
+	// 全部内容：三张卡片，日历就该数出三天里的三条
+	if got := sum(svc.GetEntryCalendar(month, EntryQuery{})); got != 3 {
+		t.Errorf("全部内容 = %d, want 3", got)
+	}
+	// 剪贴板筛选：只数带 clipboard 能力的那条（以前这里会数出全部，点进去却是空的）
+	if got := sum(svc.GetEntryCalendar(month, EntryQuery{Action: ActionClipboard})); got != 1 {
+		t.Errorf("剪贴板 = %d, want 1", got)
+	}
+	// 片段筛选：一条都没有，日历就不该画点
+	if got := sum(svc.GetEntryCalendar(month, EntryQuery{Snippets: true})); got != 0 {
+		t.Errorf("片段 = %d, want 0", got)
+	}
+	// 归档：归档一条后，全部内容少一条、已归档多一条
+	if _, err := svc.SetEntryArchived(captured.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if got := sum(svc.GetEntryCalendar(month, EntryQuery{})); got != 2 {
+		t.Errorf("归档后全部内容 = %d, want 2", got)
+	}
+	if got := sum(svc.GetEntryCalendar(month, EntryQuery{Archived: true})); got != 1 {
+		t.Errorf("已归档 = %d, want 1", got)
+	}
+}
+
+// 手写备忘被复制回剪贴板时，采集侧会再看到同一段文字：不能变成第二条。
+// 这里用「采集口径的 hash 对不上」的 Captured 直接打第二层（内容口径）去重。
+func TestSaveCaptureDedupesAgainstManualEntry(t *testing.T) {
+	svc := newTestService(t, t.TempDir())
+	const content = "手写的一条备忘：明天记得交周报"
+
+	memo, err := svc.store.SaveEntry(Entry{Content: content})
+	if err != nil {
+		t.Fatalf("SaveEntry: %v", err)
+	}
+	if memo.Hash == "" {
+		t.Fatal("手写条目应该有 hash")
+	}
+
+	got, isNew, err := svc.store.SaveCapture(Captured{
+		Kind: KindText,
+		Text: content,            // 同一个内容
+		Hash: "ffffffffffffffff", // 采集口径的哈希（故意对不上）
+	})
+	if err != nil {
+		t.Fatalf("SaveCapture: %v", err)
+	}
+	if isNew {
+		t.Error("同内容不该新建条目")
+	}
+	if got.ID != memo.ID {
+		t.Errorf("应该命中手写那条，got %s want %s", got.ID, memo.ID)
+	}
+	if n := svc.store.CountEntries(); n != 1 {
+		t.Errorf("库里应该还是 1 条，got %d", n)
+	}
+}

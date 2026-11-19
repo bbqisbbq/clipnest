@@ -43,7 +43,10 @@ const (
 
 // Entry is the single content type of the app.
 type Entry struct {
-	ID      string   `json:"id"`
+	ID string `json:"id"`
+	// Title 是给条目起的名字（现在只有隐写模式在写：`@名称@` 作为落点）。
+	// 普通条目留空，卡片就不多一行标题。
+	Title   string   `json:"title,omitempty"`
 	Content string   `json:"content"`
 	Kind    Kind     `json:"kind"`
 	Source  Source   `json:"source"`
@@ -213,16 +216,16 @@ func contentHash(content string) string {
 // SaveCapture stores a clipboard capture as an entry carrying the clipboard
 // action. De-duplicates by content hash (bumping seen_count) so copying the same
 // thing twice does not create two rows.
+//
+// 两层去重都要：
+//  1. 采集口径的 hash（c.Hash）—— 同一条内容被复制两次；
+//  2. 内容口径的 hash（contentHash）—— 库里已经有同样文字的条目（典型是手写
+//     备忘、导入内容，或者别的程序把它重新放回剪贴板）。缺了第 2 层就会
+//     "同一条备忘变两条，其中一条来源是 clipnest"。
 func (s *Store) SaveCapture(c Captured) (*Entry, bool, error) {
 	if c.Hash != "" {
 		if existing, ok := s.findEntryByHash(c.Hash); ok {
-			if _, err := s.db.Exec(
-				`UPDATE entries SET seen_count = seen_count + 1, updated_at = ? WHERE id = ?`,
-				encodeTime(nowUTC()), existing.ID); err != nil {
-				return nil, false, err
-			}
-			e, _ := s.GetEntry(existing.ID)
-			return &e, false, nil
+			return s.bumpSeen(existing.ID)
 		}
 	}
 
@@ -237,6 +240,10 @@ func (s *Store) SaveCapture(c Captured) (*Entry, bool, error) {
 	}
 	if content == "" {
 		return nil, false, errors.New("没有可保存的内容")
+	}
+	// 内容已经在库里（哪怕它当初是手写进来的）就不再建第二条，只刷新时间
+	if existing, ok := s.findEntryByHash(contentHash(content)); ok {
+		return s.bumpSeen(existing.ID)
 	}
 
 	saved, err := s.SaveEntry(Entry{
@@ -259,6 +266,21 @@ func (s *Store) SaveCapture(c Captured) (*Entry, bool, error) {
 		return nil, false, err
 	}
 	return &saved, true, nil
+}
+
+// bumpSeen marks an existing entry as "copied/seen again" without touching its
+// content, source or created_at. Used by SaveCapture's de-dupe paths.
+func (s *Store) bumpSeen(id string) (*Entry, bool, error) {
+	if _, err := s.db.Exec(
+		`UPDATE entries SET seen_count = seen_count + 1, updated_at = ? WHERE id = ?`,
+		encodeTime(nowUTC()), id); err != nil {
+		return nil, false, err
+	}
+	e, ok := s.GetEntry(id)
+	if !ok {
+		return nil, false, errors.New("条目不存在")
+	}
+	return &e, false, nil
 }
 
 // BumpCopyCount records that an entry was pasted/copied again.

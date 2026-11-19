@@ -334,3 +334,54 @@ body.is-picker {
   background: rgba(125, 140, 255, 0.22);
   color: var(--accent);
 }
+
+/* ---------------- 行内管理按钮（置顶 / 归档 / 删除） ---------------- */
+/* 默认藏起来（只在当前行出现）：一列小图标常驻会把搜索结果挤成马赛克。
+   Tab 也能聚焦到它们，聚焦时同样显形，所以键盘一样能整理。 */
+.picker-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.1s var(--ease);
+}
+
+.picker-row.is-active .picker-actions,
+.picker-row:hover .picker-actions,
+.picker-row:focus-within .picker-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.picker-act {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+}
+
+.picker-act:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.picker-act.is-on {
+  color: var(--accent);
+}
+
+.picker-act.is-danger:hover {
+  color: var(--danger);
+}
+
+.picker-act:disabled {
+  opacity: 0.4;
+  cursor: default;
+}

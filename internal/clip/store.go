@@ -98,6 +98,10 @@ func Open(dir string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("初始化条目表失败: %w", err)
 	}
+	// CREATE TABLE IF NOT EXISTS 不会给已有库加列：老库的新列在这里补齐。
+	if err := ensureColumn(db, "entries", "title", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		Logf(dir, "schema upgrade (entries.title) failed: %v", err)
+	}
 
 	dropLegacyTables(db)
 
@@ -112,6 +116,41 @@ func Open(dir string) (*Store, error) {
 		Logf(dir, "settings load failed: %v", err)
 	}
 	return s, nil
+}
+
+// ensureColumn adds a column to an existing table when a build introduces one.
+//
+// SQLite has no "ADD COLUMN IF NOT EXISTS", so the column list is read first.
+// The declaration is code-supplied (never user input), which is why it can be
+// spliced into the statement.
+func ensureColumn(db *sql.DB, table, column, decl string) error {
+	rows, err := db.Query(`PRAGMA table_info(` + table + `)`)
+	if err != nil {
+		return err
+	}
+	found := false
+	for rows.Next() {
+		var (
+			cid     int
+			name    string
+			ctype   string
+			notNull int
+			dflt    any
+			pk      int
+		)
+		if rows.Scan(&cid, &name, &ctype, &notNull, &dflt, &pk) != nil {
+			continue
+		}
+		if strings.EqualFold(name, column) {
+			found = true
+		}
+	}
+	rows.Close()
+	if found {
+		return nil
+	}
+	_, err = db.Exec(`ALTER TABLE ` + table + ` ADD COLUMN ` + column + ` ` + decl)
+	return err
 }
 
 func (s *Store) loadSettings() error {

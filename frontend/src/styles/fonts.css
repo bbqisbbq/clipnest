@@ -1,0 +1,18 @@
+/* 打包进来的 Maple Mono Normal NF CN —— 只给等宽语境（代码块、编辑器、快捷键、
+   表格里的数字列）。界面正文用 Inter + Noto Sans SC（见 main.tsx 的 @fontsource
+   引入与 base.css 的 --font-ui），全屏等宽会把长中文段落撑得很硬。
+
+   为什么要自带而不是用系统字体：Windows 上「微软雅黑」在 125%/150% 缩放下发虚。
+   字体是 SIL OFL 1.1，随 app 一起分发合规（见同目录 LICENSE.txt / OFL.txt）。
+
+   只留 Regular：等宽语境里没有真正需要粗体的地方，body 上又关了 font-synthesis，
+   所以不需要 700 的字面（否则白背 6 MB）。要加回来就多产一个 woff2 + 一段 @font-face。 */
+
+@font-face {
+  font-family: "Maple Mono NF CN";
+  src: url("../assets/fonts/maple-mono-nf-cn-regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  /* 本地文件、毫秒级解码：宁可等它，也不要先画一遍回退字体再闪一下 */
+  font-display: block;
+}

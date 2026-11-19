@@ -6,7 +6,7 @@
 ## 一、后端（Go）
 
 ```
-main.go                  Wails 装配：窗口、托盘、快捷键、钩子注入、单实例
+main.go                  Wails 装配：四个窗口（管理 / picker / capture / stealth+HUD）、托盘、快捷键、钩子注入、单实例
 internal/expand/         缩写展开引擎（零业务知识，只认 Host 接口）
 internal/clip/           业务层：条目、捕获、片段、同步、绑定 API
 ```
@@ -35,6 +35,7 @@ internal/clip/           业务层：条目、捕获、片段、同步、绑定 
 | `service_capture.go` | 采集管线（合并 45ms、去重、回写抑制）+ 快速输入窗 |
 | `service_paste.go` | 条目 → 系统：复制回剪贴板、打开、picker 弹窗三件套 |
 | `service_settings.go` | 设置保存与副作用（自启、展开器、两个后台循环） |
+| `service_stealth.go` | 隐写模式：`@名称@` 解析、透明输入窗的会话状态、提交/追加到目标条目 |
 | `entry_api.go` | 绑定给前端的条目 API + 筛选器 CRUD |
 | `syncpanel.go` | 设置页「设备包」面板的数据形状 |
 
@@ -76,7 +77,7 @@ internal/clip/           业务层：条目、捕获、片段、同步、绑定 
 ## 二、前端（React + TS）
 
 ```
-src/main.tsx             入口：模式分流（主窗 / picker / capture）+ 样式顺序 + 主题预应用
+src/main.tsx             入口：模式分流（主窗 / picker / capture / stealth / stealthhud）+ 样式顺序 + 主题预应用
 src/App.tsx              薄壳：装 hooks、切视图、转发通知（不写业务）
 src/hooks/
   useToast.ts            全局通知
@@ -99,8 +100,10 @@ src/components/
   EntryEditor           全屏条目编辑器；Composer 是底部"记一条"输入卡
   MarkdownEditor        CodeMirror 6 封装；SnippetFields 是片段的额外编辑项
   HotkeyInput / Lightbox / Picker / Capture
+  Stealth / StealthHud  隐写模式：全透明的输入窗 + 角落状态灯
 src/styles/
-  base → layout → entries → controls → settings → picker → snippets → timeline → editor
+  fonts → base → layout → entries → controls → settings → picker → snippets → timeline → editor → stealth
+  （fonts.css 里是 @font-face：自带 Maple Mono NF CN 三字重，字体文件在 src/assets/fonts/）
 src/theme-light.css      主题引擎管不到的浅色补丁（--k-* / --shadow-pop / 原生控件）
 ```
 
@@ -111,19 +114,49 @@ src/theme-light.css      主题引擎管不到的浅色补丁（--k-* / --shadow
 3. **CSS 的 import 顺序就是层叠顺序**：同优先级的选择器靠后覆盖，新增样式文件要插在
    正确的段位里，不能随手追加到末尾（`main.tsx` 里有注释说明）。
 
+**两条经验**：
+
+- **字体分两套**：`--font-ui` = Inter + Noto Sans SC（比例宽度，长中文段落好读）；
+  `--font-mono` = Maple Mono NF CN（等宽，`styles/fonts.css` 里只有一个 400 字面）。
+  等宽字体铺满界面会把中文撑成 1.2em 宽、行拉长，所以别再把它塞进 `--font-ui`。
+  改字体后跑 `scripts/visual-check/check-css.ps1`（它会把 dist 里的真字体一起加载，
+  量出来的折叠高度才和 app 一致）。
+- 折叠卡片的"能不能展开"是运行时量出来的（`EntryCard` 里 `scrollHeight - clientHeight > 8`），
+  不是按内容类型猜的：短卡片不该出现底部遮罩，也不该冒出「展开全文」。
+
 ## 三、数据模型（唯一真相）
 
 ```
-entries        条目：内容 + 标签 + actions（clipboard / snippet）
+entries        条目：标题（可选）+ 内容 + 标签 + actions（clipboard / snippet）
 entry_blobs    附件：内容寻址，≤512KB 进库、更大落盘 memo_files/
-entries_fts    全文索引（trigram，中文子串可搜）
+entries_fts    全文索引（trigram，中文子串可搜；标题也进索引）
 entry_filters  用户保存的筛选器
 tombstones     删除墓碑（同步用）
 meta           键值对（设备 id、一次性标记）
 ```
 
+`entries.title` 只有隐写模式在写（作为 `@名称@` 的落点）；空标题的条目在卡片上不多一行。
+表结构是 `CREATE TABLE IF NOT EXISTS`，**新增列必须同时加 `ensureColumn` 迁移**（见 `store.go`），
+否则老库不会自动长出新列。
+
 `items` / `memos` / `snippets` 三张表已在 2.0.0 删除：它们表达的是同一种东西的
 三种形态，现在统一为 `entries` + `actions`。片段 = 带 `snippet` 能力的条目。
+
+**查询只有一套**：侧栏筛选器、日历、搜索框都编译成 `EntryQuery`，SQL 条件由
+`EntryQuery.where()`（`entry_query.go`）一处生成，`ListEntries` 与
+`CountByDay`（日历圆点）共用它。加新筛选维度只改 `where()` 一处，两边的口径
+就不会分叉——日历曾经自己写 SQL 数"全库"，于是选了「片段/图片」后画点却点不出东西。
+
+**哈希有两个口径，别混用**：
+
+| 口径 | 生成处 | 用途 |
+| --- | --- | --- |
+| `Captured.Hash` | `textHash` / `htmlHash` / `rtfHash` / `filesHash`（`clipboard_windows.go`） | 采集去重、**回声抑制** |
+| `entries.hash` | `contentHash`（`entry.go`） | 同步配对、内容级去重 |
+
+写回剪贴板要丢掉"自己刚写出去的回声"，必须用 `entryEchoHash(entry)`（它按上面
+第一套口径重算）；直接拿 `entry.Hash` 去比永远不相等，于是手写备忘复制回剪贴板
+会多出一条"来源 clipnest"的采集条目。`SaveCapture` 另有一层内容口径去重兜底。
 
 **不自动清理**：没有最大条数、没有保留天数，条目只在用户手动删除/归档时消失
 （2.1.0 的产品决定）。`Entry.ExpiresAt` 保留只为兼容旧数据与对端同步包。
@@ -140,7 +173,7 @@ meta           键值对（设备 id、一次性标记）
 
 ```powershell
 go build -o bin\clipnest-dev.exe .        # 后端 + 内嵌前端产物
-go test ./internal/...                    # 存储/查询/同步/展开引擎
+go test ./internal/...                    # 存储/查询/同步/展开引擎/隐写模式
 cd frontend; npx tsc --noEmit; npx vite build --mode production
 pwsh -File scripts\visual-check\check-css.ps1   # 样式回归截图（改 CSS 后跑）
 ```

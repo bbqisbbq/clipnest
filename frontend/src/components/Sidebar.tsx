@@ -59,6 +59,9 @@ function renderNavIcon(name: string, size: number) {
 
 export default function Sidebar(props: Props) {
   const { view } = props;
+  // 日历的圆点跟着当前筛选器走，所以要把它的查询传下去
+  const activeQuery =
+    props.filterProps.filters.find((f) => f.id === props.filterProps.activeFilterId)?.query ?? ({} as EntryFilter["query"]);
 
   return (
     <aside className="side">
@@ -101,6 +104,7 @@ export default function Sidebar(props: Props) {
         <Calendar
           selectedDay={props.filterProps.selectedDay}
           onPickDay={props.filterProps.onPickDay}
+          query={activeQuery}
         />
 
       </div>

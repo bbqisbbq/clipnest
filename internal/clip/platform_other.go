@@ -35,10 +35,15 @@ func OpenExternal(string) error                        { return ErrNotSupported 
 func revealInExplorer(string) error                    { return ErrNotSupported }
 func clipboardOwnerApp() string                        { return "" }
 
+// entryEchoHash is Win32-only (it mirrors the clipboard capture hashes).
+func entryEchoHash(Entry) string { return "" }
+
 // Picker plumbing is Win32 only.
 func ForegroundWindowHandle() uintptr           { return 0 }
 func CaretAnchor() (int, int)                   { return 0, 0 }
 func ClampToWorkArea(x, y, w, h int) (int, int) { return x, y }
+func WorkAreaBottomRight(w, h int) (int, int)   { return 0, 0 }
+func MakeNonActivating(uintptr)                 {}
 func ActivateWindow(uintptr)                    {}
 func SendPaste() error                          { return ErrNotSupported }
 func PasteInto(uintptr) error                   { return ErrNotSupported }

@@ -9,6 +9,11 @@ import type {} from "../github.com/wailsapp/wails/v3/internal/eventdata.js";
 import "../github.com/wailsapp/wails/v3/internal/eventcreate.js";
 
 /**
+ * Name of the custom event "capture:opened".
+ */
+export const CaptureOpened = "capture:opened";
+
+/**
  * Name of the custom event "clip:bumped".
  */
 export const ClipBumped = "clip:bumped";
@@ -52,6 +57,21 @@ export const PickerPasteFailed = "picker:paste-failed";
  * Name of the custom event "settings:changed".
  */
 export const SettingsChanged = "settings:changed";
+
+/**
+ * Name of the custom event "stealth:close-request".
+ */
+export const StealthCloseRequest = "stealth:close-request";
+
+/**
+ * Name of the custom event "stealth:closed".
+ */
+export const StealthClosed = "stealth:closed";
+
+/**
+ * Name of the custom event "stealth:opened".
+ */
+export const StealthOpened = "stealth:opened";
 
 /**
  * Name of the custom event "sync:status".

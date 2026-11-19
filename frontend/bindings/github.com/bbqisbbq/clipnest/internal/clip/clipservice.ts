@@ -48,6 +48,14 @@ export function CloseCapture(): $CancellablePromise<void> {
 }
 
 /**
+ * CloseStealth leaves the mode and gives focus back to the window that had it.
+ * A non-empty buffer is saved first: Esc must never lose what you typed.
+ */
+export function CloseStealth(text: string): $CancellablePromise<$models.StealthResult> {
+    return $Call.ByID(1768132338, text);
+}
+
+/**
  * CommandOutput runs a command trigger and returns its output for typing.
  */
 export function CommandOutput(t: expand$0.Trigger): $CancellablePromise<string> {
@@ -150,9 +158,12 @@ export function GetEntries(q: $models.EntryQuery): $CancellablePromise<$models.E
 /**
  * GetEntryCalendar returns per-day counts for a month ("YYYY-MM"), so the
  * calendar can show which days actually have content.
+ * 
+ * q 是当前侧栏筛选器的查询：日历的圆点必须和"点进去能看到什么"用同一套条件，
+ * 否则会在「片段 / 图片 / 置顶」这类筛选下画出点却一条也点不出来。
  */
-export function GetEntryCalendar(month: string): $CancellablePromise<$models.DayCount[] | null> {
-    return $Call.ByID(3982370531, month);
+export function GetEntryCalendar(month: string, q: $models.EntryQuery): $CancellablePromise<$models.DayCount[] | null> {
+    return $Call.ByID(3982370531, month, q);
 }
 
 /**
@@ -488,6 +499,22 @@ export function SetCapture(enabled: boolean): $CancellablePromise<$models.Settin
 }
 
 /**
+ * SetEntryArchived flips the archive flag (same reasoning as SetEntryPinned).
+ */
+export function SetEntryArchived(id: string, archived: boolean): $CancellablePromise<$models.Entry> {
+    return $Call.ByID(1842078483, id, archived);
+}
+
+/**
+ * SetEntryPinned flips the pin flag. The quick-paste list only carries ids, so
+ * patching a flag must not require the caller to hand back a whole Entry (that
+ * is how tags and triggers get silently reset).
+ */
+export function SetEntryPinned(id: string, pinned: boolean): $CancellablePromise<$models.Entry> {
+    return $Call.ByID(4291272239, id, pinned);
+}
+
+/**
  * SetOwnWindowCheck lets the app tell the engine which windows are ours, so
  * triggers never fire inside ClipNest's own inputs.
  */
@@ -519,6 +546,14 @@ export function ShowPicker(): $CancellablePromise<void> {
 }
 
 /**
+ * ShowStealth activates the mode: capture the target window, drop the invisible
+ * input window at the caret and show the corner HUD.
+ */
+export function ShowStealth(): $CancellablePromise<void> {
+    return $Call.ByID(106630507);
+}
+
+/**
  * ShowWindow brings the manager window back from the tray.
  */
 export function ShowWindow(): $CancellablePromise<void> {
@@ -537,6 +572,36 @@ export function Shutdown(): $CancellablePromise<void> {
  */
 export function Start(): $CancellablePromise<void> {
     return $Call.ByID(2502949559);
+}
+
+/**
+ * StealthCommit writes the buffer to its target entry and reports where it went.
+ * The buffer is the caller's; the frontend clears it on success.
+ */
+export function StealthCommit(text: string): $CancellablePromise<$models.StealthResult> {
+    return $Call.ByID(3686102657, text);
+}
+
+/**
+ * StealthHotkey returns the accelerator that activates the mode ("" = disabled).
+ */
+export function StealthHotkey(): $CancellablePromise<string> {
+    return $Call.ByID(589547702);
+}
+
+/**
+ * StealthProgress is called by the input window on every edit so the HUD can
+ * show how much is buffered and where it will land.
+ */
+export function StealthProgress(text: string): $CancellablePromise<$models.StealthState> {
+    return $Call.ByID(1073317471, text);
+}
+
+/**
+ * StealthState is the HUD's read side.
+ */
+export function StealthState(): $CancellablePromise<$models.StealthState> {
+    return $Call.ByID(412567401);
 }
 
 /**

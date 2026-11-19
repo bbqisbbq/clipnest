@@ -35,6 +35,12 @@ export interface DayCount {
  */
 export interface Entry {
     "id": string;
+
+    /**
+     * Title 是给条目起的名字（现在只有隐写模式在写：`@名称@` 作为落点）。
+     * 普通条目留空，卡片就不多一行标题。
+     */
+    "title"?: string;
     "content": string;
     "kind": Kind;
     "source": Source;
@@ -260,6 +266,25 @@ export interface Settings {
     "captureHotkey": string;
 
     /**
+     * StealthHotkey activates 隐写模式: no visible box, the caret stays where it
+     * was, and what you type lands in a memo only when you hit Ctrl+Enter.
+     * Empty disables it.
+     */
+    "stealthHotkey": string;
+
+    /**
+     * StealthCommit is the key that commits the invisible buffer (Wails
+     * accelerator, "Ctrl+Enter" by default).
+     */
+    "stealthCommit": string;
+
+    /**
+     * StealthNewEntry decides what happens when the buffer has no `@名称@`:
+     * true = every commit creates a new memo, false = append to the last target.
+     */
+    "stealthNewEntry": boolean;
+
+    /**
      * PasteOnPick synthesises Ctrl+V after the picker writes the entry to the
      * clipboard. Turning it off makes the picker copy-only.
      */
@@ -475,6 +500,49 @@ export interface Stats {
     "byKind": { [_ in string]?: number } | null;
     "storageBytes": number;
     "lastCapture": string;
+}
+
+/**
+ * StealthResult is what one commit reports back to the input window.
+ */
+export interface StealthResult {
+    "target": string;
+    "chars": number;
+    "created": boolean;
+    "message": string;
+}
+
+/**
+ * StealthState drives the corner HUD. It is polled, so it stays boring on
+ * purpose: no events, no cross-window plumbing.
+ */
+export interface StealthState {
+    "active": boolean;
+
+    /**
+     * 目标条目名（"" = 每次新建一条）
+     */
+    "target": string;
+
+    /**
+     * 当前缓冲的字数
+     */
+    "chars": number;
+
+    /**
+     * 缓冲里有内容
+     */
+    "pending": boolean;
+
+    /**
+     * 最近一次提交写到了哪个条目
+     */
+    "saved": string;
+
+    /**
+     * 一句提示（错误或结果）
+     */
+    "message": string;
 }
 
 /**
