@@ -106,11 +106,17 @@ func main() {
 	}
 
 	// 快速输入：光标处弹一个小编辑框，Enter 存成备忘。
+	// 尺寸用户可拖（见下面 capture 窗口的注释），所以夹边距时取窗口的**当前**尺寸，
+	// 不能再用常量——否则拖大过的窗口会被按 620×220 夹，右下角跑到屏幕外。
 	showCaptureAt := func(x, y int) bool {
 		if capture == nil {
 			return false
 		}
-		cx, cy := clip.ClampToWorkArea(x, y, clip.CaptureWidth, clip.CaptureHeight)
+		w, h := capture.Size()
+		if w <= 0 || h <= 0 {
+			w, h = clip.CaptureWidth, clip.CaptureHeight
+		}
+		cx, cy := clip.ClampToWorkArea(x, y, w, h)
 		application.InvokeSync(func() {
 			capture.SetPosition(cx, cy)
 			capture.Show()
@@ -118,7 +124,8 @@ func main() {
 				clip.ActivateWindow(hwnd)
 			}
 			capture.Focus()
-			clip.Logf(dataDir, "capture window: pos=(%d,%d) hwnd=%#x", cx, cy, uintptr(capture.NativeWindow()))
+			clip.Logf(dataDir, "capture window: pos=(%d,%d) size=(%dx%d) hwnd=%#x",
+				cx, cy, w, h, uintptr(capture.NativeWindow()))
 		})
 		if app != nil {
 			app.Event.Emit("capture:opened", "")
@@ -137,9 +144,8 @@ func main() {
 			if win != nil {
 				clip.SetWindowChrome(uintptr(win.NativeWindow()), dark, borderHex)
 			}
-			if picker != nil {
-				clip.SetWindowChrome(uintptr(picker.NativeWindow()), dark, borderHex)
-			}
+			// picker 不设原生边框：它是透明窗口上的圆角卡片，DWM 的 1px 边框会沿着
+			// 方形窗口轮廓画一圈，正好落在本来要透明的四个角上。
 			if capture != nil {
 				clip.SetWindowChrome(uintptr(capture.NativeWindow()), dark, borderHex)
 			}
@@ -324,26 +330,52 @@ func main() {
 		Windows: application.WindowsWindow{
 			Theme: application.SystemDefault,
 		},
+		// 弹窗是圆角卡片：窗口本身必须透明，否则四角会露出窗口底色（那四个"小黑点"）。
+		// BackgroundTypeTransparent 在 Windows 上走 DirectComposition（WS_EX_NOREDIRECTIONBITMAP），
+		// 页面背后是真透明，不是黑色。
+		BackgroundType:   application.BackgroundTypeTransparent,
 		BackgroundColour: application.NewRGB(18, 21, 28),
 		URL:              "/?mode=picker",
 	})
 
 	// Quick capture popup: a memo in one keystroke, right where you are typing.
+	//
+	// 无边框，但**要能拖、要能拉**（2.6.x 的「记一笔」是个固定大小的死框，被吐槽过）：
+	//   · 拖动 —— 前端给抬头加 `--wails-draggable: drag`，Wails 运行时据此把
+	//     按下手势交给系统标题栏拖动，不用自己算鼠标位移。
+	//   · 拉伸 —— 这里**不能**设 DisableResize：Wails v3 的运行时靠
+	//     setResizable(true) 才把窗口四周 5px 激活成拉伸热区
+	//     （Windows 上无边框窗没有原生边框，WM_NCCALCSIZE 把边吃掉了，
+	//     所以「OS 自己会给」这个假设不成立）。
+	//   · 尺寸 —— 记住上次拖到多大（本机 meta，不同步），位置仍在光标处弹出。
+	captureW, captureH := svc.CaptureSize()
 	capture = app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:            "capture",
 		Title:           "记一笔",
-		Width:           clip.CaptureWidth,
-		Height:          clip.CaptureHeight,
+		Width:           captureW,
+		Height:          captureH,
+		MinWidth:        clip.CaptureMinWidth,
+		MinHeight:       clip.CaptureMinHeight,
 		Frameless:       true,
 		AlwaysOnTop:     true,
 		Hidden:          true,
-		DisableResize:   true,
 		HideOnFocusLost: true,
 		Windows: application.WindowsWindow{
 			Theme: application.SystemDefault,
 		},
 		BackgroundColour: application.NewRGB(14, 16, 21),
 		URL:              "/?mode=capture",
+	})
+	// 拉伸结束时把尺寸记下来。用窗口事件而不是前端 resize 回调：窗口被系统拖动
+	// 拉伸时前端虽然也会发 resize，但只在用户松手后才值得写一次库。
+	// 隐藏中的窗口不算：那时读到的是个还没排好版的小矩形，记下来会顶掉默认尺寸。
+	capture.RegisterHook(events.Windows.WindowEndResize, func(_ *application.WindowEvent) {
+		if !capture.IsVisible() {
+			return
+		}
+		if w, h := capture.Size(); w > 0 && h > 0 {
+			svc.SaveCaptureSize(w, h)
+		}
 	})
 
 	applyHotkey(preSettings.Hotkey)

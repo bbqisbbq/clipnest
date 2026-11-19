@@ -86,12 +86,6 @@
   background: transparent;
 }
 
-/* Vditor 自带的工具栏内边距是 10px 5px：纵向够、横向贴着输入框描边（圆角 14px
-   之后更明显）。左右各补到 12px，图标不再顶到边框（2026-11-19）。 */
-.md-surface .vditor-toolbar {
-  padding-left: 12px;
-  padding-right: 12px;
-}
 .vditor-toolbar__item .vditor-tooltipped {
   border-radius: var(--r-sm);
 }
@@ -137,10 +131,15 @@
      这样正文与工具栏在一条竖线上，不会一个 31px 一个 68px 地错开。 */
   padding: 10px 6px 10px 5px !important;
 }
+.md-surface {
+  /* 工具栏与正文共用的左内缩：改这一处，图标和文字不会错开。
+     IR 模式会给工具栏塞 35px 的内联 padding-left（给块标记留的空），
+     所以要靠 !important 压掉内联值，再由这个变量决定实际留白。 */
+  --toolbar-inset: 5px;
+}
 .md-surface-host .vditor-toolbar {
-  /* IR 模式会给工具栏塞一个内联的 padding-left（35px，给块标记留的空），
-     内联样式只能靠 !important 压掉，否则正文和工具栏会错开 30px。 */
-  padding-left: 0 !important;
+  padding-left: var(--toolbar-inset) !important;
+  padding-right: var(--toolbar-inset);
 }
 .md-surface-host .vditor-ir pre.vditor-reset {
   overflow-y: auto;
@@ -175,9 +174,11 @@
    高度只能靠 --toolbar-height + 对应的内边距一起改（见上面的说明）。 */
 .md-surface--composer {
   --toolbar-height: 26px;
+  /* 输入区左右各留 7px（图标自身还有 3px），正文同样缩进 10px，两边对齐 */
+  --toolbar-inset: 7px;
 }
 .md-surface--composer .vditor-toolbar {
-  padding: 0 2px;
+  padding: 2px 7px;
 }
 .md-surface--composer .vditor-toolbar__item .vditor-tooltipped {
   padding: 5px 3px;
@@ -190,7 +191,7 @@
 }
 .md-surface--composer .vditor-reset {
   font-size: 13.5px;
-  padding: 2px 2px !important;
+  padding: 4px 12px !important;
 }
 .md-surface--composer .vditor {
   background: transparent;
