@@ -30,6 +30,8 @@ import "./styles/editor.css";
 import "vditor/dist/index.css";
 import "./styles/vditor-theme.css";
 import "./styles/detail.css";
+import "./styles/todo.css";
+import "./styles/filter.css";
 import "./styles/stealth.css";
 import "./theme-light.css";
 import { applyTheme } from "./lib/themes";

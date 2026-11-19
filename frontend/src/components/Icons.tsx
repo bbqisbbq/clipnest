@@ -235,3 +235,12 @@ export const IconMemo = ({ size = 16, className }: IconProps) => (
     <path d="M5.2 8h5.6M5.2 10.6h3.8" />
   </svg>
 );
+/** 待办：带勾的方框（侧栏「待办」入口用） */
+export const IconTodo = (p: IconProps) =>
+  svg(
+    <>
+      <rect x="3.5" y="3.5" width="17" height="17" rx="3.5" />
+      <path d="M8 12.4l2.7 2.7L16.2 9.6" />
+    </>,
+    p,
+  );

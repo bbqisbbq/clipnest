@@ -87,6 +87,17 @@ export interface Entry {
      * 生命周期：nil = 永久。现在所有条目都不自动过期（以保留为主）。
      */
     "expiresAt"?: string | null;
+
+    /**
+     * 待办（从正文的 - [ ] 派生，见 todo.go）：
+     *   TodoState 落库（'' / open / done），收集页与筛选器按它过滤；
+     *   TodoTotal / TodoOpen 只在内存里算，给卡片上的「2/5」用。
+     * 派生数据不跨端传：mergeEntry 拿到远端条目后会本端重算。
+     */
+    "todoState"?: string;
+    "todoDoneAt"?: string | null;
+    "todoTotal"?: number;
+    "todoOpen"?: number;
     "createdAt": string;
     "updatedAt": string;
 }
@@ -102,9 +113,15 @@ export interface EntryFilter {
     "sortOrder": number;
 
     /**
-     * 内置的不许删，只能改名换图标
+     * 代码内置：不许改成另一套规则
      */
     "builtin": boolean;
+
+    /**
+     * Deletable 允许从侧栏移除（内置里只有「置顶」可以：它完全能用自定义规则重现）。
+     * 「全部内容」等其余内置项不可删 —— 它们是系统能稳定识别的维度，也是删光后的落地视图。
+     */
+    "deletable": boolean;
 }
 
 /**
@@ -134,6 +151,11 @@ export interface EntryQuery {
     "archived": boolean;
 
     /**
+     * Todo 按派生列过滤：open（有未完成项）/ done（全完成）/ none（没有任务行）
+     */
+    "todo": string;
+
+    /**
      * YYYY-MM-DD：日历点某天
      */
     "day": string;
@@ -158,6 +180,12 @@ export interface EntryQuery {
      * true = 取最新 N 条
      */
     "tail": boolean;
+
+    /**
+     * Rule 是自定义筛选器的规则树（and/or/not）。与上面的扁平字段是 AND 关系，
+     * 所以内置筛选器保持简单、老数据（没有 rule）行为完全不变。
+     */
+    "rule"?: FilterGroup | null;
 }
 
 /**
@@ -171,6 +199,12 @@ export interface EntryStats {
     "pinned": number;
     "archived": number;
     "today": number;
+
+    /**
+     * 待办按「清单项」计数（不是条目数）：侧栏角标要显示"还有几件事没做"
+     */
+    "todoOpen": number;
+    "todoDone": number;
 }
 
 /**
@@ -183,6 +217,49 @@ export interface FileRef {
     "size": number;
     "isDir": boolean;
     "exists": boolean;
+}
+
+/**
+ * FilterCondition 是叶子条件。
+ */
+export interface FilterCondition {
+    "field": string;
+    "op": string;
+
+    /**
+     * 多值用换行分隔
+     */
+    "value": string;
+}
+
+/**
+ * FilterFieldSpec 是给前端渲染下拉框用的字段表：字段名、中文标签、可用算子。
+ * 放在后端是为了"字段白名单只有一份"，UI 不会和编译期悄悄分叉。
+ */
+export interface FilterFieldSpec {
+    "field": string;
+    "label": string;
+    "ops": string[] | null;
+}
+
+/**
+ * FilterGroup 是一组条件的组合方式。
+ */
+export interface FilterGroup {
+    /**
+     * and | or | not
+     */
+    "op": string;
+
+    /**
+     * 叶子
+     */
+    "conditions"?: FilterCondition[] | null;
+
+    /**
+     * 子组
+     */
+    "groups"?: FilterGroup[] | null;
 }
 
 /**
@@ -621,6 +698,40 @@ export interface SyncStatus {
     "devices": number;
     "lastBytes": number;
     "deviceId": string;
+}
+
+/**
+ * TodoItem is one task line inside an entry's content.
+ */
+export interface TodoItem {
+    /**
+     * Key 在「文本不变」时稳定：勾选只改 [ ]/[x]，不动文本，所以能拿它定位。
+     */
+    "key": string;
+    "text": string;
+    "done": boolean;
+
+    /**
+     * 0-based 行号：改正文时按行改，比按 key 搜更准
+     */
+    "line": number;
+
+    /**
+     * 缩进层级（每 2 空格一层，最多 3 层）
+     */
+    "indent": number;
+}
+
+/**
+ * TodoRef is one row of the todo collection page: a task plus where it lives.
+ */
+export interface TodoRef {
+    "entryId": string;
+    "entryTitle"?: string;
+    "entryPreview": string;
+    "entrySource": Source;
+    "entryCreatedAt": string;
+    "item": TodoItem;
 }
 
 /**

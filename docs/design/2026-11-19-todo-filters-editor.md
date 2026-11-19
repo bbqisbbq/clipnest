@@ -1,6 +1,7 @@
 # 设计：Todo 收集 / 筛选器重构 / 编辑框重构
 
-> 状态：待评审（2026-11-19）。三块可独立验收，批 1 → 批 2 → 批 3。
+> 状态：**批 1 / 批 2 / 批 3 均已实施**（2026-11-19），真机探针跑过端到端检查，见文末「实施记录」。
+> 三块可独立验收，批 1 → 批 2 → 批 3。
 > 已拍板：**todo 按清单项（解析正文 `- [ ]`）**、**编辑器只保留一个：Vditor IR（全量拷贝 dist），
 > 按场景精简界面，CodeMirror 移除**、**「全部内容」保留为不可删的根、「置顶」改为可删**、
 > **完成状态以字段属性为主、tag 作为默认关闭的设置项**、**先出文档再写代码**。
@@ -502,3 +503,49 @@ pwsh -File scripts\visual-check\check-css.ps1     # 批 3 必跑
 - 筛选器拖拽排序、筛选器导出导入
 - 规则表达式字符串（类 TiddlyWiki 语法）：结构化规则树已经够用，且不用写解析器
 - 编辑器内的 tag 自动补全、链接预览、协同
+
+---
+
+## 七、实施记录（2026-11-19）
+
+### 批 1 · Todo（已实施）
+
+- 后端：`internal/clip/todo.go`（解析 / 派生 / 勾选 / 收集页数据）+ `todo_test.go`（10 个用例）。
+- `entries` 新增派生列 `todo_state` / `todo_done_at`，`ensureColumn` 迁移；
+  `SaveEntry` 与 `mergeEntry` 都重算（远端派生列不采信）。
+- `EntryQuery.Todo`（open / done / none）走 `where()`，所以列表、日历圆点、统计同口径。
+- 前端：`TodoView` + 侧栏「待办」入口（未完成角标）+ 卡片上的 `2/5 待办` 徽标。
+
+真机探针（独立 APPDATA、真实 WebView2）实测：
+
+```
+seeded
+todos_rows=5 open=4              ← 5 条任务行，其中 1 条本来就 [x]
+stats_todoOpen=4                 ← 按清单项计数，不是按条目
+after_toggle: has_x=true state=open open=1 tags=生活
+                                 ← 勾选后正文出现 [x]，状态/计数重算，tags 没被重置
+```
+
+### 批 2 · 筛选器（已实施）
+
+- 后端：`entry_filter_rule.go`（规则树 → SQL、字段白名单、`validateRule`、`FilterFields()`）；
+  `EntryFilter.Deletable`（内置只有「置顶」可删）、隐藏状态存 meta `filters.hidden`、
+  `RestoreFilters` 恢复默认、`CountEntriesWith` 命中数。
+- 前端：`FilterDialog`（主题化模态，替代 `window.prompt`）+ `FilterRuleEditor`（组 + 条件行，一层嵌套）+
+  侧栏 `⋯` 菜单（编辑 / 复制为新筛选器 / 删除）+「＋ 新建筛选器」+ 实时「命中 N 条」。
+- 规则字段：tag / todo / source / kind / action / text / ageDays / day / pinned / archived，
+  算子 is / isNot / anyOf / has / hasNot / contains / notContains / newerThan / olderThan。
+
+真机探针实测：
+
+```
+rule_count=1                                  ← 「标签=工作 且 待办=未完成」命中 1 条，与列表一致
+deletePinned=true deleteAll=false             ← 置顶可删、全部内容不许删
+restored=all,mine,clipboard,snippets,images,pinned,archived
+```
+
+### 仍未做（明确不在这一轮）
+
+- 筛选器拖拽排序、导出导入、表达式语法。
+- 待办到期/提醒/子任务树。
+- 筛选器「恢复默认」目前只有服务端 API，还没挂到设置页按钮（侧栏删掉「置顶」后可用 `RestoreFilters` 找回）。

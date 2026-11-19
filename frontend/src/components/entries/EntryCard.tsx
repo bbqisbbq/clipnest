@@ -137,6 +137,11 @@ export default function EntryCard(props: EntryCardProps) {
 
       <footer className="memo-meta">
         <span>{timeLabel(e.createdAt)}</span>
+        {e.todoOpen ? (
+          <span className="entry-todo" title="还有未完成的任务行">
+            {e.todoTotal ? `${(e.todoTotal ?? 0) - (e.todoOpen ?? 0)}/${e.todoTotal}` : ""} 待办
+          </span>
+        ) : null}
         {(e.actions ?? []).map((a) => (
           <span key={a} className="entry-autotag">
             {ACTION_LABEL[a] ?? a}

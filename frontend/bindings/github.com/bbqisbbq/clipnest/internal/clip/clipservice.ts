@@ -70,6 +70,13 @@ export function CopyEntry(id: string): $CancellablePromise<void> {
 }
 
 /**
+ * CountEntriesWith reports how many entries match q — 筛选器弹窗的实时预览。
+ */
+export function CountEntriesWith(q: $models.EntryQuery): $CancellablePromise<number> {
+    return $Call.ByID(4162576268, q);
+}
+
+/**
  * DeleteAll removes every non-pinned entry and reports how many went away.
  */
 export function DeleteAll(): $CancellablePromise<number> {
@@ -84,7 +91,9 @@ export function DeleteEntry(id: string): $CancellablePromise<boolean> {
 }
 
 /**
- * DeleteFilter removes a user filter. Builtins fall back to their defaults.
+ * DeleteFilter removes a user filter, or hides a deletable builtin one.
+ * Builtins fall back to their defaults only when they are not deletable (they
+ * simply can't be removed).
  */
 export function DeleteFilter(id: string): $CancellablePromise<boolean> {
     return $Call.ByID(3724380380, id);
@@ -156,6 +165,14 @@ export function GetEntries(q: $models.EntryQuery): $CancellablePromise<$models.E
 }
 
 /**
+ * GetEntry returns one entry by id. The 待办收集页 needs it to jump from a task
+ * row to the entry that owns it (that row only carries a summary).
+ */
+export function GetEntry(id: string): $CancellablePromise<$models.Entry> {
+    return $Call.ByID(713316985, id);
+}
+
+/**
  * GetEntryCalendar returns per-day counts for a month ("YYYY-MM"), so the
  * calendar can show which days actually have content.
  * 
@@ -181,7 +198,16 @@ export function GetEntryTags(): $CancellablePromise<string[] | null> {
 }
 
 /**
+ * GetFilterFields tells the frontend which fields/operators the rule engine
+ * accepts. 只此一份白名单，UI 不自己硬编码。
+ */
+export function GetFilterFields(): $CancellablePromise<$models.FilterFieldSpec[] | null> {
+    return $Call.ByID(804798064);
+}
+
+/**
  * GetFilters returns builtins (with user overrides applied) plus user filters.
+ * Builtins the user removed (只有「置顶」能删) are filtered out via meta.
  */
 export function GetFilters(): $CancellablePromise<$models.EntryFilter[] | null> {
     return $Call.ByID(3084070574);
@@ -250,6 +276,14 @@ export function GetSyncPanel(): $CancellablePromise<$models.SyncPanel> {
  */
 export function GetSyncStatus(): $CancellablePromise<$models.SyncStatus> {
     return $Call.ByID(553940266);
+}
+
+/**
+ * GetTodos expands every entry matching q into individual task rows, for the
+ * 待办 collection page (未完成在前)。
+ */
+export function GetTodos(q: $models.EntryQuery): $CancellablePromise<$models.TodoRef[] | null> {
+    return $Call.ByID(808630980, q);
 }
 
 /**
@@ -437,6 +471,13 @@ export function Render(t: expand$0.Trigger): $CancellablePromise<[string, number
 }
 
 /**
+ * RestoreFilters brings back every builtin the user removed.
+ */
+export function RestoreFilters(): $CancellablePromise<boolean> {
+    return $Call.ByID(844173800);
+}
+
+/**
  * SaveEntry creates or updates an entry. Empty content is allowed when only
  * flags change — the stored content is reused.
  */
@@ -520,6 +561,14 @@ export function SetEntryPinned(id: string, pinned: boolean): $CancellablePromise
  */
 export function SetOwnWindowCheck(fn: any): $CancellablePromise<void> {
     return $Call.ByID(2318530103, fn);
+}
+
+/**
+ * SetTodoDone flips one task line inside an entry. The entry is re-read and
+ * saved back whole, so tags / trigger / hash are never reset by a checkbox click.
+ */
+export function SetTodoDone(entryID: string, key: string, done: boolean): $CancellablePromise<$models.Entry> {
+    return $Call.ByID(452964711, entryID, key, done);
 }
 
 /**

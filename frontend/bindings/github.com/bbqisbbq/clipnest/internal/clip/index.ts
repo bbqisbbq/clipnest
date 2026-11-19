@@ -20,6 +20,9 @@ export type {
     EntryQuery,
     EntryStats,
     FileRef,
+    FilterCondition,
+    FilterFieldSpec,
+    FilterGroup,
     Settings,
     Snippet,
     Stats,
@@ -29,5 +32,7 @@ export type {
     SyncDeviceInfo,
     SyncPanel,
     SyncStatus,
+    TodoItem,
+    TodoRef,
     UpdateInfo
 } from "./models.js";

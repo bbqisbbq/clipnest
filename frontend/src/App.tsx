@@ -7,6 +7,8 @@ import TitleBar from "./components/TitleBar";
 import Sidebar from "./components/Sidebar";
 import EntriesView from "./components/EntriesView";
 import EntryDetailView from "./components/EntryDetailView";
+import TodoView from "./components/TodoView";
+import FilterDialog from "./components/FilterDialog";
 import SettingsView from "./components/SettingsView";
 
 // App 只做三件事：装全局状态（hooks 里）、切换视图、转发通知。
@@ -15,8 +17,19 @@ import SettingsView from "./components/SettingsView";
 // 三个视图里 detail 不是"另一个页面"：它盖在 entries 上面（EntriesView 保持挂载），
 // 这样返回时列表的滚动位置、展开状态都还在。
 
-type View = "entries" | "detail" | "settings";
+type View = "entries" | "detail" | "todo" | "settings";
 type Confirm = { message: string; action: () => void } | null;
+type Dialog = { filter: EntryFilter; isNew: boolean } | null;
+
+const BLANK_FILTER: EntryFilter = {
+  id: "",
+  name: "新筛选器",
+  icon: "memo",
+  query: {} as EntryFilter["query"],
+  sortOrder: 0,
+  builtin: false,
+  deletable: true,
+} as EntryFilter;
 
 const DEFAULT_FILTER: EntryFilter = {
   id: "all",
@@ -25,6 +38,7 @@ const DEFAULT_FILTER: EntryFilter = {
   query: {} as EntryFilter["query"],
   sortOrder: 0,
   builtin: true,
+  deletable: false,
 };
 
 function todayKey(): string {
@@ -41,11 +55,14 @@ export default function App() {
 
   const [view, setView] = useState<View>("entries");
   const [detailEntry, setDetailEntry] = useState<Entry | null>(null);
+  // 详情是从哪儿点开的：决定"返回"回到列表还是回到待办
+  const [detailFrom, setDetailFrom] = useState<"entries" | "todo">("entries");
   const detailDirty = useRef(false);
   const [activeFilterId, setActiveFilterId] = useState("all");
   const [selectedDay, setSelectedDay] = useState(todayKey);
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [confirm, setConfirm] = useState<Confirm>(null);
+  const [dialog, setDialog] = useState<Dialog>(null);
 
   const activeFilter = filters.find((f) => f.id === activeFilterId) ?? filters[0] ?? DEFAULT_FILTER;
   const capturing = settings?.capture ?? true;
@@ -74,19 +91,46 @@ export default function App() {
     });
   }, [data, notify]);
 
-  const editFilter = useCallback(
+  // 筛选器编辑：主题化模态（原来是 window.prompt —— 系统原生弹窗，和主题完全不搭）
+  const editFilter = useCallback((f: EntryFilter) => {
+    setDialog({ filter: f, isNew: false });
+  }, []);
+
+  const duplicateFilter = useCallback((f: EntryFilter) => {
+    setDialog({
+      filter: {
+        ...f,
+        id: "",
+        name: `${f.name} 副本`,
+        builtin: false,
+        deletable: true,
+        query: { ...(f.query ?? {}) } as EntryFilter["query"],
+      },
+      isNew: true,
+    });
+  }, []);
+
+  const deleteFilter = useCallback(
     (f: EntryFilter) => {
-      const name = window.prompt("筛选器名称：", f.name);
-      if (name === null) return;
-      const icon = window.prompt(
-        "图标（all/pin/snippet/memo/star/folder/files/image/text/link/search）：",
-        f.icon || "memo",
-      );
-      void ClipService.SaveFilter({ ...f, name: name.trim() || f.name, icon: (icon || f.icon).trim() })
-        .then(() => void data.refreshMeta())
-        .catch((err) => notify(`保存筛选器失败：${String(err)}`));
+      setConfirm({
+        message: `删除筛选器「${f.name}」？条目本身不受影响。`,
+        action: async () => {
+          try {
+            const ok = await ClipService.DeleteFilter(f.id);
+            if (!ok) {
+              notify("这个筛选器不能删除");
+              return;
+            }
+            await data.refreshMeta();
+            if (activeFilterId === f.id) setActiveFilterId("all");
+            notify(`已删除筛选器「${f.name}」`);
+          } catch (err) {
+            notify(`删除失败：${String(err)}`);
+          }
+        },
+      });
     },
-    [data, notify],
+    [activeFilterId, data, notify],
   );
 
   const runSync = useCallback(async () => {
@@ -128,13 +172,20 @@ export default function App() {
     finish();
   }, [view]);
 
+  // 打开详情：记住是从列表还是从待办进来的，返回时回到原地
+  const openDetail = useCallback((entry: Entry, from: "entries" | "todo") => {
+    setDetailEntry(entry);
+    setDetailFrom(from);
+    setView("detail");
+  }, []);
+
   return (
     <div className="app is-entries">
       <TitleBar capturing={capturing} enabled={capturing} onToggleCapture={() => void toggleCapture()} />
 
       <div className="workspace">
         <Sidebar
-          view={view === "settings" ? "settings" : "entries"}
+          view={view === "settings" ? "settings" : view === "todo" ? "todo" : "entries"}
           capturing={capturing}
           syncActive={settings?.syncEnabled ?? false}
           filterProps={{
@@ -152,6 +203,13 @@ export default function App() {
             },
             onEditFilter: editFilter,
             entryStats,
+          }}
+          onNewFilter={() => setDialog({ filter: BLANK_FILTER, isNew: true })}
+          onDuplicateFilter={duplicateFilter}
+          onDeleteFilter={deleteFilter}
+          onOpenTodos={() => {
+            if (view === "todo") return;
+            leaveDetail(() => setView("todo"));
           }}
           onOpenSettings={() => {
             if (view === "detail" && detailDirty.current) {
@@ -173,27 +231,33 @@ export default function App() {
 
         <div className="main-pane">
           {/* 详情是"盖在上面"而不是替换：EntriesView 常驻，返回时列表位置还在 */}
-          {view !== "settings" ? (
+          {view === "entries" || (view === "detail" && detailFrom === "entries") ? (
             <EntriesView
               filter={activeFilter}
               day={selectedDay}
               onNotify={notify}
               onChanged={() => void data.refreshMeta()}
-              onOpenDetail={(e) => {
-                setDetailEntry(e);
-                setView("detail");
-              }}
+              onOpenDetail={(e) => openDetail(e, "entries")}
+            />
+          ) : null}
+
+          {view === "todo" ? (
+            <TodoView
+              onNotify={notify}
+              onChanged={() => void data.refreshMeta()}
+              onOpenEntry={(e) => openDetail(e, "todo")}
+              onGoEntries={() => setView("entries")}
             />
           ) : null}
 
           {view === "detail" && detailEntry ? (
             <EntryDetailView
               entry={detailEntry}
-              backLabel={activeFilter.name}
+              backLabel={detailFrom === "todo" ? "待办" : activeFilter.name}
               onBack={() => {
                 detailDirty.current = false;
                 setDetailEntry(null);
-                setView("entries");
+                setView(detailFrom);
               }}
               onDirtyChange={(d) => {
                 detailDirty.current = d;
@@ -205,7 +269,7 @@ export default function App() {
               onDeleted={() => {
                 detailDirty.current = false;
                 setDetailEntry(null);
-                setView("entries");
+                setView(detailFrom);
                 void data.refreshMeta();
               }}
               onNotify={notify}
@@ -234,6 +298,32 @@ export default function App() {
       </div>
 
       {toast ? <div className="toast">{toast}</div> : null}
+
+      {dialog ? (
+        <FilterDialog
+          filter={dialog.filter}
+          isNew={dialog.isNew}
+          onClose={() => setDialog(null)}
+          onNotify={notify}
+          onSaved={(saved) => {
+            setDialog(null);
+            void data.refreshMeta().then(() => {
+              // 新筛选器建好就直接选它，省一次点击
+              if (dialog.isNew && saved?.id) {
+                setActiveFilterId(saved.id);
+                setSelectedDay("");
+                setView("entries");
+              }
+            });
+            notify(dialog.isNew ? `已创建筛选器「${saved?.name ?? ""}」` : "筛选器已保存");
+          }}
+          onDeleted={(id) => {
+            setDialog(null);
+            if (activeFilterId === id) setActiveFilterId("all");
+            void data.refreshMeta();
+          }}
+        />
+      ) : null}
 
       {confirm ? (
         <div className="modal-backdrop" onClick={() => setConfirm(null)}>

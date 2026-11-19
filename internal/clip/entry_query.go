@@ -22,12 +22,17 @@ type EntryQuery struct {
 	Snippets bool   `json:"snippets"` // 只看有缩写的
 	Pinned   bool   `json:"pinned"`
 	Archived bool   `json:"archived"`
+	// Todo 按派生列过滤：open（有未完成项）/ done（全完成）/ none（没有任务行）
+	Todo string `json:"todo"`
 	Day      string `json:"day"`  // YYYY-MM-DD：日历点某天
 	From     string `json:"from"` // RFC3339（含）
 	To       string `json:"to"`   // RFC3339（不含）
 	Limit    int    `json:"limit"`
 	Before   string `json:"before"` // 游标：created_at < 此值
 	Tail     bool   `json:"tail"`   // true = 取最新 N 条
+	// Rule 是自定义筛选器的规则树（and/or/not）。与上面的扁平字段是 AND 关系，
+	// 所以内置筛选器保持简单、老数据（没有 rule）行为完全不变。
+	Rule *FilterGroup `json:"rule,omitempty"`
 }
 
 // ListEntries applies the query. Ordered chronologically (chat style).
@@ -70,8 +75,21 @@ func (s *Store) ListEntries(q EntryQuery) []Entry {
 // where compiles the query into SQL predicates. Both the list and the calendar
 // use it, so a heat dot can never disagree with what clicking that day shows.
 func (q EntryQuery) where() ([]string, []any) {
-	where := []string{"archived = ?"}
-	args := []any{boolInt(q.Archived)}
+	where := make([]string, 0, 8)
+	var args []any
+
+	// 规则里显式提到 archived 时，让规则说了算（否则 "archived is true" 永远查不到东西）
+	archiveByRule := q.Rule != nil && ruleTouches(*q.Rule, "archived")
+	if !archiveByRule {
+		where = append(where, "archived = ?")
+		args = append(args, boolInt(q.Archived))
+	}
+	if q.Rule != nil {
+		if clause, ruleArgs, ok := compileRule(*q.Rule, time.Now()); ok {
+			where = append(where, clause)
+			args = append(args, ruleArgs...)
+		}
+	}
 
 	if v := strings.TrimSpace(q.Source); v != "" {
 		where = append(where, "source = ?")
@@ -91,6 +109,15 @@ func (q EntryQuery) where() ([]string, []any) {
 	}
 	if q.Snippets {
 		where = append(where, "trigger_key <> ''")
+	}
+	if v := strings.TrimSpace(q.Todo); v != "" {
+		// none = 正文里没有任务行；open/done 直接比派生列（内容变化时由 SaveEntry 维护）
+		if v == "none" {
+			where = append(where, "todo_state = ''")
+		} else {
+			where = append(where, "todo_state = ?")
+			args = append(args, v)
+		}
 	}
 	if q.Pinned {
 		where = append(where, "pinned = 1")
@@ -126,7 +153,24 @@ func (q EntryQuery) where() ([]string, []any) {
 			args = append(args, like, like, like)
 		}
 	}
+	// 规则可能一个条件都没剩下（全被丢弃）：给个恒真条件，别拼出空 WHERE
+	if len(where) == 0 {
+		where = append(where, "1 = 1")
+	}
 	return where, args
+}
+
+// CountEntriesMatching counts the entries matching q. 筛选器弹窗用它做"命中 N 条"预览。
+// （不带条件的 CountEntries 在下面，被同步与统计用着，别混。）
+func (s *Store) CountEntriesMatching(q EntryQuery) int {
+	where, args := q.where()
+	var n int
+	if err := s.db.QueryRow(
+		`SELECT COUNT(*) FROM entries WHERE `+strings.Join(where, " AND "), args...).Scan(&n); err != nil {
+		Logf(s.dir, "count entries failed: %v", err)
+		return 0
+	}
+	return n
 }
 
 // CountByDay counts entries per local calendar day in [from, to), using the same
@@ -191,6 +235,9 @@ type EntryStats struct {
 	Pinned    int `json:"pinned"`
 	Archived  int `json:"archived"`
 	Today     int `json:"today"`
+	// 待办按「清单项」计数（不是条目数）：侧栏角标要显示"还有几件事没做"
+	TodoOpen int `json:"todoOpen"`
+	TodoDone int `json:"todoDone"`
 }
 
 // EntryStats counts entries per dimension.
@@ -207,6 +254,21 @@ func (s *Store) EntryStats() EntryStats {
 	q(&st.Archived, `SELECT COUNT(*) FROM entries WHERE archived = 1`)
 	start, end, _ := dayBounds(time.Now().Format("2006-01-02"))
 	q(&st.Today, `SELECT COUNT(*) FROM entries WHERE archived = 0 AND created_at >= ? AND created_at < ?`, start, end)
+
+	// 待办要按清单项数，只能扫正文（有任务行的条目通常极少，代价可接受）
+	rows, err := s.db.Query(`SELECT content FROM entries WHERE archived = 0 AND todo_state <> ''`)
+	if err == nil {
+		for rows.Next() {
+			var content string
+			if rows.Scan(&content) != nil {
+				continue
+			}
+			total, open := todoCounts(ParseTodos("", content))
+			st.TodoOpen += open
+			st.TodoDone += total - open
+		}
+		rows.Close()
+	}
 	return st
 }
 

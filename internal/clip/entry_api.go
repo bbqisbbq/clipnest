@@ -18,7 +18,10 @@ type EntryFilter struct {
 	Icon      string     `json:"icon"`
 	Query     EntryQuery `json:"query"`
 	SortOrder int        `json:"sortOrder"`
-	Builtin   bool       `json:"builtin"` // 内置的不许删，只能改名换图标
+	Builtin   bool       `json:"builtin"` // 代码内置：不许改成另一套规则
+	// Deletable 允许从侧栏移除（内置里只有「置顶」可以：它完全能用自定义规则重现）。
+	// 「全部内容」等其余内置项不可删 —— 它们是系统能稳定识别的维度，也是删光后的落地视图。
+	Deletable bool `json:"deletable"`
 }
 
 // BuiltinFilters are the default entry points. They are code, not rows, so a
@@ -30,7 +33,7 @@ func BuiltinFilters() []EntryFilter {
 		{ID: "clipboard", Name: "剪贴板", Icon: "pin", Builtin: true, Query: EntryQuery{Action: ActionClipboard}},
 		{ID: "snippets", Name: "片段", Icon: "snippet", Builtin: true, Query: EntryQuery{Snippets: true}},
 		{ID: "images", Name: "图片", Icon: "image", Builtin: true, Query: EntryQuery{Kind: string(KindImage)}},
-		{ID: "pinned", Name: "置顶", Icon: "star", Builtin: true, Query: EntryQuery{Pinned: true}},
+		{ID: "pinned", Name: "置顶", Icon: "star", Builtin: true, Deletable: true, Query: EntryQuery{Pinned: true}},
 		{ID: "archived", Name: "已归档", Icon: "folder", Builtin: true, Query: EntryQuery{Archived: true}},
 	}
 }
@@ -40,6 +43,15 @@ func BuiltinFilters() []EntryFilter {
 // GetEntries is the single list call for the whole app.
 func (s *ClipService) GetEntries(q EntryQuery) []Entry {
 	return s.store.ListEntries(q)
+}
+
+// GetEntry returns one entry by id. The 待办收集页 needs it to jump from a task
+// row to the entry that owns it (that row only carries a summary).
+func (s *ClipService) GetEntry(id string) (Entry, error) {
+	if e, ok := s.store.GetEntry(id); ok {
+		return e, nil
+	}
+	return Entry{}, errors.New("条目不存在")
 }
 
 // GetEntryStats reports the counts shown next to each filter.
@@ -127,6 +139,18 @@ func (s *ClipService) PromoteToManual(id string) (Entry, error) {
 	return s.store.SaveEntry(e)
 }
 
+// ---- 待办 API ------------------------------------------------------------
+
+// GetTodos expands every entry matching q into individual task rows, for the
+// 待办 collection page (未完成在前)。
+func (s *ClipService) GetTodos(q EntryQuery) []TodoRef { return s.store.ListTodos(q) }
+
+// SetTodoDone flips one task line inside an entry. The entry is re-read and
+// saved back whole, so tags / trigger / hash are never reset by a checkbox click.
+func (s *ClipService) SetTodoDone(entryID, key string, done bool) (Entry, error) {
+	return s.store.SetTodoDone(entryID, key, done)
+}
+
 // ---- 筛选器 API ----------------------------------------------------------
 
 // filterOverrides holds user edits to builtin filters and user-added filters.
@@ -140,8 +164,16 @@ type filterRow struct {
 }
 
 // GetFilters returns builtins (with user overrides applied) plus user filters.
+// Builtins the user removed (只有「置顶」能删) are filtered out via meta.
 func (s *ClipService) GetFilters() []EntryFilter {
-	builtins := BuiltinFilters()
+	hidden := s.hiddenFilterIDs()
+	builtins := make([]EntryFilter, 0, 8)
+	for _, f := range BuiltinFilters() {
+		if hidden[f.ID] {
+			continue
+		}
+		builtins = append(builtins, f)
+	}
 	byID := map[string]int{}
 	for i, f := range builtins {
 		byID[f.ID] = i
@@ -158,7 +190,7 @@ func (s *ClipService) GetFilters() []EntryFilter {
 			}
 			var q EntryQuery
 			_ = json.Unmarshal([]byte(r.Query), &q)
-			f := EntryFilter{ID: r.ID, Name: r.Name, Icon: r.Icon, Query: q, SortOrder: r.SortOrder}
+			f := EntryFilter{ID: r.ID, Name: r.Name, Icon: r.Icon, Query: q, SortOrder: r.SortOrder, Deletable: true}
 			// 内置 id 的行是"覆盖"，不是新入口
 			if idx, ok := byID[f.ID]; ok {
 				if f.Name != "" {
@@ -168,6 +200,9 @@ func (s *ClipService) GetFilters() []EntryFilter {
 					builtins[idx].Icon = f.Icon
 				}
 				builtins[idx].SortOrder = r.SortOrder
+				continue
+			}
+			if hidden[f.ID] {
 				continue
 			}
 			user = append(user, f)
@@ -194,6 +229,11 @@ func (s *ClipService) SaveFilter(f EntryFilter) (EntryFilter, error) {
 	if f.ID == "" {
 		f.ID = newID()
 	}
+	// 规则里认不出的字段/算子会在编译时被丢弃，但保存时先提示一次，
+	// 免得用户以为规则生效了却查不到东西。
+	if err := validateRule(f.Query.Rule); err != nil {
+		return EntryFilter{}, err
+	}
 	body, err := json.Marshal(f.Query)
 	if err != nil {
 		return EntryFilter{}, err
@@ -206,18 +246,93 @@ func (s *ClipService) SaveFilter(f EntryFilter) (EntryFilter, error) {
 		f.ID, f.Name, f.Icon, string(body), f.SortOrder); err != nil {
 		return EntryFilter{}, err
 	}
+	// 改回来的内置筛选器要重新露出来
+	s.unhideFilter(f.ID)
 	Logf(s.store.Dir(), "filter saved: %s (%s)", f.ID, f.Name)
 	return f, nil
 }
 
-// DeleteFilter removes a user filter. Builtins fall back to their defaults.
+// DeleteFilter removes a user filter, or hides a deletable builtin one.
+// Builtins fall back to their defaults only when they are not deletable (they
+// simply can't be removed).
 func (s *ClipService) DeleteFilter(id string) bool {
+	for _, b := range BuiltinFilters() {
+		if b.ID != id {
+			continue
+		}
+		if !b.Deletable {
+			return false
+		}
+		s.hideFilter(id)
+		_, _ = s.store.db.Exec(`DELETE FROM entry_filters WHERE id = ?`, id)
+		return true
+	}
 	res, err := s.store.db.Exec(`DELETE FROM entry_filters WHERE id = ?`, id)
 	if err != nil {
 		return false
 	}
 	n, _ := res.RowsAffected()
 	return n > 0
+}
+
+// RestoreFilters brings back every builtin the user removed.
+func (s *ClipService) RestoreFilters() bool {
+	_ = s.store.SetMeta(metaHiddenFilters, "[]")
+	return true
+}
+
+// CountEntriesWith reports how many entries match q — 筛选器弹窗的实时预览。
+func (s *ClipService) CountEntriesWith(q EntryQuery) int { return s.store.CountEntriesMatching(q) }
+
+// GetFilterFields tells the frontend which fields/operators the rule engine
+// accepts. 只此一份白名单，UI 不自己硬编码。
+func (s *ClipService) GetFilterFields() []FilterFieldSpec { return FilterFields() }
+
+const metaHiddenFilters = "filters.hidden"
+
+func (s *ClipService) hiddenFilterIDs() map[string]bool {
+	out := map[string]bool{}
+	raw := s.store.Meta(metaHiddenFilters)
+	if raw == "" {
+		return out
+	}
+	var ids []string
+	if err := json.Unmarshal([]byte(raw), &ids); err != nil {
+		return out
+	}
+	for _, id := range ids {
+		out[id] = true
+	}
+	return out
+}
+
+func (s *ClipService) hideFilter(id string) {
+	ids := s.hiddenFilterIDs()
+	ids[id] = true
+	list := make([]string, 0, len(ids))
+	for k := range ids {
+		list = append(list, k)
+	}
+	sort.Strings(list)
+	if body, err := json.Marshal(list); err == nil {
+		_ = s.store.SetMeta(metaHiddenFilters, string(body))
+	}
+}
+
+func (s *ClipService) unhideFilter(id string) {
+	ids := s.hiddenFilterIDs()
+	if !ids[id] {
+		return
+	}
+	delete(ids, id)
+	list := make([]string, 0, len(ids))
+	for k := range ids {
+		list = append(list, k)
+	}
+	sort.Strings(list)
+	if body, err := json.Marshal(list); err == nil {
+		_ = s.store.SetMeta(metaHiddenFilters, string(body))
+	}
 }
 
 // ---- 日历 ----------------------------------------------------------------

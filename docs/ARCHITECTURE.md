@@ -24,6 +24,8 @@ internal/clip/           业务层：条目、捕获、片段、同步、绑定 
 | `entry.go` | `Entry` 类型与派生方法、采集入库、生命周期（`SaveCapture` 等） |
 | `entry_store.go` | entries 表 schema、行映射、`SaveEntry`（含 FTS）、`mergeEntry` |
 | `entry_query.go` | `EntryQuery`、`ListEntries`、日历边界、`EntryStats`、标签/缩写检索 |
+| `entry_filter_rule.go` | 筛选器规则树（and/or/not）→ SQL 编译、字段白名单、`FilterFields()` |
+| `todo.go` | 待办：从正文解析 `- [ ]`、派生 `todo_state`、勾选写回、收集页数据 |
 | `entry_blob.go` | 附件字节：`SaveEntryBlob` / `LoadEntryBlob`（≤512KB 进库，更大的落盘） |
 | `entry_image.go` | 纯函数：解码、缩略、扩展名/MIME 推断（不含存储） |
 
@@ -98,6 +100,8 @@ src/components/
   EntriesView           统一内容视图（搜索、写新条目、卡片操作编排）
   entries/EntryCard     单条卡片：折叠、图片点击、操作按钮
   EntryDetailView       条目详情：占右侧整区（不是浮层），顶部面包屑返回 + 属性面板
+  TodoView              待办收集页：摊平所有条目里的 - [ ] 任务，勾选写回正文
+  FilterDialog          筛选器编辑弹窗（主题化模态）+ FilterRuleEditor 规则编辑器
   MarkdownSurface       全应用唯一编辑器（Vditor IR）的适配层；preset = detail/composer/capture
   SnippetFields         片段的额外编辑项（嵌在详情的属性面板里）
   HotkeyInput / Lightbox / Picker / Capture
@@ -129,13 +133,18 @@ src/theme-light.css      主题引擎管不到的浅色补丁（--k-* / --shadow
 ## 三、数据模型（唯一真相）
 
 ```
-entries        条目：标题（可选）+ 内容 + 标签 + actions（clipboard / snippet）
+entries        条目：标题（可选）+ 内容 + 标签 + actions（clipboard / snippet）+ 待办派生列
 entry_blobs    附件：内容寻址，≤512KB 进库、更大落盘 memo_files/
 entries_fts    全文索引（trigram，中文子串可搜；标题也进索引）
-entry_filters  用户保存的筛选器
+entry_filters  用户保存的筛选器（含规则树 JSON）
 tombstones     删除墓碑（同步用）
-meta           键值对（设备 id、一次性标记）
+meta           键值对（设备 id、一次性标记、filters.hidden）
 ```
+
+**待办是派生的，不是第二张表**：正文里的 `- [ ]` 就是真源，
+`todo_state`（`''`/`open`/`done`）与 `todo_done_at` 是 `SaveEntry` / `mergeEntry` 里现算的派生列
+（`todo.go` 的 `deriveTodo`）。勾选改的是正文那一个字符，`hash` 不变，所以同步配对不受影响。
+派生列**不跨端传**：`mergeEntry` 一律本端重算，否则版本混跑时旧客户端会把状态抹掉。
 
 `entries.title` 只有隐写模式在写（作为 `@名称@` 的落点）；空标题的条目在卡片上不多一行。
 表结构是 `CREATE TABLE IF NOT EXISTS`，**新增列必须同时加 `ensureColumn` 迁移**（见 `store.go`），
@@ -148,6 +157,11 @@ meta           键值对（设备 id、一次性标记）
 `EntryQuery.where()`（`entry_query.go`）一处生成，`ListEntries` 与
 `CountByDay`（日历圆点）共用它。加新筛选维度只改 `where()` 一处，两边的口径
 就不会分叉——日历曾经自己写 SQL 数"全库"，于是选了「片段/图片」后画点却点不出东西。
+
+**自定义筛选器的规则树也走同一个入口**：`EntryQuery.Rule` 由 `entry_filter_rule.go`
+编译成 SQL 片段再拼进 `where()`。字段/算子有白名单（`FilterFields()` 是给 UI 的唯一一份），
+不认识的会被丢弃并记一行日志——宁可少一个条件，也不要整页查不出来。
+规则里显式提到 `archived` 时，代码里那个"默认只看未归档"会让位（否则归档筛选永远查不到东西）。
 
 **哈希有两个口径，别混用**：
 

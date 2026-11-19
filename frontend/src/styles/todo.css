@@ -1,0 +1,173 @@
+/* 待办收集页：一页摊平所有条目里的 - [ ] 任务。
+   视觉上刻意比内容列表更"薄"：没有卡片、没有边框，一行一件事，
+   因为它的用途是"扫一眼还剩什么"，不是阅读。 */
+
+.todo {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  border-left: 1px solid var(--border-soft);
+  overflow: hidden;
+}
+
+.todo-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex: none;
+  padding: 12px 20px 10px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.todo-head h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.todo-hint {
+  flex: 1;
+  min-width: 0;
+  font-size: 11.5px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.todo-hint code,
+.todo-empty code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: var(--accent-tint);
+  color: var(--accent-2);
+}
+.todo-count {
+  flex: none;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+.todo-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 12px 32px;
+}
+
+.todo-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-width: 860px;
+}
+.todo-group--done {
+  margin-top: 14px;
+}
+.todo-group-head {
+  align-self: flex-start;
+  margin: 2px 0 4px 6px;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-3);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.todo-group-head:hover {
+  color: var(--accent);
+  background: var(--accent-tint);
+}
+
+.todo-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 8px;
+  border-radius: var(--r-sm);
+  transition: background 0.1s var(--ease);
+}
+.todo-row:hover {
+  background: var(--surface-2);
+}
+
+.todo-check {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.todo-text {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.todo-text:hover {
+  color: var(--accent);
+}
+
+.todo-row.is-done .todo-text {
+  color: var(--text-3);
+  text-decoration: line-through;
+}
+
+.todo-meta {
+  flex: none;
+  max-width: 40%;
+  font-size: 11px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.todo-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 56px 20px;
+  color: var(--text-3);
+  font-size: 13px;
+  text-align: center;
+}
+.todo-empty-sub {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+/* 卡片上的待办徽标（EntryCard 用） */
+.entry-todo {
+  font-size: 10px;
+  color: var(--accent);
+  background: var(--accent-tint);
+  border-radius: 999px;
+  padding: 0 6px;
+}
+
+/* 侧栏「待办」的未完成角标：用强调色，因为它是一个"要做的事"的数字 */
+.side-todo-count {
+  color: var(--accent);
+  font-style: normal;
+  font-size: 10.5px;
+  background: var(--accent-tint);
+  border-radius: 999px;
+  padding: 0 5px;
+}

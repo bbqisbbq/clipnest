@@ -48,7 +48,10 @@ CREATE TABLE IF NOT EXISTS entries (
 
   expires_at   TEXT NOT NULL DEFAULT '',
   created_at   TEXT NOT NULL,
-  updated_at   TEXT NOT NULL
+  updated_at   TEXT NOT NULL,
+  -- 待办派生列（见 todo.go）：正文里任务行的汇总状态，'' = 没有任务行
+  todo_state    TEXT NOT NULL DEFAULT '',
+  todo_done_at  TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS idx_entries_created ON entries(created_at);
@@ -85,7 +88,10 @@ CREATE TABLE IF NOT EXISTS entry_filters (
 const entryColumns = `id, content, kind, source, title, tags, actions, pinned, archived,
 	hash, seen_count, copy_count, source_app, width, height, html, rtf, format_name, format_id, files,
 	trigger_key, case_sensitive, keep_trigger, apps, exclude_apps, group_name, use_count,
-	expires_at, created_at, updated_at`
+	expires_at, created_at, updated_at, todo_state, todo_done_at`
+
+// entryPlaceholders must stay in sync with entryColumns (INSERT 的 ? 个数)。
+const entryPlaceholders = `?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?`
 
 func scanEntry(sc scannable) (Entry, error) {
 	var (
@@ -99,12 +105,13 @@ func scanEntry(sc scannable) (Entry, error) {
 		apps, excludeApps          string
 		expiresAt                  string
 		createdAt, updatedAt       string
+		todoState, todoDoneAt      string
 	)
 	err := sc.Scan(&e.ID, &e.Content, &kind, &source, &e.Title, &tags, &actionsSpec, &pinned, &archived,
 		&e.Hash, &e.SeenCount, &e.CopyCount, &e.SourceApp, &e.Width, &e.Height,
 		&e.HTML, &e.RTF, &e.FormatName, &formatID, &files,
 		&e.TriggerKey, &caseSensitive, &keepTrigger, &apps, &excludeApps, &e.GroupName, &e.UseCount,
-		&expiresAt, &createdAt, &updatedAt)
+		&expiresAt, &createdAt, &updatedAt, &todoState, &todoDoneAt)
 	if err != nil {
 		return Entry{}, err
 	}
@@ -126,6 +133,13 @@ func scanEntry(sc scannable) (Entry, error) {
 		t := decodeTime(expiresAt)
 		e.ExpiresAt = &t
 	}
+	// 待办：状态读列（写入时维护），计数现算（放内存里，给卡片上的「2/5」）
+	e.TodoState = todoState
+	if todoDoneAt != "" {
+		t := decodeTime(todoDoneAt)
+		e.TodoDoneAt = &t
+	}
+	e.TodoTotal, e.TodoOpen = todoCounts(ParseTodos(e.ID, e.Content))
 	return e, nil
 }
 
@@ -171,10 +185,12 @@ func (s *Store) SaveEntry(in Entry) (Entry, error) {
 	if in.Hash == "" && in.Content != "" {
 		in.Hash = contentHash(in.Content)
 	}
+	// 待办派生列由正文算出（不信任调用方传来的值）
+	deriveTodo(&in, now)
 
 	if _, err := s.db.Exec(`
 		INSERT INTO entries (`+entryColumns+`)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		VALUES (`+entryPlaceholders+`)
 		ON CONFLICT(id) DO UPDATE SET
 			content=excluded.content, kind=excluded.kind, source=excluded.source,
 			title=excluded.title,
@@ -188,7 +204,8 @@ func (s *Store) SaveEntry(in Entry) (Entry, error) {
 			trigger_key=excluded.trigger_key, case_sensitive=excluded.case_sensitive,
 			keep_trigger=excluded.keep_trigger, apps=excluded.apps,
 			exclude_apps=excluded.exclude_apps, group_name=excluded.group_name,
-			expires_at=excluded.expires_at, updated_at=excluded.updated_at`,
+			expires_at=excluded.expires_at, updated_at=excluded.updated_at,
+			todo_state=excluded.todo_state, todo_done_at=excluded.todo_done_at`,
 		in.ID, in.Content, string(in.Kind), string(in.Source), in.Title,
 		TagSpec(in.Tags), actionSpec(in.Actions), boolInt(in.Pinned), boolInt(in.Archived),
 		in.Hash, in.SeenCount, in.CopyCount, in.SourceApp, in.Width, in.Height,
@@ -196,6 +213,7 @@ func (s *Store) SaveEntry(in Entry) (Entry, error) {
 		in.TriggerKey, boolInt(in.CaseSensitive), boolInt(in.KeepTrigger),
 		joinList(in.Apps), joinList(in.ExcludeApps), in.GroupName, in.UseCount,
 		encodeTimePtr(in.ExpiresAt), encodeTime(in.CreatedAt), encodeTime(in.UpdatedAt),
+		in.TodoState, encodeTimePtr(in.TodoDoneAt),
 	); err != nil {
 		return Entry{}, err
 	}
@@ -271,9 +289,12 @@ func (s *Store) mergeEntry(e Entry) error {
 	if e.ID == "" || e.Hash == "" {
 		return errors.New("条目缺少 id/hash")
 	}
+	// 派生列一律本端重算：旧版客户端上传的条目没有 todo_state，
+	// 直接覆盖会让本端待办状态凭空消失（见设计文档 1.4）。
+	deriveTodo(&e, e.UpdatedAt)
 	if _, err := s.db.Exec(`
 		INSERT INTO entries (`+entryColumns+`)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		VALUES (`+entryPlaceholders+`)
 		ON CONFLICT(id) DO UPDATE SET
 			content=excluded.content, kind=excluded.kind, source=excluded.source,
 			title=excluded.title,
@@ -287,7 +308,8 @@ func (s *Store) mergeEntry(e Entry) error {
 			trigger_key=excluded.trigger_key, case_sensitive=excluded.case_sensitive,
 			keep_trigger=excluded.keep_trigger, apps=excluded.apps,
 			exclude_apps=excluded.exclude_apps, group_name=excluded.group_name,
-			expires_at=excluded.expires_at, updated_at=excluded.updated_at`,
+			expires_at=excluded.expires_at, updated_at=excluded.updated_at,
+			todo_state=excluded.todo_state, todo_done_at=excluded.todo_done_at`,
 		e.ID, e.Content, string(e.Kind), string(e.Source), e.Title,
 		TagSpec(e.Tags), actionSpec(e.Actions), boolInt(e.Pinned), boolInt(e.Archived),
 		e.Hash, e.SeenCount, e.CopyCount, e.SourceApp, e.Width, e.Height,
@@ -295,6 +317,7 @@ func (s *Store) mergeEntry(e Entry) error {
 		e.TriggerKey, boolInt(e.CaseSensitive), boolInt(e.KeepTrigger),
 		joinList(e.Apps), joinList(e.ExcludeApps), e.GroupName, e.UseCount,
 		encodeTimePtr(e.ExpiresAt), encodeTime(e.CreatedAt), encodeTime(e.UpdatedAt),
+		e.TodoState, encodeTimePtr(e.TodoDoneAt),
 	); err != nil {
 		return err
 	}
