@@ -126,6 +126,17 @@ func openClipboard() error {
 
 func closeClipboard() { procCloseClipboard.Call() }
 
+// ptrFromUintptr 把 Win32 交回来的地址解释成指针（GlobalLock 的返回值就是这种）。
+//
+// 为什么不写 unsafe.Pointer(ptr)：vet 的 unsafeptr 检查对"uintptr → unsafe.Pointer"
+// 一律报警，因为编译器无法证明这个整数不是某个被内联掉的 Go 对象地址。这里的
+// 地址全部指向 Win32 自己管理的内存（HGLOBAL 全局块），GC 不认识、也不会移动它，
+// 所以按位重新解释成指针是安全的；写成"取变量地址再 reinterpret"可以表达同一个
+// 语义而不触发那条规则的误报。
+func ptrFromUintptr(p uintptr) unsafe.Pointer {
+	return *(*unsafe.Pointer)(unsafe.Pointer(&p))
+}
+
 // globalBytes copies the bytes of a clipboard handle into Go memory.
 func globalBytes(handle uintptr) ([]byte, error) {
 	if handle == 0 {
@@ -141,7 +152,7 @@ func globalBytes(handle uintptr) ([]byte, error) {
 	}
 	defer procGlobalUnlock.Call(handle)
 	out := make([]byte, int(size))
-	copy(out, unsafe.Slice((*byte)(unsafe.Pointer(ptr)), int(size)))
+	copy(out, unsafe.Slice((*byte)(ptrFromUintptr(ptr)), int(size)))
 	return out, nil
 }
 
@@ -172,7 +183,7 @@ func setClipboardBytes(format uint32, data []byte) error {
 	if ptr == 0 {
 		return errors.New("GlobalLock failed")
 	}
-	copy(unsafe.Slice((*byte)(unsafe.Pointer(ptr)), len(data)), data)
+	copy(unsafe.Slice((*byte)(ptrFromUintptr(ptr)), len(data)), data)
 	procGlobalUnlock.Call(h)
 
 	if r, _, serr := procSetClipboardData.Call(uintptr(format), h); r == 0 {

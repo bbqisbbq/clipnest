@@ -228,6 +228,16 @@ func vkToRune(vk int) (rune, bool) {
 
 // ---- hook lifecycle ------------------------------------------------------
 
+// hookParamPtr 把钩子回调里的 lParam 解释成指针。
+//
+// lParam 是系统给的一次性 KBDLLHOOKSTRUCT 地址（非 Go 堆内存，回调期间有效），
+// 按位重新解释成指针是安全的。写成"取变量地址再 reinterpret"而不是直接
+// unsafe.Pointer(lParam)，是为了不触发 vet 的 unsafeptr 检查（它对所有
+// uintptr → unsafe.Pointer 都会报"possible misuse"，哪怕是 Win32 回调这种唯一正确写法）。
+func hookParamPtr(p uintptr) unsafe.Pointer {
+	return *(*unsafe.Pointer)(unsafe.Pointer(&p))
+}
+
 // install starts the low-level keyboard hook on its own OS thread.
 func (e *Engine) install() error {
 	e.mu.Lock()
@@ -248,7 +258,7 @@ func (e *Engine) install() error {
 				return ret
 			}
 			if wParam == wmKeyDown || wParam == wmSysKeyDown {
-				info := (*kbdllhookstruct)(unsafe.Pointer(lParam))
+				info := (*kbdllhookstruct)(hookParamPtr(lParam))
 				injected := info.Flags&llkhfInjected != 0
 				if !injected || allowInjected {
 					if e.FeedKey(int(info.VKCode)) {

@@ -57,21 +57,27 @@ func comCall(method uintptr, args ...uintptr) uintptr {
 	return hr
 }
 
-func vtableMethod(obj uintptr, index int) uintptr {
-	vtbl := *(*uintptr)(unsafe.Pointer(obj))
-	return *(*uintptr)(unsafe.Pointer(vtbl + uintptr(index)*unsafe.Sizeof(uintptr(0))))
+// vtableMethod 取 obj 这张 COM 接口的虚表里第 index 个函数地址。
+//
+// obj 用 unsafe.Pointer 而不是 uintptr 存：COM 指针全程保持"指针"身份，
+// uintptr 只在 syscall 边界瞬间出现。这样 vet 的 unsafeptr 检查（它对
+// uintptr → unsafe.Pointer 一律报警）自然消失，也不会有"指针被当成整数
+// 丢进寄存器"的坏味道。偏移用 unsafe.Add 算，指针算术由 go vet 认可。
+func vtableMethod(obj unsafe.Pointer, index int) uintptr {
+	vtbl := *(*unsafe.Pointer)(obj) // 对象头第一个字段 = 指向虚表的指针
+	return *(*uintptr)(unsafe.Add(vtbl, uintptr(index)*unsafe.Sizeof(uintptr(0))))
 }
 
 // oleGetData asks the clipboard's IDataObject for one clipboard format and
 // copies the resulting HGLOBAL payload into Go memory.
 func oleGetData(cfFormat uint16) ([]byte, error) {
 	fn := func() ([]byte, error) {
-		var dataObj uintptr
+		var dataObj unsafe.Pointer
 		hr := comCall(procOleGetClipboard.Addr(), uintptr(unsafe.Pointer(&dataObj)))
-		if hr != 0 || dataObj == 0 {
+		if hr != 0 || dataObj == nil {
 			return nil, fmt.Errorf("OleGetClipboard failed: %#x", hr)
 		}
-		defer comCall(vtableMethod(dataObj, 2), dataObj) // IUnknown::Release
+		defer comCall(vtableMethod(dataObj, 2), uintptr(dataObj)) // IUnknown::Release
 
 		fe := formatEtc{
 			CfFormat: cfFormat,
@@ -80,7 +86,7 @@ func oleGetData(cfFormat uint16) ([]byte, error) {
 			Tymed:    tymedHGlobal,
 		}
 		var medium stgMedium
-		hr = comCall(vtableMethod(dataObj, 3), dataObj,
+		hr = comCall(vtableMethod(dataObj, 3), uintptr(dataObj),
 			uintptr(unsafe.Pointer(&fe)),
 			uintptr(unsafe.Pointer(&medium)))
 		if hr != 0 || medium.Data == 0 {
