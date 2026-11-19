@@ -57,10 +57,37 @@ const state: Record<"detail" | "composer", string[]> = {
   composer: DEFAULT_COMPOSER_TOOLBAR,
 };
 
-/** 由 main.tsx 在启动时用设置里的值初始化一次。 */
+/**
+ * 每次配置变化就 +1。MarkdownSurface 拿它当重挂载的信号：
+ * Vditor 的 toolbar 只在初始化时读一次，所以"改完立刻生效"只能重建实例。
+ */
+let version = 0;
+const listeners = new Set<() => void>();
+
+export function toolbarVersion(): number {
+  return version;
+}
+
+/** 订阅工具栏配置变化（返回取消函数）。 */
+export function subscribeToolbarSettings(cb: () => void): () => void {
+  listeners.add(cb);
+  return () => {
+    listeners.delete(cb);
+  };
+}
+
+/** 由 main.tsx / useAppData 用设置里的值初始化。 */
 export function applyToolbarSettings(detail?: string[] | null, composer?: string[] | null): void {
-  state.detail = sanitize(detail, DEFAULT_DETAIL_TOOLBAR);
-  state.composer = sanitize(composer, DEFAULT_COMPOSER_TOOLBAR);
+  const nextDetail = sanitize(detail, DEFAULT_DETAIL_TOOLBAR);
+  const nextComposer = sanitize(composer, DEFAULT_COMPOSER_TOOLBAR);
+  const changed =
+    nextDetail.join("|") !== state.detail.join("|") ||
+    nextComposer.join("|") !== state.composer.join("|");
+  state.detail = nextDetail;
+  state.composer = nextComposer;
+  if (!changed) return;
+  version += 1;
+  for (const cb of listeners) cb();
 }
 
 /** 某个场景该显示哪些按钮。 */

@@ -9,25 +9,7 @@ import { ClipService } from "./lib/api";
 //   · 自动聚焦 —— 窗口刚 Show 时还没拿到焦点，要等 window focus 再 focus 编辑器
 //   · 预热 —— 这个窗口随应用一起创建，挂载后立刻把 lute 烧热，否则第一次唤起
 //     要等 250ms 的引擎初始化（实测数据见 docs/design 3.2.1）
-//   · 界面 —— 和主界面输入卡片同一套 token，顶部一条细把手，底部工具条
-
-type Tool = {
-  key: string;
-  label: string;
-  title: string;
-  wrap?: [string, string];
-  insert?: string;
-};
-
-const TOOLS: Tool[] = [
-  { key: "tag", label: "#", title: "插入标签", insert: "#" },
-  { key: "bold", label: "B", title: "加粗", wrap: ["**", "**"] },
-  { key: "italic", label: "I", title: "斜体", wrap: ["*", "*"] },
-  { key: "code", label: "</>", title: "行内代码", wrap: ["`", "`"] },
-  { key: "list", label: "•", title: "列表项", insert: "- " },
-  { key: "todo", label: "☐", title: "待办", insert: "- [ ] " },
-  { key: "quote", label: "❝", title: "引用", insert: "> " },
-];
+//   · 界面 —— 无边框整块浮层，只有一个「保存」；格式靠 Markdown 语法（- [ ] 就是待办）
 
 export default function Capture() {
   const [text, setText] = useState("");
@@ -84,14 +66,6 @@ export default function Capture() {
     };
   }, []);
 
-  const applyTool = useCallback((tool: Tool) => {
-    const api = editorRef.current;
-    if (!api) return;
-    if (tool.wrap) api.wrap(tool.wrap[0], tool.wrap[1]);
-    else if (tool.insert) api.insert(tool.insert);
-    api.focus();
-  }, []);
-
   return (
     <div className="capture">
       <div className="capture-head">
@@ -128,21 +102,6 @@ export default function Capture() {
       </div>
 
       <div className="capture-foot">
-        <div className="capture-tools">
-          {TOOLS.map((tool) => (
-            <button
-              key={tool.key}
-              className={`capture-tool ${tool.key === "bold" ? "is-strong" : ""} ${
-                tool.key === "italic" ? "is-em" : ""
-              }`}
-              title={tool.title}
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => applyTool(tool)}
-            >
-              {tool.label}
-            </button>
-          ))}
-        </div>
         <div className="capture-foot-right">
           {error ? <span className="snip-error">{error}</span> : null}
           <button className="btn btn-primary btn-sm" onClick={() => void save()} disabled={busy}>

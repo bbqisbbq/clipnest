@@ -2,7 +2,7 @@ import { useEffect, useImperativeHandle, useRef, useState, forwardRef } from "re
 import type Vditor from "vditor";
 import { ClipService } from "../lib/api";
 import { MEMO_IMG_RE } from "../lib/images";
-import { toolbarFor } from "../lib/editorToolbar";
+import { subscribeToolbarSettings, toolbarFor, toolbarVersion } from "../lib/editorToolbar";
 
 // 全应用唯一的 Markdown 编辑器：Vditor（IR 即时渲染）。
 //
@@ -126,6 +126,9 @@ export function warmUpMarkdown(): Promise<void> {
           cdn: VDITOR_CDN,
           mode: "ir",
           cache: { enable: false },
+          // 预热只要引擎，不要界面：工具栏/大纲全空，省一遍 DOM 与图标
+          toolbar: [],
+          outline: { enable: false, position: "left" },
           value: "warm",
           after() {
             resolve();
@@ -161,6 +164,10 @@ const MarkdownSurface = forwardRef<MarkdownSurfaceHandle, Props>(function Markdo
   onImageFileRef.current = props.onImageFile;
 
   const initialValue = useRef(props.value);
+  // 工具栏配置变了要重建实例（Vditor 只在 new 时读 toolbar），重建前把内容捞出来
+  const lastValueRef = useRef<string | null>(null);
+  const [toolbarRev, setToolbarRev] = useState<number>(toolbarVersion);
+  useEffect(() => subscribeToolbarSettings(() => setToolbarRev(toolbarVersion())), []);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -168,8 +175,8 @@ const MarkdownSurface = forwardRef<MarkdownSurfaceHandle, Props>(function Markdo
     let disposed = false;
     let instance: Vditor | null = null;
 
-    // 换行符归一：Vditor 只认 \n
-    const initial = initialValue.current.replace(/\r\n/g, "\n");
+    // 换行符归一：Vditor 只认 \n。重建实例时优先用"上一次编辑器里的内容"
+    const initial = (lastValueRef.current ?? initialValue.current).replace(/\r\n/g, "\n");
 
     void (async () => {
       try {
@@ -249,15 +256,20 @@ const MarkdownSurface = forwardRef<MarkdownSurfaceHandle, Props>(function Markdo
       disposed = true;
       setReady(false);
       try {
+        lastValueRef.current = dehydrateImages(instance?.getValue() ?? "");
+      } catch {
+        /* 还没初始化完 */
+      }
+      try {
         instance?.destroy();
       } catch {
         /* 还没初始化完就卸载 */
       }
       vditorRef.current = null;
     };
-    // 只在挂载时初始化一次；value 的外部变化由下面的 effect 同步
+    // 挂载时初始化；工具栏配置变了（toolbarRev）就重建一次。value 的外部变化由下面的 effect 同步
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [toolbarRev]);
 
   // 外部换内容（点了另一条条目）→ 覆盖文档，别打断用户输入
   useEffect(() => {
