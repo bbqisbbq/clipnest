@@ -102,7 +102,7 @@ body.is-picker {
 }
 
 .picker-count {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-3);
 }
 
@@ -126,11 +126,11 @@ body.is-picker {
 
 .picker-row kbd {
   font-family: inherit;
-  font-size: 10px;
+  font-size: 11px;
   padding: 1px 5px;
   border-radius: 4px;
   border: 1px solid var(--accent-line);
-  color: #b9c5ff;
+  color: var(--accent);
 }
 
 .picker-icon {
@@ -191,7 +191,7 @@ body.is-picker {
 }
 
 .picker-meta {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-3);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -212,46 +212,15 @@ body.is-picker {
   padding: 8px 12px;
   border-top: 1px solid var(--border-soft);
   background: var(--surface-2);
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-3);
 }
 
 .picker-status {
   color: var(--warn);
 }
-
-/* ---------------- update banner ---------------- */
-
-.update-banner {
-  position: absolute;
-  top: 46px;
-  right: 14px;
-  z-index: 60;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  max-width: 520px;
-  padding: 9px 12px;
-  border-radius: var(--r-md);
-  border: 1px solid rgba(125, 140, 255, 0.38);
-  background: linear-gradient(180deg, #1a1f2e, #141824);
-  box-shadow: var(--shadow-pop);
-  font-size: 12px;
-  animation: toast-in 0.18s var(--ease);
-}
-
-.update-banner strong {
-  color: var(--accent-soft, var(--accent));
-  font-weight: 600;
-}
-
-.update-banner-actions {
-  display: flex;
-  gap: 6px;
-  flex: none;
-}
-
-.btn-sm {
+/* 只在 picker 弹窗里收窄：这条以前是全局覆盖，把输入区（composer）的保存按钮也改成了固定 26px 高 */
+body.is-picker .btn-sm {
   height: 26px;
   padding: 0 10px;
   font-size: 12px;
@@ -282,8 +251,8 @@ body.is-picker {
 
 .device-row.is-head {
   background: var(--surface-2, var(--surface-3));
-  color: var(--text-muted, var(--text-3));
-  font-size: 11px;
+  color: var(--text-3, var(--text-3));
+  font-size: 12px;
   letter-spacing: 0.03em;
   text-transform: uppercase;
 }
@@ -296,9 +265,9 @@ body.is-picker {
   margin-left: 6px;
   padding: 0 5px;
   border-radius: 4px;
-  background: rgba(125, 140, 255, 0.16);
+  background: var(--accent-tint);
   color: var(--accent);
-  font-size: 10px;
+  font-size: 11px;
   font-style: normal;
 }
 /* ---------------- picker thumbnails + digit hints ---------------- */
@@ -323,15 +292,15 @@ body.is-picker {
   padding: 0 3px;
   border-radius: 4px;
   background: var(--surface-3, #232936);
-  color: var(--text-muted, var(--text-3));
-  font-size: 10px;
+  color: var(--text-3, var(--text-3));
+  font-size: 11px;
   line-height: 15px;
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
 
 .picker-row.is-active .picker-num {
-  background: rgba(125, 140, 255, 0.22);
+  background: var(--accent-tint);
   color: var(--accent);
 }
 
@@ -384,4 +353,18 @@ body.is-picker {
 .picker-act:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+/* 统一弹窗（components/Dialog.tsx）的标题与输入框：App 的确认框、详情页的
+   离开/删除确认、筛选器删除确认、片段缩写输入都走这一套。 */
+.modal-title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.modal-input {
+  width: 100%;
+  margin-bottom: 12px;
 }

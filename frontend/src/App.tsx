@@ -9,6 +9,7 @@ import EntriesView from "./components/EntriesView";
 import EntryDetailView from "./components/EntryDetailView";
 import TodoView from "./components/TodoView";
 import FilterDialog from "./components/FilterDialog";
+import { useConfirm } from "./components/Dialog";
 import SettingsView from "./components/SettingsView";
 
 // App 只做三件事：装全局状态（hooks 里）、切换视图、转发通知。
@@ -18,7 +19,6 @@ import SettingsView from "./components/SettingsView";
 // 这样返回时列表的滚动位置、展开状态都还在。
 
 type View = "entries" | "detail" | "todo" | "settings";
-type Confirm = { message: string; action: () => void } | null;
 type Dialog = { filter: EntryFilter; isNew: boolean } | null;
 
 const BLANK_FILTER: EntryFilter = {
@@ -61,7 +61,8 @@ export default function App() {
   const [activeFilterId, setActiveFilterId] = useState("all");
   const [selectedDay, setSelectedDay] = useState(todayKey);
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
-  const [confirm, setConfirm] = useState<Confirm>(null);
+  // 确认框走全局 DialogProvider（以前这里有第四套自己写的 modal 状态）
+  const confirm = useConfirm();
   const [dialog, setDialog] = useState<Dialog>(null);
 
   const activeFilter = filters.find((f) => f.id === activeFilterId) ?? filters[0] ?? DEFAULT_FILTER;
@@ -76,20 +77,18 @@ export default function App() {
     }
   }, [settings, data, notify]);
 
-  const clearHistory = useCallback(() => {
-    setConfirm({
-      message: "清空所有未置顶的内容？这个操作不可撤销。",
-      action: async () => {
-        try {
-          const n = await ClipService.DeleteAll();
-          await data.refreshMeta();
-          notify(`已清空 ${n} 条`);
-        } catch (err) {
-          notify(`清空失败：${String(err)}`);
-        }
-      },
-    });
-  }, [data, notify]);
+  const clearHistory = useCallback(async () => {
+    if (!(await confirm({ message: "清空所有未置顶的内容？这个操作不可撤销。", danger: true, confirmLabel: "清空" }))) {
+      return;
+    }
+    try {
+      const n = await ClipService.DeleteAll();
+      await data.refreshMeta();
+      notify(`已清空 ${n} 条`);
+    } catch (err) {
+      notify(`清空失败：${String(err)}`);
+    }
+  }, [data, notify, confirm]);
 
   // 筛选器编辑：主题化模态（原来是 window.prompt —— 系统原生弹窗，和主题完全不搭）
   const editFilter = useCallback((f: EntryFilter) => {
@@ -111,26 +110,24 @@ export default function App() {
   }, []);
 
   const deleteFilter = useCallback(
-    (f: EntryFilter) => {
-      setConfirm({
-        message: `删除筛选器「${f.name}」？条目本身不受影响。`,
-        action: async () => {
-          try {
-            const ok = await ClipService.DeleteFilter(f.id);
-            if (!ok) {
-              notify("这个筛选器不能删除");
-              return;
-            }
-            await data.refreshMeta();
-            if (activeFilterId === f.id) setActiveFilterId("all");
-            notify(`已删除筛选器「${f.name}」`);
-          } catch (err) {
-            notify(`删除失败：${String(err)}`);
-          }
-        },
-      });
+    async (f: EntryFilter) => {
+      if (!(await confirm({ message: `删除筛选器「${f.name}」？条目本身不受影响。`, danger: true, confirmLabel: "删除" }))) {
+        return;
+      }
+      try {
+        const ok = await ClipService.DeleteFilter(f.id);
+        if (!ok) {
+          notify("这个筛选器不能删除");
+          return;
+        }
+        await data.refreshMeta();
+        if (activeFilterId === f.id) setActiveFilterId("all");
+        notify(`已删除筛选器「${f.name}」`);
+      } catch (err) {
+        notify(`删除失败：${String(err)}`);
+      }
     },
-    [activeFilterId, data, notify],
+    [activeFilterId, data, notify, confirm],
   );
 
   const runSync = useCallback(async () => {
@@ -154,23 +151,28 @@ export default function App() {
     return typeof r === "string" ? r : JSON.stringify(r);
   }, []);
 
-  // 离开详情：有未保存修改就先问一句（详情自己的返回按钮也走同一个判断）
-  const leaveDetail = useCallback((then?: () => void) => {
-    const finish = () => {
+  // guardDirtyDetail 是"离开详情前的脏数据拦截"。原来 leaveDetail 与
+  // onOpenSettings 各手写了一遍同样的 if（文案不同、逻辑必须一致），
+  // 现在只有这一份判断。
+  const guardDirtyDetail = useCallback(
+    async (message: string) => {
+      if (view !== "detail" || !detailDirty.current) return true;
+      return await confirm({ message, danger: true, confirmLabel: "放弃修改" });
+    },
+    [view, confirm],
+  );
+
+  // 离开详情（详情自己的返回按钮也走同一个判断）
+  const leaveDetail = useCallback(
+    async (then?: () => void) => {
+      if (!(await guardDirtyDetail("这条内容有未保存的修改，确定放弃并离开？"))) return;
       detailDirty.current = false;
       setDetailEntry(null);
       setView("entries");
       then?.();
-    };
-    if (view === "detail" && detailDirty.current) {
-      setConfirm({
-        message: "这条内容有未保存的修改，确定放弃并离开？",
-        action: finish,
-      });
-      return;
-    }
-    finish();
-  }, [view]);
+    },
+    [guardDirtyDetail],
+  );
 
   // 打开详情：记住是从列表还是从待办进来的，返回时回到原地
   const openDetail = useCallback((entry: Entry, from: "entries" | "todo") => {
@@ -194,12 +196,12 @@ export default function App() {
             onSelectFilter: (f) => {
               setActiveFilterId(f.id);
               setSelectedDay("");
-              leaveDetail();
+              void leaveDetail();
             },
             selectedDay,
             onPickDay: (d) => {
               setSelectedDay(d);
-              leaveDetail();
+              void leaveDetail();
             },
             onEditFilter: editFilter,
             entryStats,
@@ -209,22 +211,15 @@ export default function App() {
           onDeleteFilter={deleteFilter}
           onOpenTodos={() => {
             if (view === "todo") return;
-            leaveDetail(() => setView("todo"));
+            void leaveDetail(() => setView("todo"));
           }}
           onOpenSettings={() => {
-            if (view === "detail" && detailDirty.current) {
-              setConfirm({
-                message: "这条内容有未保存的修改，确定放弃并去设置？",
-                action: () => {
-                  detailDirty.current = false;
-                  setDetailEntry(null);
-                  setView("settings");
-                },
-              });
-              return;
-            }
-            setDetailEntry(null);
-            setView("settings");
+            void (async () => {
+              if (!(await guardDirtyDetail("这条内容有未保存的修改，确定放弃并去设置？"))) return;
+              detailDirty.current = false;
+              setDetailEntry(null);
+              setView("settings");
+            })();
           }}
           onToggleCapture={() => void toggleCapture()}
         />
@@ -325,28 +320,7 @@ export default function App() {
         />
       ) : null}
 
-      {confirm ? (
-        <div className="modal-backdrop" onClick={() => setConfirm(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <p>{confirm.message}</p>
-            <div className="modal-actions">
-              <button className="btn btn-ghost" onClick={() => setConfirm(null)}>
-                取消
-              </button>
-              <button
-                className="btn btn-danger"
-                onClick={() => {
-                  const action = confirm.action;
-                  setConfirm(null);
-                  void action();
-                }}
-              >
-                确认
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+
     </div>
   );
 }

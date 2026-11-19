@@ -104,14 +104,12 @@ export default function Calendar({ selectedDay, onPickDay, query }: Props) {
           const n = counts[cell.key] ?? 0;
           const isToday = cell.key === today;
           const isActive = cell.key === selectedDay;
-          // 热度：1/3/5/7 档
-          const level = n === 0 ? 0 : n <= 2 ? 1 : n <= 5 ? 2 : n <= 12 ? 3 : 4;
+          // 热度只靠圆点的透明度表达（CSS 里从来没有 .has-1..4，
+          // 以前算出来的 level 类名一个样式都没命中，属白算）
           return (
             <button
               key={cell.key}
-              className={`cal-cell ${isToday ? "is-today" : ""} ${isActive ? "is-active" : ""} ${
-                n > 0 ? `has-${level}` : ""
-              }`}
+              className={`cal-cell ${isToday ? "is-today" : ""} ${isActive ? "is-active" : ""}`}
               title={`${cell.key}：${n} 条`}
               onClick={() => onPickDay(isActive ? "" : cell.key)}
             >

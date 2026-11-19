@@ -27,6 +27,9 @@
   --accent-2: #9d7bff;
   --accent-tint: rgba(125, 140, 255, 0.14);
   --accent-line: rgba(125, 140, 255, 0.42);
+  /* 实心强调色块上压什么颜色的字：深色主题的强调色偏亮，配深字才有对比；
+     浅色主题反过来。预设可以各自覆盖这一项。 */
+  --on-accent: #0e1015;
 
   --ok: #45c78d;
   --warn: #e0a253;
@@ -39,21 +42,26 @@
   --k-rich: #ec7aa4;
   --k-custom: #8b93a5;
 
-  --r-sm: 6px;
-  --r-md: 8px;
-  --r-lg: 10px;
-  --r-xl: 14px;
+  /* 圆角比之前松一档：6/8/10 在 14px 正文旁边显得紧绷（2026-11-19 舒适化）。
+     控件用 r-sm，面板/卡片用 r-lg；r-md 留给中间的容器（输入框、小卡）。 */
+  --r-sm: 7px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-xl: 16px;
 
   /* 布局节奏：主区所有页面共用一条"阅读列"。
      --gutter   窄窗口下的最小左右留白
      --read-w   阅读列宽（时间线 / 输入区 / 待办 / 详情正文共用，视线不在两种列宽之间跳）
      --read-pad 居中留白 = max(最小留白, (面板宽 - 列宽)/2)，用在面板级容器上 */
   --gutter: 20px;
-  --read-w: 760px;
+  --read-w: 700px;
   --read-pad: max(var(--gutter), calc((100% - var(--read-w)) / 2));
 
-  --shadow-pop: 0 20px 48px rgba(0, 0, 0, 0.5);
+  --shadow-pop: 0 20px 44px rgba(0, 0, 0, 0.5);
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.22);
+  /* 卡片"坐实"用的抬升：浅色主题在 theme-light.css 里换成更淡的扩散阴影。
+     只靠 1px 描边的卡片会浮在背景上，久看是"轻飘"的主要来源之一。 */
+  --elev-card: inset 0 1px 0 rgba(255, 255, 255, 0.045), 0 1px 2px rgba(0, 0, 0, 0.28);
   --ease: cubic-bezier(0.2, 0.6, 0.3, 1);
 
   /* 界面（比例字体）：Inter 管拉丁与数字，Noto Sans SC 管中文 —— 与正文行长
@@ -78,8 +86,10 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-ui);
-  font-size: 13px;
-  line-height: 1.5;
+  /* 13 → 14：中文在这一档才不糊（11px 以下笔画会糊成一团）。
+    控件内部的固定字号按各自的层次写，别指望 body 兜底。 */
+  font-size: 14px;
+  line-height: 1.45;
   font-optical-sizing: auto;
   /* Never let the browser fake bold/italic: synthetic weights are the main
      reason text looks "fuzzy" at non-integer DPI scaling. */
@@ -110,7 +120,7 @@ textarea {
 }
 
 ::selection {
-  background: rgba(125, 140, 255, 0.3);
+  background: var(--accent-line);
 }
 
 ::-webkit-scrollbar {
@@ -145,13 +155,7 @@ textarea {
 }
 .muted {
   color: var(--text-3);
-}
-
-.is-warn {
-  color: var(--warn);
-}
-
-.is-error {
+}.is-error {
   color: var(--danger);
 }
 

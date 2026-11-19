@@ -4,6 +4,7 @@ import Lightbox from "./Lightbox";
 import EntryCard from "./entries/EntryCard";
 import { ClipService, type Entry, type EntryFilter, type EntryQuery } from "../lib/api";
 import { useEntries } from "../hooks/useEntries";
+import { usePrompt } from "./Dialog";
 import { useEntryImages } from "../hooks/useEntryImages";
 
 // 统一内容视图：剪贴板采集、片段、手写备忘都在这里，靠属性区分。
@@ -28,6 +29,7 @@ type Props = {
 
 export default function EntriesView({ filter, day, onNotify, onChanged, onOpenDetail }: Props) {
   const [query, setQuery] = useState("");
+  const askForTrigger = usePrompt();
 
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [lightbox, setLightbox] = useState<string | null>(null);
@@ -119,7 +121,13 @@ export default function EntriesView({ filter, day, onNotify, onChanged, onOpenDe
 
   const makeSnippet = useCallback(
     async (e: Entry) => {
-      const trigger = window.prompt("给这条设一个缩写（例如 addr-）：", e.triggerKey ?? "");
+      // 用主题化输入框而不是 window.prompt：系统弹窗和主题完全不搭
+      const trigger = await askForTrigger({
+        message: "给这条设一个缩写（在任意输入框打它就会展开）",
+        placeholder: "例如 addr-",
+        initialValue: e.triggerKey ?? "",
+        confirmLabel: "设为片段",
+      });
       if (!trigger) return;
       try {
         await ClipService.PromoteToSnippet(e.id, trigger.trim());
@@ -130,7 +138,7 @@ export default function EntriesView({ filter, day, onNotify, onChanged, onOpenDe
         onNotify(`失败：${String(err)}`);
       }
     },
-    [loadLatest, onChanged, onNotify],
+    [loadLatest, onChanged, onNotify, askForTrigger],
   );
 
   const dropSnippet = useCallback(

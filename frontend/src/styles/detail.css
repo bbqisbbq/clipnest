@@ -30,6 +30,8 @@
   min-width: 0;
   min-height: 0;
   background: var(--bg);
+  /* 这条以前躲在 entries.css 的同名旧规则里，靠"detail.css 在后面"才生效 */
+  border-left: 1px solid var(--border-soft);
 }
 
 /* ---------------- 详情条 ---------------- */
@@ -67,7 +69,7 @@
 .detail-sub {
   flex: 1;
   min-width: 0;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-3);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -80,11 +82,11 @@
   flex: none;
 }
 .detail-dirty {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--warn);
 }
 .detail-saved {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-3);
 }
 
@@ -139,7 +141,7 @@
 }
 .detail-block h4 {
   margin: 0;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 550;
   letter-spacing: 0.02em;
   color: var(--text-3);
@@ -182,7 +184,7 @@
 }
 .detail-meta dd.is-mono {
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 11.5px;
   color: var(--text-3);
 }
 .detail-ops {

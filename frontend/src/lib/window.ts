@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { Window } from "@wailsio/runtime";
 
 // Window chrome helpers. The app runs frameless, so these stand in for the
@@ -23,5 +24,5 @@ export const isMaximised = async (): Promise<boolean> => {
 };
 
 // Style helper: mark an element as part of the drag region or explicitly not.
-export const drag = { "--wails-draggable": "drag" } as React.CSSProperties;
-export const noDrag = { "--wails-draggable": "none" } as React.CSSProperties;
+export const drag = { "--wails-draggable": "drag" } as CSSProperties;
+export const noDrag = { "--wails-draggable": "none" } as CSSProperties;

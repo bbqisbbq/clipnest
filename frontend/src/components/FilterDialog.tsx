@@ -14,6 +14,7 @@ import {
   IconTodo,
 } from "./Icons";
 import { ClipService, type EntryFilter, type EntryQuery, type FilterGroup } from "../lib/api";
+import { useConfirm } from "./Dialog";
 
 // 筛选器编辑弹窗（主题化模态，替代原来的 window.prompt）。
 //
@@ -56,7 +57,7 @@ export default function FilterDialog({ filter, isNew, onClose, onSaved, onDelete
   const [hits, setHits] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  const confirmDialog = useConfirm();
 
   const ruleDisabled = filter.builtin && !isNew;
   const timer = useRef<number | null>(null);
@@ -190,7 +191,22 @@ export default function FilterDialog({ filter, isNew, onClose, onSaved, onDelete
 
         <footer className="filter-dialog-foot">
           {!isNew && filter.deletable ? (
-            <button className="link-btn is-danger" onClick={() => setConfirmDelete(true)}>
+            <button
+              className="link-btn is-danger"
+              onClick={() =>
+                void (async () => {
+                  if (
+                    await confirmDialog({
+                      message: `删除筛选器「${filter.name}」？条目本身不受影响。`,
+                      danger: true,
+                      confirmLabel: "确认删除",
+                    })
+                  ) {
+                    await remove();
+                  }
+                })()
+              }
+            >
               删除这个筛选器
             </button>
           ) : null}
@@ -202,22 +218,6 @@ export default function FilterDialog({ filter, isNew, onClose, onSaved, onDelete
             {busy ? "保存中…" : "保存"}
           </button>
         </footer>
-
-        {confirmDelete ? (
-          <div className="modal-backdrop filter-confirm" onClick={() => setConfirmDelete(false)}>
-            <div className="modal" onClick={(e) => e.stopPropagation()}>
-              <p>删除筛选器「{filter.name}」？条目本身不受影响。</p>
-              <div className="modal-actions">
-                <button className="btn btn-ghost" onClick={() => setConfirmDelete(false)}>
-                  取消
-                </button>
-                <button className="btn btn-danger" onClick={() => void remove()}>
-                  确认删除
-                </button>
-              </div>
-            </div>
-          </div>
-        ) : null}
       </div>
     </div>
   );

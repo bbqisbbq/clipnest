@@ -2,15 +2,20 @@
    颜色 token 的唯一来源是 lib/themes.ts（运行时写到 :root 的行内变量），
    这里不再重复一份，否则会出现两套浅色数值互相打架。 */
 :root[data-theme="light"] {
-  --k-text: #4d63d8;
-  --k-link: #12867c;
-  --k-image: #a86a12;
-  --k-files: #6d4fd0;
-  --k-rich: #c0345f;
-  --k-custom: #5c6779;
-  --shadow-pop: 0 18px 40px rgba(20, 26, 40, 0.18);
+  /* 六种条目类型的色相压到低饱和：原来是蓝/青/橙/紫/粉五个高饱和色，
+     同屏几行 chip 就很吵。现在统一往暖灰调靠，只靠明度区分。 */
+  --k-text: #8a5f3c;
+  --k-link: #2f6f5e;
+  --k-image: #8f6420;
+  --k-files: #6c5a7a;
+  --k-rich: #9a4a33;
+  --k-custom: #6f675b;
+
+  --shadow-pop: 0 18px 40px rgba(60, 50, 34, 0.16);
   /* 浅色下卡片投影要更淡，否则像贴了一张灰纸 */
-  --shadow-card: 0 1px 2px rgba(20, 26, 40, 0.08);
+  --shadow-card: 0 1px 2px rgba(60, 50, 34, 0.06);
+  /* 抬升：1px 描边 + 一层很淡的扩散阴影，让卡片"落在"纸面上 */
+  --elev-card: 0 1px 3px rgba(60, 50, 34, 0.06), 0 14px 30px -24px rgba(60, 50, 34, 0.3);
 }
 
 /* 原生控件（下拉框、滚动条）跟着主题走 */
@@ -44,9 +49,11 @@ select option,
   background: var(--surface-2);
 }
 
+/* 行内代码/缩写这类"轻强调块"跟着强调色走，别再写死一套蓝紫，
+   否则换配色（比如暖白）时它们会留着上一套色。 */
 :root[data-theme="light"] .snip-preview code,
 :root[data-theme="light"] .snip-trigger,
 :root[data-theme="light"] .picker-trigger {
-  background: rgba(85, 102, 232, 0.12);
-  color: #3b4bc4;
+  background: var(--accent-tint);
+  color: var(--accent);
 }

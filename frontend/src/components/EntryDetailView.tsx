@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import MarkdownSurface, { type MarkdownSurfaceHandle } from "./MarkdownSurface";
 import SnippetFields from "./SnippetFields";
 import { ClipService, type Entry } from "../lib/api";
+import { useChoose, useConfirm } from "./Dialog";
 
 // 条目详情：占右侧整块区域，不是一个浮层。
 //
@@ -47,7 +48,8 @@ export default function EntryDetailView(props: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [savedAt, setSavedAt] = useState<string>("");
-  const [confirm, setConfirm] = useState<null | "leave" | "delete">(null);
+  const choose = useChoose();
+  const confirmDialog = useConfirm();
 
   // 切换条目时重置草稿
   useEffect(() => {
@@ -108,13 +110,35 @@ export default function EntryDetailView(props: Props) {
     }
   }, [entry.id, props]);
 
-  const requestBack = useCallback(() => {
-    if (dirty) {
-      setConfirm("leave");
+  // 离开时若未保存：三向选择（继续编辑 / 保存并返回 / 放弃修改）
+  const requestBack = useCallback(async () => {
+    if (!dirty) {
+      props.onBack();
       return;
     }
-    props.onBack();
-  }, [dirty, props]);
+    const choice = await choose({
+      message: "这条内容有未保存的修改，怎么处理？",
+      choices: [
+        { key: "cancel", label: "继续编辑", kind: "ghost" },
+        { key: "save", label: "保存并返回", kind: "primary" },
+        { key: "discard", label: "放弃修改", kind: "danger" },
+      ],
+    });
+    if (choice === "save") {
+      await save();
+      props.onBack();
+    } else if (choice === "discard") {
+      props.onBack();
+    }
+  }, [dirty, props, choose, save]);
+
+  // 删除是不可撤销操作：单独问一句
+  const requestDelete = useCallback(async () => {
+    if (!(await confirmDialog({ message: "删除这条内容？这条操作不可撤销。", danger: true, confirmLabel: "确认删除" }))) {
+      return;
+    }
+    await remove();
+  }, [confirmDialog, remove]);
 
   const toggleAction = (name: string) => {
     setActions((prev) => (prev.includes(name) ? prev.filter((a) => a !== name) : [...prev, name]));
@@ -137,7 +161,7 @@ export default function EntryDetailView(props: Props) {
         void save();
         return;
       }
-      if (e.key === "Escape" && !confirm) {
+      if (e.key === "Escape") {
         // Vditor 在 IR 下用 Esc 退出"待选择"状态，这里只在没有浮层时接管
         e.preventDefault();
         requestBack();
@@ -145,12 +169,12 @@ export default function EntryDetailView(props: Props) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [save, requestBack, confirm]);
+  }, [save, requestBack]);
 
   return (
     <section className="detail">
       <header className="detail-head">
-        <button className="detail-back" onClick={requestBack} title="返回列表（Esc）">
+        <button className="detail-back" onClick={() => void requestBack()} title="返回列表（Esc）">
           <span aria-hidden>←</span> {props.backLabel}
         </button>
         <span className="detail-sub">
@@ -267,7 +291,7 @@ export default function EntryDetailView(props: Props) {
               >
                 {entry.archived ? "取消归档" : "归档"}
               </button>
-              <button className="link-btn is-danger" onClick={() => setConfirm("delete")}>
+              <button className="link-btn is-danger" onClick={() => void requestDelete()}>
                 删除这条
               </button>
             </div>
@@ -275,44 +299,6 @@ export default function EntryDetailView(props: Props) {
         </aside>
       </div>
 
-      {confirm ? (
-        <div className="modal-backdrop" onClick={() => setConfirm(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <p>
-              {confirm === "delete"
-                ? "删除这条内容？这条操作不可撤销。"
-                : "这条内容有未保存的修改，怎么处理？"}
-            </p>
-            <div className="modal-actions">
-              <button className="btn btn-ghost" onClick={() => setConfirm(null)}>
-                继续编辑
-              </button>
-              {confirm === "leave" ? (
-                <button
-                  className="btn btn-primary"
-                  onClick={() => {
-                    setConfirm(null);
-                    void save().then(() => props.onBack());
-                  }}
-                >
-                  保存并返回
-                </button>
-              ) : null}
-              <button
-                className={`btn ${confirm === "delete" ? "btn-danger" : "btn-ghost"}`}
-                onClick={() => {
-                  const kind = confirm;
-                  setConfirm(null);
-                  if (kind === "delete") void remove();
-                  else props.onBack();
-                }}
-              >
-                {confirm === "delete" ? "确认删除" : "放弃修改"}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
     </section>
   );
 }

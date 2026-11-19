@@ -31,9 +31,10 @@ import "./styles/detail.css";
 import "./styles/todo.css";
 import "./styles/filter.css";
 import "./theme-light.css";
-import { applyTheme } from "./lib/themes";
+import { applyTheme, storedTheme } from "./lib/themes";
 import { warmUpMarkdown } from "./components/MarkdownSurface";
 import { applyToolbarSettings } from "./lib/editorToolbar";
+import { DialogProvider } from "./components/Dialog";
 
 // The same bundle serves every Wails window: the manager (default), the hotkey
 // popup (?mode=picker) and quick capture (?mode=capture).
@@ -41,10 +42,8 @@ const mode = new URLSearchParams(window.location.search).get("mode");
 const isPicker = mode === "picker";
 const isCapture = mode === "capture";
 // Apply the theme as early as possible so the first paint is not the wrong colour.
-applyTheme(
-  (localStorage.getItem("clipnest.theme") as "system" | "dark" | "light") ?? "system",
-  localStorage.getItem("clipnest.preset") ?? undefined,
-);
+const boot = storedTheme();
+applyTheme(boot.scheme, boot.presetID);
 document.body.classList.toggle("is-picker", isPicker);
 document.body.classList.toggle("is-capture", isCapture);
 // 工具栏配置：capture 窗不跑 useAppData，所以在这里也取一次（异步，取不到就用默认）
@@ -89,7 +88,7 @@ if (usesEditor) whenIdle(() => void warmUpMarkdown());
 try {
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>
-      {isPicker ? <Picker /> : isCapture ? <Capture /> : <App />}
+      <DialogProvider>{isPicker ? <Picker /> : isCapture ? <Capture /> : <App />}</DialogProvider>
     </React.StrictMode>,
   );
 } catch (err) {

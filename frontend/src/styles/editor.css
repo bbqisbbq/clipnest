@@ -52,7 +52,7 @@ body.is-capture { background: transparent; }
   display: flex;
   align-items: center;
   gap: 9px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-3);
   user-select: none;
 }
@@ -99,19 +99,4 @@ body.is-capture { background: transparent; }
   justify-content: flex-end;
   gap: 8px;
   flex: none;
-}
-.capture-tools { display: flex; align-items: center; gap: 2px; overflow: hidden; }
-.capture-tool {
-  display: grid; place-items: center;
-  min-width: 22px; height: 22px;
-  padding: 0 5px;
-  border-radius: var(--r-sm);
-  color: var(--text-2);
-  font-size: 11px;
-  cursor: pointer;
-  transition: background .12s var(--ease), color .12s var(--ease);
-}
-.capture-tool:hover { background: var(--accent-tint); color: var(--accent); }
-.capture-tool.is-strong { font-weight: 700; }
-.capture-tool.is-em { font-style: italic; }
-.capture-foot-right { margin-left: auto; display: flex; align-items: center; gap: 8px; flex: none; }
+}.capture-foot-right { margin-left: auto; display: flex; align-items: center; gap: 8px; flex: none; }

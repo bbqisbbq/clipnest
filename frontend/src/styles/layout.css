@@ -49,16 +49,16 @@
   place-items: center;
   width: 21px;
   height: 21px;
-  border-radius: 6px;
-  color: var(--text);
-  background: linear-gradient(150deg, #5b73ff, var(--accent-2));
-  box-shadow: 0 2px 8px rgba(91, 115, 255, 0.35);
+  border-radius: var(--r-sm);
+  color: #fff;
+  /* 渐变 + 彩色光晕是"网页营销页"的标志，桌面工具用一个实心色块就够 */
+  background: var(--accent);
 }
 
 .tb-brand strong {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
-  letter-spacing: 0.2px;
+  letter-spacing: 0;
 }
 
 .tb-pill {
@@ -67,11 +67,11 @@
   align-items: center;
   gap: 6px;
   padding: 3px 10px 3px 8px;
-  border-radius: 999px;
+  border-radius: var(--r-sm);
   border: 1px solid var(--border);
   background: var(--surface-2);
   color: var(--text-3);
-  font-size: 11px;
+  font-size: 12px;
   transition: border-color 0.12s var(--ease), color 0.12s var(--ease), background 0.12s var(--ease);
 }
 
@@ -143,20 +143,12 @@
   flex: 1;
   overflow-y: auto;
   padding: 10px 10px 18px;
-}
-
-.side-group {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.side-label {
-  padding: 16px 8px 6px;
-  font-size: 10px;
+}.side-label {
+  padding: 14px 8px 6px;
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
+  /* 小号大写 + 大字距是网页分区标题的写法；中文在这个尺寸会糊，去掉 */
+  letter-spacing: 0;
   color: var(--text-3);
 }
 
@@ -169,10 +161,10 @@
   align-items: center;
   gap: 9px;
   width: 100%;
-  padding: 7px 9px;
+  padding: 6px 9px;
   border-radius: var(--r-sm);
   color: var(--text-2);
-  font-size: 12px;
+  font-size: 13px;
   text-align: left;
   transition: background 0.12s var(--ease), color 0.12s var(--ease);
 }
@@ -187,16 +179,16 @@
 
 .side-item em {
   font-style: normal;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-3);
   font-variant-numeric: tabular-nums;
 }
 
 .side-item kbd {
   font-family: inherit;
-  font-size: 10px;
+  font-size: 11px;
   padding: 1px 5px;
-  border-radius: 4px;
+  border-radius: 5px;
   border: 1px solid var(--border);
   color: var(--text-3);
 }

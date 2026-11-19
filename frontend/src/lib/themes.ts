@@ -44,6 +44,7 @@ export const THEME_PRESETS: ThemePreset[] = [
       "--accent-2": "#9d7bff",
       "--accent-tint": "rgba(125, 140, 255, 0.14)",
       "--accent-line": "rgba(125, 140, 255, 0.42)",
+      "--on-accent": "#0e1015",
       "--ok": "#45c78d",
       "--warn": "#e0a253",
       "--danger": "#ee6a6a",
@@ -51,9 +52,38 @@ export const THEME_PRESETS: ThemePreset[] = [
   },
   {
     id: "default-light",
+    name: "暖白",
+    scheme: "light",
+    note: "米白纸面 + 赭石强调，低蓝光，久看最省眼（默认浅色）",
+    tokens: {
+      "--bg": "#ecebe6",
+      "--surface": "#faf9f5",
+      "--surface-2": "#f3f1ea",
+      "--surface-3": "#e8e5da",
+      "--border": "#ddd8cb",
+      "--border-soft": "#e5e1d6",
+      "--border-strong": "#c9c2b1",
+      "--scrollbar": "rgba(120, 108, 88, 0.26)",
+      "--scrollbar-hover": "rgba(120, 108, 88, 0.5)",
+      "--text": "#23201b",
+      "--text-2": "#5b544a",
+      "--text-3": "#6f675b",
+      "--accent": "#9a5a34",
+      "--accent-2": "#7d4a2b",
+      "--accent-tint": "rgba(154, 90, 52, 0.12)",
+      "--accent-line": "rgba(154, 90, 52, 0.36)",
+      "--on-accent": "#ffffff",
+      "--ok": "#2f7a52",
+      "--warn": "#94641a",
+      "--danger": "#b03a33",
+    },
+  },
+  {
+    // 老的浅色原样留一份：有人就喜欢纯白面板 + 靛蓝强调，别替他删掉选择。
+    id: "pure-light",
     name: "亮白",
     scheme: "light",
-    note: "白底深字，适合白天 / 亮环境",
+    note: "纯白面板 + 冷灰底 + 靛蓝强调（原来的浅色）",
     tokens: {
       "--bg": "#f4f5f8",
       "--surface": "#ffffff",
@@ -66,11 +96,12 @@ export const THEME_PRESETS: ThemePreset[] = [
       "--scrollbar-hover": "rgba(90, 104, 128, 0.5)",
       "--text": "#1b1f27",
       "--text-2": "#4b5563",
-      "--text-3": "#7c8598",
+      "--text-3": "#6b7280",
       "--accent": "#5566e8",
       "--accent-2": "#7c5ce0",
       "--accent-tint": "rgba(85, 102, 232, 0.12)",
       "--accent-line": "rgba(85, 102, 232, 0.4)",
+      "--on-accent": "#ffffff",
       "--ok": "#14875f",
       "--warn": "#a9691a",
       "--danger": "#c8393f",
@@ -98,6 +129,7 @@ export const THEME_PRESETS: ThemePreset[] = [
       "--accent-2": "#9a6236",
       "--accent-tint": "rgba(122, 74, 43, 0.14)",
       "--accent-line": "rgba(122, 74, 43, 0.42)",
+      "--on-accent": "#ffffff",
       "--ok": "#3f7a4a",
       "--warn": "#9a6a12",
       "--danger": "#a8322b",
@@ -125,12 +157,35 @@ export const THEME_PRESETS: ThemePreset[] = [
       "--accent-2": "#c8873a",
       "--accent-tint": "rgba(217, 164, 74, 0.16)",
       "--accent-line": "rgba(217, 164, 74, 0.42)",
+      "--on-accent": "#0c0c0d",
       "--ok": "#63b36f",
       "--warn": "#d9a44a",
       "--danger": "#dd6a5f",
     },
   },
 ];
+
+// ---- 启动前的主题恢复 --------------------------------------------------
+// main.tsx 必须在 React 挂载前先把主题刷上去（否则首帧是错的颜色），而 useTheme
+// 拿到真实设置后会再写一次。两处必须共用同一套 key 与默认值，所以收在这里：
+// 之前是各写一遍字符串字面量，main.tsx 还带一次 `as` 强转。
+export const DEFAULT_PRESET_ID = "default-dark";
+
+const STORAGE_SCHEME = "clipnest.theme";
+const STORAGE_PRESET = "clipnest.preset";
+
+// storedTheme 读上次的深浅方案与预设（值不合法就回落到默认）。
+export function storedTheme(): { scheme: ThemeScheme; presetID: string } {
+  const raw = localStorage.getItem(STORAGE_SCHEME);
+  const scheme: ThemeScheme = raw === "light" || raw === "dark" || raw === "system" ? raw : "system";
+  return { scheme, presetID: localStorage.getItem(STORAGE_PRESET) ?? DEFAULT_PRESET_ID };
+}
+
+// rememberTheme 记下当前选择，供下次启动首帧使用。
+export function rememberTheme(scheme: ThemeScheme, presetID: string) {
+  localStorage.setItem(STORAGE_SCHEME, scheme);
+  localStorage.setItem(STORAGE_PRESET, presetID);
+}
 
 export function presetByID(id: string | undefined): ThemePreset {
   return THEME_PRESETS.find((p) => p.id === id) ?? THEME_PRESETS[0];

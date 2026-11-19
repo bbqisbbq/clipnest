@@ -45,7 +45,7 @@
 
 .card-head p {
   margin: 2px 0 0;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-3);
 }
 
@@ -140,22 +140,22 @@
 
 .input {
   width: 200px;
-  padding: 5px 9px;
+  padding: 6px 10px;
   border-radius: var(--r-sm);
   border: 1px solid var(--border);
   background: var(--surface-2);
-  font-size: 12px;
+  font-size: 13px;
   outline: none;
   transition: border-color 0.12s var(--ease), box-shadow 0.12s var(--ease);
 }
 
 .input:focus {
   border-color: var(--accent-line);
-  box-shadow: 0 0 0 2px rgba(125, 140, 255, 0.12);
+  box-shadow: 0 0 0 2px var(--accent-tint);
 }
 
 .input::placeholder {
-  color: #555d6d;
+  color: var(--text-3);
 }
 
 .input.is-num {
@@ -181,7 +181,7 @@
 }
 
 .unit {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-3);
 }
 
@@ -206,13 +206,13 @@
 }
 
 .switch.is-on {
-  background: rgba(125, 140, 255, 0.32);
+  background: var(--accent-line);
   border-color: var(--accent-line);
 }
 
 .switch.is-on .switch-knob {
   transform: translateX(15px);
-  background: #e3e8ff;
+  background: var(--on-accent);
 }
 
 .sync-actions {
@@ -227,7 +227,7 @@
   margin-left: auto;
   display: flex;
   gap: 5px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-3);
 }
 

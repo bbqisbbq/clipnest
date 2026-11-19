@@ -118,7 +118,12 @@ export default function SettingsView(props: Props) {
         </div>
       </div>
 
-      <footer className={`settings-bar ${showBar ? "is-shown" : "is-hidden"}`} aria-hidden={!showBar}>
+      <footer
+        className={`settings-bar ${showBar ? "is-shown" : "is-hidden"}`}
+        /* 隐藏时用 inert：光 aria-hidden 只是让读屏忽略，里面的按钮还在 Tab 序里。
+           React 18 的类型里还没有 inert，所以用属性展开（DOM 本身支持）。 */
+        {...(!showBar ? { inert: "" } : {})}
+      >
         <span className={dirty ? "is-dirty" : "is-saved"}>
           {dirty ? "有未保存的修改" : "设置已保存"}
         </span>

@@ -1,4 +1,4 @@
-import { useEffect, useImperativeHandle, useRef, useState, forwardRef } from "react";
+import { useEffect, useImperativeHandle, useRef, useState, useSyncExternalStore, forwardRef } from "react";
 import type Vditor from "vditor";
 import { ClipService } from "../lib/api";
 import { MEMO_IMG_RE } from "../lib/images";
@@ -166,8 +166,9 @@ const MarkdownSurface = forwardRef<MarkdownSurfaceHandle, Props>(function Markdo
   const initialValue = useRef(props.value);
   // 工具栏配置变了要重建实例（Vditor 只在 new 时读 toolbar），重建前把内容捞出来
   const lastValueRef = useRef<string | null>(null);
-  const [toolbarRev, setToolbarRev] = useState<number>(toolbarVersion);
-  useEffect(() => subscribeToolbarSettings(() => setToolbarRev(toolbarVersion())), []);
+  // 工具栏配置是一个外部 store（设置页保存后变），用 useSyncExternalStore 订阅，
+  // 比手写 useState + subscribe 少一处竞态（首帧就能读到正确版本）。
+  const toolbarRev = useSyncExternalStore(subscribeToolbarSettings, toolbarVersion);
 
   useEffect(() => {
     const host = hostRef.current;
