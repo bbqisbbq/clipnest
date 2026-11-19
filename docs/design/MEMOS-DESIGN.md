@@ -168,7 +168,7 @@ CREATE TABLE memo_blobs (
 
 ## 四、同步：完全复用现有打包同步（不新增机制）
 
-现有 `clipnest_data/<deviceId>-<host>.zip` 里已经有 `package.json` + `items/` + `snippets/` + `blobs/`，备忘照抄同一形状：
+现有 `clipnest_data/<deviceId>-<host>.zip` 里已经是 `package.json` + `entries/` + `blobs/`（2.0.0 起 items/snippets 统一成 entries），备忘照抄同一形状：
 
 ```
 package.json          ← 追加 memos[] 与 deletedMemos[]
@@ -209,7 +209,7 @@ memos-blobs/…         ← 附件（同样受 96 MB 预算约束）
 
 ### 三个入口，别让人"打开一个界面才能记事"
 
-1. **快捷键浮窗**：`Ctrl+Shift+N` 在光标附近弹一个 420×200 的输入条（复用 picker 那套无边框窗口 + 失焦隐藏），`Enter` 保存、`Ctrl+Enter` 换行、`Esc` 关闭
+1. **快捷键浮窗**：`Ctrl+Shift+N` 在光标附近弹一个 620×220 的输入条（复用 picker 那套无边框窗口 + 失焦隐藏），`Enter` 保存、`Ctrl+Enter` 换行、`Esc` 关闭
 2. **托盘菜单「记一笔」**：同上，不抢占当前窗口
 3. **从现有的东西一键变备忘**：剪贴板详情面板加「存为备忘」（和已有的「存为片段」并列）；片段页加「追加到备忘」
 
@@ -233,7 +233,7 @@ memos-blobs/…         ← 附件（同样受 96 MB 预算约束）
 | 里程碑 | 内容 | 估时 |
 | --- | --- | --- |
 | **M1 能记能搜** ✅ 已完成 | `memos` 表 + FTS5 trigram + CRUD + 侧栏一级项 + 时间线/编辑器 + `#tag` 派生与筛选 | ~6 小时 |
-| **M2 记起来快** ✅ 已完成 | 快捷键浮窗（Ctrl+Shift+N，光标处 560×190，Enter 保存 / Esc 关闭）+ 托盘「记一笔」+ 剪贴板「存为备忘」+ `SnippetToMemo` | ~4 小时 |
+| **M2 记起来快** ✅ 已完成 | 快捷键浮窗（Ctrl+Shift+N，光标处 620×220，Enter 保存 / Esc 关闭）+ 托盘「记一笔」+ 剪贴板「存为备忘」+ `SnippetToMemo` | ~4 小时 |
 | **M3 多端一致** ✅ 已完成 | 同步包加 `memos/<hash>.json` + `deletedMemos` 墓碑；按内容 hash 配对、取更新时间新的、置顶/归档取或 | ~3 小时 |
 | **M4 可选互通** 🚧 部分 | ✅ 导出 memos-export 1.0 zip + 从该格式导入（同样的内容自动跳过）；⏳ 直连远端 Memos 服务端的客户端未做 | ~6 小时 |
 

@@ -1,0 +1,123 @@
+/* 标本页脚手架 + 三套口味共用的「舒适化」改动。
+   只作用于这张对比图，不进产品代码；真要落地时对应 base.css / timeline.css 的对应选择器。 */
+
+/* ---------- 可读性：先把字放大到舒适线 ---------- */
+body {
+  font-size: 14px;
+  line-height: 1.35;
+}
+.memo-body {
+  font-size: 14px;
+  line-height: 1.72;
+}
+.memo-body h1,
+.memo-body h2,
+.memo-body h3 {
+  font-size: 15px;
+}
+.memo-body pre {
+  font-size: 12.5px;
+  line-height: 1.62;
+}
+.memo-card-title {
+  font-size: 13px;
+  letter-spacing: 0;
+}
+.memo-meta {
+  font-size: 12px;
+  gap: 9px;
+  margin-top: 9px;
+}
+.memo-tag {
+  font-size: 12px;
+}
+.memo-count {
+  font-size: 12px;
+}
+.memo-day-label {
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+.entry-autotag {
+  font-size: 11px;
+  border-radius: 5px;
+}
+.entry-trigger {
+  font-size: 11px;
+}
+.composer-hint {
+  font-size: 12px;
+}
+.link-btn {
+  font-size: 12px;
+}
+.btn {
+  font-size: 13px;
+}
+.btn-sm {
+  font-size: 12px;
+}
+.input {
+  font-size: 13px;
+}
+.memo-head .input {
+  padding: 7px 11px;
+}
+
+/* 侧栏：中文标签不再 10px 大写，回到 12px 正常字重 */
+.side-label {
+  font-size: 12px;
+  letter-spacing: 0;
+  text-transform: none;
+  padding: 14px 8px 6px;
+}
+.side-item {
+  font-size: 13px;
+  padding: 6px 9px;
+}
+.side-item em {
+  font-size: 12px;
+}
+.side-add {
+  font-size: 12px;
+}
+.cal-title,
+.cal-weekday,
+.cal-day {
+  font-size: 12px;
+}
+
+/* ---------- 密度：字放大之后把留白收回来，不然更飘 ---------- */
+.memo-card {
+  padding: 13px 16px;
+  margin-bottom: 10px;
+}
+.memo-head {
+  padding-top: 12px;
+  padding-bottom: 10px;
+}
+.tb-pill {
+  border-radius: 6px;
+  font-size: 12px;
+  padding: 3px 9px 3px 8px;
+}
+
+/* ---------- 材质：卡片与输入框"坐实" ---------- */
+.memo-card {
+  box-shadow: var(--elev-card);
+}
+.composer-box {
+  box-shadow: var(--elev-card);
+}
+
+/* ---------- 按钮：去渐变、去彩色光晕 ---------- */
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: none;
+}
+.tb-mark {
+  background: var(--accent);
+  box-shadow: none;
+  color: #fff;
+}

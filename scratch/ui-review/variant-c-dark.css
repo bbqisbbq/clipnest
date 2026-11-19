@@ -1,0 +1,49 @@
+/* C 柔和深色：底色从近纯黑抬到 #1b1c1f，文字降到 #e5e6e8，强调色降饱和。
+   面板靠"底色差一级 + 顶部 1px 高光"分层，不用硬阴影。 */
+:root {
+  --bg: #1b1c1f;
+  --surface: #202124;
+  --surface-2: #25272b;
+  --surface-3: #2b2e33;
+  --border: #33363c;
+  --border-soft: #2a2c31;
+  --border-strong: #3f434a;
+  --scrollbar: rgba(180, 185, 195, 0.26);
+  --scrollbar-hover: rgba(180, 185, 195, 0.5);
+  --text: #e5e6e8;
+  --text-2: #a9adb4;
+  --text-3: #8b8f98;
+  --accent: #8fa8e8;
+  --accent-2: #7d95d6;
+  --accent-tint: rgba(143, 168, 232, 0.14);
+  --accent-line: rgba(143, 168, 232, 0.36);
+  --ok: #57b98a;
+  --warn: #d0a05f;
+  --danger: #e08585;
+  --k-text: #9db2ea;
+  --k-link: #6fc2b4;
+  --k-image: #d0a264;
+  --k-files: #b49be0;
+  --k-rich: #dd93b0;
+  --k-custom: #9aa1ad;
+
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 10px;
+  --read-w: 720px;
+
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-pop: 0 18px 40px rgba(0, 0, 0, 0.5);
+  --elev-card: inset 0 1px 0 rgba(255, 255, 255, 0.045), 0 1px 2px rgba(0, 0, 0, 0.28);
+}
+
+/* 深色下强调色是浅色，实心按钮上必须用深字，白字对比只有 2:1 */
+.btn-primary {
+  color: #131418;
+}
+.tb-mark {
+  color: #131418;
+}
+.input::placeholder {
+  color: #767b84;
+}

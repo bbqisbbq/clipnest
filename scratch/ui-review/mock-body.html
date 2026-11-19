@@ -1,0 +1,214 @@
+<!-- 用真实类名搭的标本页：目的是比"舒适度"，不是像素级复刻。
+     数据来自真实条目风格，DOM 结构照 App.tsx / Sidebar / EntriesView / EntryCard 抄。 -->
+<div class="app is-entries">
+  <header class="tb">
+    <div class="tb-brand">
+      <span class="tb-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="6" y="4" width="12" height="17" rx="2.6"></rect>
+          <path d="M9.5 10h5M9.5 13.5h5M9.5 17h3"></path>
+        </svg>
+      </span>
+      <strong>ClipNest</strong>
+    </div>
+    <button class="tb-pill is-live"><span class="tb-dot"></span>记录中</button>
+    <div class="tb-spacer"></div>
+    <div class="tb-controls">
+      <button class="win-btn">—</button>
+      <button class="win-btn">▢</button>
+      <button class="win-btn is-close">✕</button>
+    </div>
+  </header>
+
+  <div class="workspace">
+    <aside class="side">
+      <div class="side-scroll">
+        <div class="side-label">内容</div>
+        <div class="side-sub">
+          <button class="side-item"><span>待办</span><em>3</em></button>
+          <div class="side-item-wrap">
+            <div class="side-item is-active" role="button" tabindex="0"><span>全部内容</span><em>128</em></div>
+          </div>
+          <div class="side-item-wrap">
+            <div class="side-item" role="button" tabindex="0"><span>我写的</span><em>24</em></div>
+          </div>
+          <div class="side-item-wrap">
+            <div class="side-item" role="button" tabindex="0"><span>剪贴板</span><em>96</em></div>
+          </div>
+          <div class="side-item-wrap">
+            <div class="side-item" role="button" tabindex="0"><span>片段</span><em>8</em></div>
+          </div>
+          <div class="side-item-wrap">
+            <div class="side-item" role="button" tabindex="0"><span>图片</span><em>12</em></div>
+          </div>
+          <div class="side-item-wrap">
+            <div class="side-item" role="button" tabindex="0"><span>置顶</span><em>5</em></div>
+          </div>
+          <button class="side-add">＋ 新建筛选器</button>
+        </div>
+
+        <div class="side-label">日历</div>
+        <div class="cal">
+          <div class="cal-head">
+            <button class="cal-nav">‹</button>
+            <span class="cal-title">2026 年 11 月</span>
+            <button class="cal-nav">›</button>
+          </div>
+          <div class="cal-grid cal-weekdays">
+            <span class="cal-weekday">一</span><span class="cal-weekday">二</span><span class="cal-weekday">三</span>
+            <span class="cal-weekday">四</span><span class="cal-weekday">五</span><span class="cal-weekday">六</span>
+            <span class="cal-weekday">日</span>
+          </div>
+          <div class="cal-grid">
+            <span class="cal-cell is-empty"></span><span class="cal-cell is-empty"></span><span class="cal-cell is-empty"></span>
+            <span class="cal-cell is-empty"></span><span class="cal-cell is-empty"></span><span class="cal-cell is-empty"></span>
+            <button class="cal-cell has-1"><span class="cal-day">1</span><span class="cal-dot"></span></button>
+            <button class="cal-cell has-2"><span class="cal-day">2</span><span class="cal-dot"></span></button>
+            <button class="cal-cell"><span class="cal-day">3</span></button>
+            <button class="cal-cell has-1"><span class="cal-day">4</span><span class="cal-dot"></span></button>
+            <button class="cal-cell has-3"><span class="cal-day">5</span><span class="cal-dot"></span></button>
+            <button class="cal-cell"><span class="cal-day">6</span></button>
+            <button class="cal-cell has-1"><span class="cal-day">7</span><span class="cal-dot"></span></button>
+            <button class="cal-cell"><span class="cal-day">8</span></button>
+            <button class="cal-cell has-2"><span class="cal-day">9</span><span class="cal-dot"></span></button>
+            <button class="cal-cell has-1"><span class="cal-day">10</span><span class="cal-dot"></span></button>
+            <button class="cal-cell"><span class="cal-day">11</span></button>
+            <button class="cal-cell has-1"><span class="cal-day">12</span><span class="cal-dot"></span></button>
+            <button class="cal-cell has-2"><span class="cal-day">13</span><span class="cal-dot"></span></button>
+            <button class="cal-cell"><span class="cal-day">14</span></button>
+            <button class="cal-cell has-1"><span class="cal-day">15</span><span class="cal-dot"></span></button>
+            <button class="cal-cell has-2"><span class="cal-day">16</span><span class="cal-dot"></span></button>
+            <button class="cal-cell"><span class="cal-day">17</span></button>
+            <button class="cal-cell has-3"><span class="cal-day">18</span><span class="cal-dot"></span></button>
+            <button class="cal-cell is-today is-active has-4"><span class="cal-day">19</span><span class="cal-dot"></span></button>
+            <button class="cal-cell"><span class="cal-day">20</span></button>
+            <button class="cal-cell has-1"><span class="cal-day">21</span><span class="cal-dot"></span></button>
+            <button class="cal-cell"><span class="cal-day">22</span></button>
+            <button class="cal-cell has-2"><span class="cal-day">23</span><span class="cal-dot"></span></button>
+            <button class="cal-cell"><span class="cal-day">24</span></button>
+            <button class="cal-cell"><span class="cal-day">25</span></button>
+            <button class="cal-cell has-1"><span class="cal-day">26</span><span class="cal-dot"></span></button>
+            <button class="cal-cell"><span class="cal-day">27</span></button>
+            <button class="cal-cell"><span class="cal-day">28</span></button>
+            <button class="cal-cell"><span class="cal-day">29</span></button>
+            <button class="cal-cell"><span class="cal-day">30</span></button>
+          </div>
+        </div>
+      </div>
+
+      <div class="side-foot">
+        <button class="side-item"><span>暂停收集</span></button>
+        <button class="side-item"><span>设置</span></button>
+      </div>
+    </aside>
+
+    <div class="main-pane">
+      <div class="entries">
+        <div class="entries-main">
+          <header class="memo-head">
+            <input class="input" placeholder="搜索内容（支持中文子串）…" />
+            <span class="memo-count">全部内容 · 128 条</span>
+          </header>
+
+          <div class="memo-timeline">
+            <section class="memo-day">
+              <div class="memo-day-label">2026-11-19 · 星期三</div>
+
+              <article class="memo-card entry-card">
+                <h3 class="memo-card-title">同步墓碑</h3>
+                <div class="memo-body">
+                  <p>周五前把同步的墓碑逻辑再过一遍：远端只写自己那份包，别碰别人的文件；内容没变就跳过 PUT，别让网盘变成版本坟场。</p>
+                </div>
+                <footer class="memo-meta">
+                  <span>09:41</span>
+                  <span class="memo-tag">#工作</span>
+                  <span class="memo-actions">
+                    <button class="link-btn">编辑</button>
+                    <button class="link-btn">置顶</button>
+                    <button class="link-btn is-danger">删除</button>
+                  </span>
+                </footer>
+              </article>
+
+              <article class="memo-card entry-card is-collected">
+                <div class="memo-body">
+                  <p><a href="#">https://github.com/bbqisbbq/clipnest/releases/tag/v2.6.2</a></p>
+                </div>
+                <footer class="memo-meta">
+                  <span>09:33</span>
+                  <span class="entry-autotag">剪贴板</span>
+                  <span class="memo-src">来自 Chrome</span>
+                </footer>
+              </article>
+
+              <article class="memo-card entry-card is-collected">
+                <div class="memo-body">
+                  <pre><code>wails3 build -platform windows/amd64 -tags production</code></pre>
+                </div>
+                <footer class="memo-meta">
+                  <span>09:28</span>
+                  <span class="memo-src">来自 Windows Terminal</span>
+                </footer>
+              </article>
+
+              <article class="memo-card entry-card">
+                <div class="memo-body">
+                  <p>今天要收的尾巴：</p>
+                  <ul>
+                    <li>- [ ] 补一轮 visual-check 截图</li>
+                    <li>- [x] 把设置页压成 480px 的问题修掉</li>
+                  </ul>
+                </div>
+                <footer class="memo-meta">
+                  <span>09:12</span>
+                  <span class="entry-todo">1/2 待办</span>
+                  <span class="memo-tag">#收尾</span>
+                </footer>
+              </article>
+
+              <article class="memo-card entry-card is-collected is-collapsible">
+                <div class="memo-body clampable is-clipped">
+                  <p>会议纪要：下周三之前定下 WebDAV 的冲突策略，两条路 —— 要么按设备 ID 分文件、要么按条目分片。前者实现简单但包会越来越大；后者写入量小，可代价是远端文件数量爆炸。</p>
+                  <p>另外同步周期从 30 分钟改成可配置，默认还是 30，手动按钮保留。</p>
+                </div>
+                <button class="entry-toggle">展开全文 ⌄</button>
+                <footer class="memo-meta">
+                  <span>08:55</span>
+                  <span class="entry-autotag">剪贴板</span>
+                </footer>
+              </article>
+            </section>
+
+            <section class="memo-day">
+              <div class="memo-day-label">2026-11-18 · 星期二</div>
+              <article class="memo-card entry-card">
+                <div class="memo-body">
+                  <p>地址在这里，别再翻邮箱了。</p>
+                </div>
+                <footer class="memo-meta">
+                  <span>21:04</span>
+                  <span class="entry-trigger">addr-</span>
+                </footer>
+              </article>
+            </section>
+          </div>
+        </div>
+
+        <div class="memo-composer" style="height: 188px">
+          <div class="memo-composer-resizer"></div>
+          <div class="composer-box">
+            <div class="mock-toolbar"><b>B</b><i>I</i><u>U</u><span>☑</span><span>&lt;/&gt;</span><span>🔗</span><span>⌗</span><span>H</span></div>
+            <div class="mock-editor">随手记点什么…（Ctrl+Enter 保存，写 - [ ] 就是待办）</div>
+            <div class="composer-actions">
+              <span class="composer-tags"><span class="composer-hint">写 #标签 归类 · - [ ] 待办 · Ctrl+Enter 保存</span></span>
+              <div class="composer-btns">
+                <button class="link-btn">清空</button>
+                <button class="btn btn-primary btn-sm">保存</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

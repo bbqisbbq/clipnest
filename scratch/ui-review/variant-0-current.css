@@ -1,0 +1,23 @@
+/* 现状基线：themes.ts 里的 default-light，原样不动，用来当对照。 */
+:root {
+  --bg: #f4f5f8;
+  --surface: #ffffff;
+  --surface-2: #f2f4f8;
+  --surface-3: #e9ecf2;
+  --border: #dfe3ea;
+  --border-soft: #e8ebf1;
+  --border-strong: #cfd5df;
+  --scrollbar: rgba(90, 104, 128, 0.24);
+  --scrollbar-hover: rgba(90, 104, 128, 0.5);
+  --text: #1b1f27;
+  --text-2: #4b5563;
+  --text-3: #7c8598;
+  --accent: #5566e8;
+  --accent-2: #7c5ce0;
+  --accent-tint: rgba(85, 102, 232, 0.12);
+  --accent-line: rgba(85, 102, 232, 0.4);
+  --ok: #14875f;
+  --warn: #a9691a;
+  --danger: #c8393f;
+  --elev-card: none;
+}

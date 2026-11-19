@@ -68,6 +68,8 @@ internal/clip/           业务层：条目、捕获、片段、同步、绑定 
 | `win32_windows.go` | Win32 基元：剪贴板 API、前景程序、注册表自启 |
 | `shell_windows.go` | `ShellExecute` / 资源管理器定位 |
 | `platform_other.go` | 非 Windows 桩实现（保持可编译） |
+| `snippet_exec_windows.go` | 片段动作的 Windows 实现（粘贴 / 启动程序 / 打开网址） |
+| `update.go` | 自动更新：GitHub Release 检查、下载、静默安装 |
 
 **两条铁律**：
 
@@ -94,7 +96,7 @@ src/lib/
 src/components/
   TitleBar / Sidebar / Calendar / Tip / Icons      布局与小组件
   SettingsView          设置页编排者（草稿、脏标记、保存条）
-  settings/             七个分区：Capture / Interaction / Sync / Snippets / Appearance / Update / About + ui.tsx
+  settings/             八个分区（含 Editor）：Capture / Interaction / Sync / Snippets / Appearance / Update / About + ui.tsx
   EntriesView           统一内容视图（搜索、写新条目、卡片操作编排）
   entries/EntryCard     单条卡片：折叠、图片点击、操作按钮
   EntryDetailView       条目详情：占右侧整区（不是浮层），顶部面包屑返回 + 属性面板
@@ -106,7 +108,7 @@ src/components/
 src/styles/vditor-theme.css  Vditor 的 token 映射 + 三条硬编码浅色补丁（深色主题必需）
 src/styles/
   fonts → base → layout → entries → controls → settings → picker → snippets → timeline → editor → vditor-theme → detail → todo → filter
-  （fonts.css 里是 @font-face：自带 Maple Mono NF CN 三字重，字体文件在 src/assets/fonts/）
+  （fonts.css 里是 @font-face：自带 Maple Mono NF CN 单 400 字重，字体文件在 src/assets/fonts/）
 src/theme-light.css      主题引擎管不到的浅色补丁（--k-* / --shadow-pop / 原生控件）
 ```
 
@@ -196,15 +198,15 @@ cd frontend; npx tsc --noEmit; npx vite build --mode production
 pwsh -File scripts\visual-check\check-css.ps1   # 样式回归截图（改 CSS 后跑）
 ```
 
-`go vet ./internal/clip/` 目前对 `win32_windows.go` / `ole_windows.go` 的
-`unsafe.Pointer` 指针算术报 4 条 "possible misuse"，属已知存量问题（原生内存代码，
-修它要单独验证），不是回归信号。
+`go vet ./internal/...` 现在是**零告警**：`win32_windows.go` 的 `ptrFromUintptr` 与
+`expand/wininput_windows.go` 的 `hookParamPtr` 两个 shim 已经把 `unsafe.Pointer`
+指针算术的误报绕开了（早先那 4 条告警已经不存在，别再照着忽略）。
 
 ## 六、后续可以继续拆的地方
 
-1. `sync_run.go` 的 `syncOnce`（300+ 行单函数）可以拆成 pull / merge / push 三段，
-   但需要引入中间结构，属于重构而非搬移。
+1. ~~`sync_run.go` 的 `syncOnce`（300+ 行单函数）拆成 pull / merge / push~~ —— 2026-11-19 已拆：
+   `syncRun` + listPeers / pull / merge / adoptSettings / push / report 六段（顺带修掉"每台设备计数虚高"）。
 2. `store.go` + `entry_store.go` 抽成 `internal/store`，`Entry` 抽成 `internal/model`，
    `clip` 只留 service / sync / snippet（会改绑定路径，一次只动一层并装机验证）。
 3. `*_windows.go` 抽成 `internal/winplat`（同上，注意绑定与构建 tag）。
-4. `Picker.tsx` 与 `Capture.tsx` 已经共用 `MarkdownEditor`，可以再共用一层 Composer。
+4. `Picker.tsx` 与 `Capture.tsx` 已经共用 `MarkdownSurface`，可以再共用一层 Composer。

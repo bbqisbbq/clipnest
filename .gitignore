@@ -43,3 +43,7 @@ scratch/backup-*/
 
 # 布局对比截图（本地看效果用，只入库脚本）
 scratch/layout-preview/*.png
+
+# 审查/对照用的截图与改造前的 CSS 快照（本地复现用，只入库脚本）
+scratch/ui-review/*.png
+scratch/ui-review/dist-before.css

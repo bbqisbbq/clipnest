@@ -27,10 +27,10 @@ ClipNest 在你使用电脑时安静地记录进入过系统剪贴板的一切�
   文件（`CF_HDROP`）、OLE 延迟渲染的剪贴板，最后还有「其它格式」兜底（原样保存私有格式字节，
   可原样粘回）。覆盖细节见 [docs/CAPTURE.md](docs/CAPTURE.md)。
 - **WebDAV 跨机器同步（打包传输）**：远端 `clipnest_data/` 里**一台机器一个 zip 包**（`<设备id>-<主机名>.zip`），
-  包内是整份历史 + 附件 + 删除墓碑 + 设置。同步 = 读所有别人的包（并集合并）+ 写自己那一个包，
+  包内是**最近 500 条**（`syncMaxEntries`）+ 附件 + 删除墓碑 + 设置。同步 = 读所有别人的包（并集合并）+ 写自己那一个包，
   请求数与条目数量无关；**每台机器只写自己的文件，写冲突不可能发生**。默认 30 分钟一次，
   内容没变化时连上传都跳过。设计与竞态分析见 [docs/SYNC.md](docs/SYNC.md)。
-- **主题**：4 套配色预设（默认深色 / 亮白 / 纸感 / 墨黑）+ 跟随系统 + 自定义 CSS（自动去除 @import 与远程 url）+ 对比度自检（WCAG AA）。全部走设计 token。
+- **主题**：5 套配色预设（默认深色 / 暖白 / 亮白 / 纸感 / 墨黑）+ 跟随系统 + 自定义 CSS（自动去除 @import 与远程 url）+ 对比度自检（WCAG AA）。全部走设计 token。
 - **两级导航**：左侧是「内容」筛选器（全部 / 我写的 / 剪贴板 / 片段 / 图片 / 置顶 / 已归档，可双击改名换图标）
   加一个月历；右侧是同一条时间线，所有内容都在这里，靠属性区分来源。
 - **快捷键记一笔**：`Ctrl+Shift+N` 在光标处弹出小编辑框（Enter 保存 / Esc 关闭），不打断手上的事。
@@ -245,8 +245,8 @@ wails3 task windows:package             # NSIS 全用户安装包（需要 NSIS�
 
 - **SQLite 单文件**（`modernc.org/sqlite`，纯 Go 驱动，无需 cgo）：条目表 + BLOB 表，搜索走索引，
   写入是事务性的，进程被强杀也不会留下写坏一半的索引；备份 = 复制一个文件。
-- 表结构见 `internal/clip/entry_store.go` 的 `schemaSQL`；单条记录见 `entry.go` 的 `Entry`。
-- 小附件（≤512 KB）存在 BLOB 表里，大的落盘 `memo_files\`，正文统一用 `memoimg:<hash>` 引用。
+- 表结构见 `internal/clip/entry_store.go` 的 `entrySchema`（entries 侧，`store.go` 的 `coreSchema` 是 meta/墓碑侧）；单条记录见 `entry.go` 的 `Entry`。
+- 小附件（≤512 KB）存在 BLOB 表里，大的落盘 `entry_files\`，正文统一用 `memoimg:<hash>` 引用。
 - **不自动清理**：没有最大条数、也没有保留天数，条目只在你手动删除/归档时消失。
 
 ## 目录结构
@@ -260,6 +260,10 @@ internal/clip/
   entry_query.go              EntryQuery 查询（筛选器/日历/统计/标签/缩写检索）
   entry_blob.go               附件字节存取（≤512KB 进库，更大的落盘）
   entry_image.go              纯函数：解码、缩略、MIME 推断
+  entry_filter_rule.go        筛选器规则树（and/or/not）→ SQL 编译
+  todo.go                     待办：正文里的 - [ ] 派生与勾选写回
+  update.go                   GitHub Releases 自动更新（检查 / 下载 / 静默安装）
+  syncpanel.go                设置页「设备包」面板的数据形状
   store.go                    SQLite 打开/迁移、meta、墓碑、统计、诊断日志
   service.go                  ClipService 装配与生命周期
   service_capture.go          采集管线 + 快速输入窗
@@ -287,10 +291,10 @@ frontend/                     React + TS + Vite
   src/components/
     TitleBar / Sidebar / Calendar / Tip / Icons     布局与小组件
     EntriesView + entries/EntryCard                 统一内容视图与卡片
-    SettingsView + settings/*                       设置页编排者与七个分区
-    EntryEditor / Composer / MarkdownEditor / SnippetFields / HotkeyInput / Lightbox
+    SettingsView + settings/*                       设置页编排者与八个分区（含 Editor）
+    EntryDetailView / Composer / MarkdownSurface / SnippetFields / Dialog / HotkeyInput / Lightbox
   src/lib/                    api（绑定封装）、themes（配色预设与对比度自检）、images、format、window
-  src/styles/                 按域拆开的样式（base/layout/entries/controls/settings/picker/snippets/timeline/editor/detail/todo/filter/vditor-theme）
+  src/styles/                 按域拆开的样式（fonts/base/layout/entries/controls/settings/picker/snippets/timeline/editor/detail/todo/filter/vditor-theme，共 14 个）
   src/theme-light.css         主题引擎管不到的浅色补丁
   bindings/                   wails3 生成的 TS 绑定（改了 Go 导出面要重新生成）
 scripts/make_icon.py          生成 appicon.png 与 windows/icon.ico

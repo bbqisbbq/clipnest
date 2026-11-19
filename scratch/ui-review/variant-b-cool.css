@@ -1,0 +1,38 @@
+/* B 冷灰软 UI：中性冷灰底 + 纯白面板 + 更大的圆角与柔和扩散阴影。
+   观感最"软"、最接近 macOS 原生工具，代价是白底亮度比 A 高。 */
+:root {
+  --bg: #eff0f3;
+  --surface: #ffffff;
+  --surface-2: #f6f7f9;
+  --surface-3: #eceef2;
+  --border: #dfe2e8;
+  --border-soft: #e9ecf1;
+  --border-strong: #c8cdd6;
+  --scrollbar: rgba(90, 100, 120, 0.24);
+  --scrollbar-hover: rgba(90, 100, 120, 0.5);
+  --text: #1c1d21;
+  --text-2: #4d525c;
+  --text-3: #6b7280;
+  --accent: #2f6fed;
+  --accent-2: #6a4fe0;
+  --accent-tint: rgba(47, 111, 237, 0.1);
+  --accent-line: rgba(47, 111, 237, 0.34);
+  --ok: #12805a;
+  --warn: #9a6a18;
+  --danger: #c33f45;
+  --k-text: #2f5fd0;
+  --k-link: #12867c;
+  --k-image: #9a6a18;
+  --k-files: #6b4fd0;
+  --k-rich: #c0345f;
+  --k-custom: #5c6779;
+
+  --r-sm: 7px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --read-w: 700px;
+
+  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.06);
+  --shadow-pop: 0 20px 44px rgba(16, 24, 40, 0.16);
+  --elev-card: 0 1px 3px rgba(16, 24, 40, 0.06), 0 14px 30px -24px rgba(16, 24, 40, 0.3);
+}

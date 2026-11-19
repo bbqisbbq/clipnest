@@ -17,7 +17,8 @@
     ...
 ```
 
-包本身是 zip，里面是「整份历史」：
+包本身是 zip，里面是**最近 500 条**（`internal/clip/sync.go` 的 `syncMaxEntries`，
+超出部分留在本机、不进包也不上传——满额时日志里会记一行）：
 
 ```
 package.json                 索引：每条记录的 hash/类型/更新时间/有无附件 + 删除墓碑 + 设置
@@ -37,7 +38,7 @@ blobs/<name>                 图片与私有格式的原始字节（不 base64�
 
 ## 二、几台机器怎么同步（时序）
 
-每台机器同步时做三件事：**读所有别人的包 → 并集合并进本地库 → 把自己的完整历史打包写回去**。
+每台机器同步时做三件事：**读所有别人的包 → 并集合并进本地库 → 把自己那一段历史（最近 500 条）打包写回去**。
 
 ```
         远端 clipnest_data/                     设备 A                   设备 B
@@ -117,7 +118,7 @@ blobs/<name>                 图片与私有格式的原始字节（不 base64�
 - **整份设置覆盖**：以整份 `SyncUpdatedAt` 较新者为准，不做字段级合并。
 - **密码明文落盘**：`settings.json` 里是明文；请使用 WebDAV 专用应用密码。
 - **包会随历史增长**：1000 条记录的包约几百 KiB（附件另计，且只在对方缺失时上传）。
-  想更小就调低「最多保留条数」。
+  上限固定为每包 500 条（`syncMaxEntries`）；想更小目前只能自己清理旧条目。
 - **依赖服务器支持 PROPFIND / MKCOL / PUT**：极少数只读挂载或禁 MKCOL 的服务需要先在网页端建好
   `clipnest_data/` 目录。
 
@@ -132,7 +133,7 @@ go run ./scratch/dav -addr 127.0.0.1:8899 -dir E:\default\clipnest\scratch\davro
 # 2) 设置里地址填 http://127.0.0.1:8899/ ，点「测试连接」→「立即同步」
 Get-Content "$env:APPDATA\ClipNest\clipnest.log" -Tail 5     # 看 PUT / sync ok
 Get-ChildItem E:\default\clipnest\scratch\davroot\clipnest_data
-#   每个设备一个 zip；用资源管理器双击可以直接看到 items/ 与 package.json
+#   每个设备一个 zip；用资源管理器双击可以直接看到 entries/ 与 package.json
 
 # 3) 单元测试（进程内 httptest + golang.org/x/net/webdav，不需要外网）
 go test ./internal/clip/ -run TestSync -v
