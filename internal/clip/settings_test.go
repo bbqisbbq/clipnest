@@ -55,7 +55,7 @@ func TestLoadSettingsClampsCaptureTransparency(t *testing.T) {
 	if err := json.Unmarshal(blob, &raw); err != nil {
 		t.Fatalf("round-trip defaults: %v", err)
 	}
-	raw["captureTransparency"] = 90
+	raw["captureTransparency"] = 250 // 超出 0–100，读出时必须被钳住
 	blob, err = json.Marshal(raw)
 	if err != nil {
 		t.Fatalf("marshal dirty settings: %v", err)

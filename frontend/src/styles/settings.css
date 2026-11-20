@@ -185,6 +185,66 @@
   color: var(--text-3);
 }
 
+/* 滑块：设置页里唯一一个连续量（「记一笔」弹窗透明 0–100%）。
+   轨道用 surface-3、拇指用强调色，跟 seg-control / switch 同一套 token；
+   两个引擎的伪元素都要写，否则 WebView2（Chromium）之外的兜底渲染会是系统灰。 */
+.slider {
+  --wails-draggable: none;
+  -webkit-appearance: none;
+  appearance: none;
+  width: 190px;
+  height: 16px;
+  background: transparent;
+  cursor: pointer;
+}
+.slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  border: 1px solid var(--border-soft);
+}
+.slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 13px;
+  height: 13px;
+  margin-top: -5px;
+  border-radius: 50%;
+  border: 0;
+  background: var(--accent);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.32);
+}
+.slider::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  border: 1px solid var(--border-soft);
+}
+.slider::-moz-range-thumb {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 0;
+  background: var(--accent);
+}
+.slider:focus-visible {
+  outline: none;
+}
+.slider:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 3px var(--accent-tint);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .slider::-webkit-slider-thumb { transition: box-shadow 120ms ease; }
+}
+/* 值贴着滑块右边，宽度固定住，拖动时数字不会把行挤来挤去 */
+.slider-value {
+  min-width: 42px;
+  font-size: 12px;
+  color: var(--text-2);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.slider-value.is-off { color: var(--text-3); }
+
 .switch {
   --wails-draggable: none;
   width: 34px;

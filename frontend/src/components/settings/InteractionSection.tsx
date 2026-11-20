@@ -25,22 +25,24 @@ export default function InteractionSection({ draft, patch, appInfo }: Props) {
         <HotkeyInput value={draft.captureHotkey} onChange={(v) => patch({ captureHotkey: v })} />
       </Row>
       {/* 窗口四角本来就是透明（圆角外侧透出桌面），这一项调的是卡片底色的 alpha。
-          「关」= 实心卡片；开了之后背景里的窗口/文档会直接透上来。 */}
+          「关」= 实心卡片；拉到 100% = 卡片完全透掉，只剩文字和一圈细边。 */}
       <Row
         label="「记一笔」弹窗透明"
-        tip="弹窗窗口本身一直是透明的（只是四角透出桌面），这项调卡片底色的透明程度：越大越能看见背后的窗口。注意这是真透明不是毛玻璃（糊不了桌面背景），调到 50% 以上文字会看不清，所以最高就到 50%。浅色主题 + 背后是白文档（Word/网页）时几乎看不出区别——白叠白；背后是深色或彩色内容时才明显。"
+        tip="弹窗窗口本身一直是透明的（只是四角透出桌面），这项调卡片底色的透明程度：越大越能看见背后的窗口。0% 是实心卡片；100% 卡片完全透掉，只剩文字和一圈细边。注意这是真透明不是毛玻璃（糊不了桌面背景）；超过 ~50% 后文字直接压在你背后的内容上，遇到花背景会看不清。浅色主题 + 背后是白文档（Word/网页）时看不出区别——白叠白。"
       >
-        <div className="seg-control">
-          {[0, 15, 30, 50].map((value) => (
-            <button
-              key={value}
-              className={`seg-item ${(draft.captureTransparency ?? 0) === value ? "is-on" : ""}`}
-              onClick={() => patch({ captureTransparency: value })}
-            >
-              {value === 0 ? "关" : `${value}%`}
-            </button>
-          ))}
-        </div>
+        <input
+          className="slider"
+          type="range"
+          min={0}
+          max={100}
+          step={5}
+          value={draft.captureTransparency ?? 0}
+          aria-label="「记一笔」弹窗透明"
+          onChange={(e) => patch({ captureTransparency: Number(e.target.value) })}
+        />
+        <span className={`slider-value ${(draft.captureTransparency ?? 0) > 0 ? "" : "is-off"}`}>
+          {(draft.captureTransparency ?? 0) > 0 ? `${draft.captureTransparency}%` : "关"}
+        </span>
       </Row>
       <Row label="选中后自动粘贴" tip="关闭后只写入剪贴板，需要自己按 Ctrl+V。">
         <Switch checked={draft.pasteOnPick} onChange={(v) => patch({ pasteOnPick: v })} />

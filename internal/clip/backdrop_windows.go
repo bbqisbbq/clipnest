@@ -45,6 +45,8 @@ type windowCompositionAttribData struct {
 
 // SetWindowBackdrop 打开/关闭窗口背后的 Acrylic 层，返回值表示"现在确实是开着"，
 // 让调用方能在老系统上退回不透明卡片（否则半透明会被合到黑底上，卡片反而更脏）。
+//
+
 func SetWindowBackdrop(hwnd uintptr, acrylic bool) bool {
 	if hwnd == 0 {
 		return false
@@ -55,7 +57,7 @@ func SetWindowBackdrop(hwnd uintptr, acrylic bool) bool {
 		mode := dwmSystemBackdropNone
 		procDwm.Call(hwnd, uintptr(dwmwaSystemBackdropType),
 			uintptr(unsafe.Pointer(&mode)), unsafe.Sizeof(mode))
-		// 顺手关掉 Win10 那条退路（没开过也没关系，幂等）。
+		// 顺手把 Win10 那条退路也关掉（幂等）。2.9.1 起一直是这么做的。
 		policy := accentPolicy{State: 0 /* ACCENT_DISABLED */}
 		data := windowCompositionAttribData{
 			Attrib: wcaAccentPolicy,

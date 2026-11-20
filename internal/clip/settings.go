@@ -132,10 +132,12 @@ func DefaultSettings() Settings {
 	}
 }
 
-// MaxCaptureTransparency caps the popup's card alpha. Past ~50% the text sits on
-// whatever happens to be behind the window (a white document, a screenshot) and
-// stops being readable; the number is a UX ceiling, not a technical one.
-const MaxCaptureTransparency = 50
+// MaxCaptureTransparency caps the popup's card alpha (100 = 卡片完全透明，只剩文字与一圈细边).
+//
+// 这个上限**不是**可读性保障：超过 ~50% 之后文字就压在你背后的内容上，遇到花哨的背景
+// 会看不清——那是用户自己的取舍，设置页的说明里写清楚了。这里只负责别让脏值（手改
+// settings.json、对端同步包）超出物理范围。
+const MaxCaptureTransparency = 100
 
 // normalize clamps values that come from settings.json (user-editable) or from
 // the UI. Nothing downstream may assume a field arrived validated.

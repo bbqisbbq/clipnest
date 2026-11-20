@@ -21,8 +21,8 @@ import { useSettingsTheme } from "./hooks/useTheme";
 //     （0 = 实心，默认）。注意这是"真透明"而不是毛玻璃：WebView2 糊不了桌面背景。
 
 // 与 Go 侧 clip.MaxCaptureTransparency 同一个数：两边都钳一次，settings.json 被手改
-// 或前端算出脏值时都不会把卡片弄到看不清字。
-const MAX_TRANSPARENCY = 50;
+// 或前端算出脏值时都不会越界。100 = 卡片完全透明（只剩文字 + 一圈细边）。
+const MAX_TRANSPARENCY = 100;
 
 export default function Capture() {
   const [text, setText] = useState("");
@@ -46,14 +46,20 @@ export default function Capture() {
       // 页面里的半透明像素只有在窗口背后有 DWM backdrop 时才真的与桌面混合，
       // 否则会被合到黑底上（卡片反而比实心更暗）。所以先让后端开关那层 backdrop，
       // 再按"它到底开没开起来"决定卡片透多少——老系统上开不起来就别硬透。
+      //
+      // 100% 也照样开着：卡片 alpha=0 时露出来的就是这层磨砂玻璃。关掉它不会变成"文字浮在
+      // 桌面上"，而是变成一块暗板（WebView2 那层表面本身就是不透明的）——实测白底下
+      // 关掉是 rgb(10,11,15)、开着是 rgb(146,146,146)。
+      const needBackdrop = want > 0;
       let backdrop = false;
       try {
-        backdrop = await ClipService.SetCaptureBackdrop(want > 0);
+        backdrop = await ClipService.SetCaptureBackdrop(needBackdrop);
       } catch {
         backdrop = false;
       }
       if (!alive) return;
-      setTransparency(want > 0 && !backdrop ? 0 : want);
+      // 需要 backdrop 却没开起来 → 退回不透明，别硬透成一块脏色。
+      setTransparency(needBackdrop && !backdrop ? 0 : want);
     };
     void ClipService.GetSettings()
       .then((st) => apply(st.captureTransparency))
@@ -115,14 +121,19 @@ export default function Capture() {
     };
   }, []);
 
+  // 卡片底色：0 = 用样式表里的实心 --surface；中间档 = 按比例透；100 = 直接给 transparent
+  // （不写成 color-mix(…, 0%, transparent)：那一档在 WebView2 里不生效，卡片仍然是实心的）。
+  const cardBackground =
+    transparency <= 0
+      ? undefined
+      : transparency >= MAX_TRANSPARENCY
+        ? "transparent"
+        : `color-mix(in srgb, var(--surface) ${100 - transparency}%, transparent)`;
+
   return (
     <div
       className={`capture ${transparency > 0 ? "is-translucent" : ""}`}
-      style={
-        transparency > 0
-          ? { background: `color-mix(in srgb, var(--surface) ${100 - transparency}%, transparent)` }
-          : undefined
-      }
+      style={cardBackground ? { background: cardBackground } : undefined}
     >
       <div className="capture-head" style={drag}>
         <span className="capture-dot" />
@@ -168,3 +179,6 @@ export default function Capture() {
     </div>
   );
 }
+
+
+

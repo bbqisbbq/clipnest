@@ -304,10 +304,10 @@ func (w *wiring) createWindows(preSettings clip.Settings, hidden bool) {
 		// 和 picker 一样：窗口本身必须透明，否则那两个 10px 圆角外面会垫一块矩形底色
 		// （看起来就是浮在桌面上的一块方砖）。卡片自己是不是半透明由前端按
 		// Settings.CaptureTransparency 决定，这里只把"四角真透明"这件底层的事做掉。
-		// 用 Translucent 而不是 Transparent：两者在 Windows 上的 exStyle 完全相同
-		// （都是 WS_EX_NOREDIRECTIONBITMAP），差别只在 Wails 建窗时会不会顺手开 DWM
-		// backdrop；我们改成运行时自己开关，所以这里选哪个都行——选 Translucent 是为了
-		// 让"这窗打算用 backdrop"在代码里读得出来。
+		// 用 Translucent 而不是 Transparent：两者 exStyle 相同（都是 WS_EX_NOREDIRECTIONBITMAP），
+		// 但实测 Transparent 那条路页面 alpha=0 的地方会露出 WebView2 的白底，
+		// 而 Translucent 能让 alpha=0 的地方透出桌面（圆角切边靠的就是这个）。
+		// backdrop 本身由我们运行时开关（internal/clip/backdrop_windows.go）。
 		BackgroundType:   application.BackgroundTypeTranslucent,
 		BackgroundColour: application.NewRGB(14, 16, 21),
 		URL:              "/?mode=capture",

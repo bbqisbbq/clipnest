@@ -17,7 +17,9 @@ param(
   # 深浅方案：留空则按预设自己的明暗（settings.theme = system 时以预设为准）
   [string]$Theme = 'system',
   # 背后那块窗口的底色（#rrggbb）：白色会让你看不出浅色主题的透明（白叠白）
-  [string]$Backdrop = '#ffffff'
+  [string]$Backdrop = '#ffffff',
+  # 第二档透明度（默认 30；传 100 可验证卡片完全透掉那一端）
+  [int]$Mid = 30
 )
 
 Add-Type -AssemblyName System.Drawing
@@ -181,7 +183,7 @@ function Measure-Capture([int]$transparency, [string]$shotName) {
 
 try {
   $a = Measure-Capture 0 "capture-transparency-0-$Preset.png"
-  $b = Measure-Capture 30 "capture-transparency-30-$Preset.png"
+  $b = Measure-Capture $Mid "capture-transparency-$Mid-$Preset.png"
 
   # 背后那块窗口的预期颜色（就是 -Backdrop 给的那个）
   $bgExpected = [System.Drawing.ColorTranslator]::FromHtml($Backdrop)
@@ -229,12 +231,23 @@ try {
     $results.Add(("PASS 0% 时卡片 {0} 与背后 {1} 明显不同（差 {2}）：卡片不透明" -f `
       (& $fmt $a.Card), (& $fmt $a.Corner), [int][Math]::Abs($gap)))
   }
-  # 3) 30% 时卡片朝背后移动了、且没走到头
+  # 3) 第二档：默认 30% 时卡片朝背后移动了、且没走到头；-Mid 100 则要求卡片几乎完全透掉
   $towardBackdrop = [Math]::Sign($moved) -eq [Math]::Sign($gap)
   $visiblyMoved = [Math]::Abs($moved) -ge 8
   $notSwallowed = [Math]::Abs($moved) -lt [Math]::Abs($gap) - 8
   if ([Math]::Abs($gap) -lt 40) {
     $results.Add("SKIP 30% 的混合判定：背后与卡片太接近，量不出来（见上面的 NOTE）")
+  } elseif ($Mid -ge 95) {
+    # 最大档不苛求"像素等于背后"：卡片完全透掉之后，露出来的是 DWM 的 Acrylic 层，
+    # 它自己带一层底色（白底下量到 146,146,146，蓝底下接近原色）。能证明"卡片自己不再
+    # 画东西"就够——也就是离实心卡片足够远、并且朝背后方向走了大半。
+    if ([Math]::Abs($moved) -ge ([Math]::Abs($gap) * 0.5) -and [Math]::Abs($moved) -ge 60) {
+      $results.Add(("PASS 100% 时卡片 {0} 已基本透掉（实心 {1}，背后 {2}，移动 {3}/{4}）" -f `
+        (& $fmt $b.Card), (& $fmt $a.Card), (& $fmt $a.Corner), [int]$moved, [int]$gap))
+    } else {
+      $results.Add(("FAIL 100% 时卡片 {0} 还是实心的样子（实心 {1}，移动 {2}）" -f `
+        (& $fmt $b.Card), (& $fmt $a.Card), [int]$moved))
+    }
   } elseif ($towardBackdrop -and $visiblyMoved -and $notSwallowed) {
     $results.Add(("PASS 30% 时卡片 {0} 朝背后移动了 {1}（跨度 {2}）——半透明真的与背后混合" -f `
       (& $fmt $b.Card), [int]$moved, [int]$gap))
@@ -264,6 +277,8 @@ finally {
     Write-Host "已把安装版 ClipNest 拉起来：$installedExe --background"
   }
 }
+
+
 
 
 
