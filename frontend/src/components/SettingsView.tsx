@@ -71,10 +71,18 @@ export default function SettingsView(props: Props) {
     setDraft(settings);
   }, [settings]);
 
+  const retry = useRef(0);
+
   const flush = useCallback(async () => {
     if (timer.current) {
       window.clearTimeout(timer.current);
       timer.current = null;
+    }
+    // 上一笔还在飞：等它落地再发，否则后发的那笔会用一份旧快照把字段弹回去
+    // （400ms 内连改两个开关时，第一个改动会静默丢失）。
+    if (saving.current) {
+      timer.current = window.setTimeout(() => void flush(), SAVE_DELAY_MS);
+      return;
     }
     const pending = touched.current;
     if (Object.keys(pending).length === 0) return;
@@ -84,11 +92,19 @@ export default function SettingsView(props: Props) {
     const ok = await onSave({ ...(settingsRef.current ?? ({} as Settings)), ...pending });
     saving.current = false;
     if (!ok) {
-      // 失败：改动放回队列，下次输入/离开设置页时再试一次
+      // 失败：改动放回队列，并真的重试几次（以前状态条写着"稍后会自动重试"，
+      // 实际要到用户再动一个字段才会重发）。
       touched.current = { ...pending, ...touched.current };
-      setStatus({ kind: "error", text: "保存失败，稍后会自动重试" });
+      if (retry.current < 3) {
+        retry.current += 1;
+        setStatus({ kind: "error", text: `保存失败，正在重试（${retry.current}/3）` });
+        timer.current = window.setTimeout(() => void flush(), 800 * retry.current);
+      } else {
+        setStatus({ kind: "error", text: "保存失败：改任意一项再试一次" });
+      }
       return;
     }
+    retry.current = 0;
     setStatus({ kind: "saved", text: `已自动保存 ${clockLabel()}` });
   }, [onSave]);
 

@@ -74,15 +74,12 @@ type Props = {
   depth?: number;
 };
 
-function defaultOp(field?: string): string {
-  const spec = field ? undefined : undefined;
-  void spec;
-  return "is";
-}
-
 function emptyCondition(fields: FilterFieldSpec[]): FilterCondition {
   const first = fields[0]?.field ?? "tag";
-  return { field: first, op: fields[0]?.ops?.[0] ?? defaultOp(), value: "" };
+  // 值必须和下拉里显示的那一项一致：以前新建条件是 value=""，下拉却显示第一项，
+  // 于是"命中 N 条"按空值算，存下去的规则和眼前看到的不是一回事。
+  const fallback = VALUE_OPTIONS[first]?.[0]?.value ?? "";
+  return { field: first, op: fields[0]?.ops?.[0] ?? "is", value: fallback };
 }
 
 export default function FilterRuleEditor({ group, fields, onChange, disabled, depth = 0 }: Props) {
@@ -100,7 +97,8 @@ export default function FilterRuleEditor({ group, fields, onChange, disabled, de
   const changeField = (i: number, field: string) => {
     const spec = fields.find((f) => f.field === field);
     // 换字段时把算子与取值一起重置，避免出现「文字 是 true」这种组合
-    patchCondition(i, { field, op: spec?.ops?.[0] ?? "is", value: "" });
+    const fallback = VALUE_OPTIONS[field]?.[0]?.value ?? "";
+    patchCondition(i, { field, op: spec?.ops?.[0] ?? "is", value: fallback });
   };
 
   return (

@@ -28,18 +28,25 @@ func (s *ClipService) SaveSettings(st Settings) (Settings, error) {
 	if shareableStamp(st) != shareableStamp(prev) {
 		st.SyncUpdatedAt = nowUTC()
 	}
-	if err := s.store.SaveSettings(st); err != nil {
-		return prev, err
-	}
+	// 会失败的两件副作用先做：注册表/热键失败时设置还没落盘，用户看到的是
+	// "没保存"，而不是旧顺序留下的"存了但没生效"。
 	if prev.AutoStart != st.AutoStart {
 		if err := setAutoStart(st.AutoStart, s.hooks.ExePath); err != nil {
-			return s.store.Settings(), fmt.Errorf("设置开机启动失败: %w", err)
+			_ = setAutoStart(prev.AutoStart, s.hooks.ExePath) // 回滚注册表
+			return prev, fmt.Errorf("设置开机启动失败: %w", err)
 		}
 	}
 	if s.hooks.OnSettings != nil {
 		if err := s.hooks.OnSettings(st); err != nil {
-			return s.store.Settings(), err
+			if prev.AutoStart != st.AutoStart {
+				_ = setAutoStart(prev.AutoStart, s.hooks.ExePath)
+			}
+			_ = s.hooks.OnSettings(prev) // 热键/展开器退回旧值
+			return prev, err
 		}
+	}
+	if err := s.store.SaveSettings(st); err != nil {
+		return prev, err
 	}
 	// 两个后台循环都是"重启式"：syncLoop 内部取消上一轮，更新检查走 restartUpdateCheck。
 	// 之前这里是 `go s.updateCheckLoop()`，保存几次就多几个待执行的检查。

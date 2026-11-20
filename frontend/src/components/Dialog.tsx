@@ -56,6 +56,15 @@ type DialogApi = {
 
 const DialogContext = createContext<DialogApi | null>(null);
 
+// 弹窗是否正开着。详情页的 Esc（"要放弃修改吗"）需要知道这件事：以前两边都监听
+// window 的 keydown 且都不拦，按一次 Esc 会"关掉弹窗 + 又弹一个"，只剩鼠标能用。
+let dialogOpen = false;
+
+/** 有弹窗挡在前面时，底下的页面不该再处理 Esc。 */
+export function isDialogOpen(): boolean {
+  return dialogOpen;
+}
+
 type Pending =
   | { kind: "choose"; opts: ChooseOptions; resolve: (v: string | null) => void }
   | { kind: "prompt"; opts: PromptOptions; resolve: (v: string | null) => void };
@@ -115,13 +124,28 @@ export function DialogProvider({ children }: { children: ReactNode }) {
 
   // 输入框自动聚焦；Esc 一律当"取消"
   useEffect(() => {
+    dialogOpen = pending !== null;
     if (pending?.kind === "prompt") inputRef.current?.focus();
+  }, [pending]);
+  useEffect(() => {
+    return () => {
+      dialogOpen = false;
+    };
+  }, []);
+  // 没有输入框时把焦点放到第一个按钮：否则键盘 Tab 会跑到遮罩背后的界面上。
+  const actionsRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!pending) return;
+    if (pending.kind === "prompt") return;
+    const first = actionsRef.current?.querySelector("button");
+    (first as HTMLButtonElement | null)?.focus();
   }, [pending]);
   useEffect(() => {
     if (!pending) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
+        e.stopImmediatePropagation();
         close(null);
       }
     };
@@ -141,8 +165,12 @@ export function DialogProvider({ children }: { children: ReactNode }) {
             if (e.target === e.currentTarget) close(null);
           }}
         >
-          <div className="modal" role="dialog" aria-modal="true">
-            {title ? <h3 className="modal-title">{title}</h3> : null}
+          <div className="modal" role="dialog" aria-modal="true" aria-labelledby={title ? "modal-title" : undefined}>
+            {title ? (
+              <h3 className="modal-title" id="modal-title">
+                {title}
+              </h3>
+            ) : null}
             {pending.opts.message ? <p>{pending.opts.message}</p> : null}
             {pending.kind === "prompt" ? (
               <input
@@ -156,7 +184,7 @@ export function DialogProvider({ children }: { children: ReactNode }) {
                 }}
               />
             ) : null}
-            <div className="modal-actions">
+            <div className="modal-actions" ref={actionsRef}>
               {pending.kind === "prompt" ? (
                 <button className="btn btn-ghost" onClick={() => close(null)}>
                   取消

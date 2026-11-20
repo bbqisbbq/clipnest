@@ -12,6 +12,7 @@ package main
 
 import (
 	"embed"
+	"fmt"
 	"log"
 	"log/slog"
 	"os"
@@ -41,6 +42,11 @@ func init() {
 	application.RegisterEvent[string]("picker:opened")
 	application.RegisterEvent[string]("picker:paste-failed")
 	application.RegisterEvent[string]("capture:opened")
+	// 托盘 → 前端的导航请求，以及"发现新版本"。
+	// 这两个以前只 emit、没注册：前端收不到（导航是 2.8.1 才修好），
+	// Wails 还会为每次检查更新记一条 "event not registered" 警告。
+	application.RegisterEvent[string]("ui:navigate")
+	application.RegisterEvent[clip.UpdateInfo]("update:available")
 }
 
 func main() {
@@ -88,7 +94,11 @@ func main() {
 			if w.autoStartItem != nil {
 				w.autoStartItem.SetChecked(st.AutoStart)
 			}
-			_ = w.applyCaptureHotkey(st.CaptureHotkey)
+			// 热键注册失败必须让调用方知道：撞了别的软件的热键时，设置页要能报错，
+			// 而不是显示"已保存"然后 Ctrl+Shift+N 永远没反应。
+			if err := w.applyCaptureHotkey(st.CaptureHotkey); err != nil {
+				return fmt.Errorf("「记一笔」快捷键注册失败: %w", err)
+			}
 			return w.applyHotkey(st.Hotkey)
 		},
 	})
@@ -130,7 +140,9 @@ func main() {
 
 	w.applyHotkey(preSettings.Hotkey)
 	clip.Logf(dataDir, "capture hotkey configured: %q", preSettings.CaptureHotkey)
-	w.applyCaptureHotkey(preSettings.CaptureHotkey)
+	if err := w.applyCaptureHotkey(preSettings.CaptureHotkey); err != nil {
+		clip.Logf(dataDir, "capture hotkey registration failed: %v", err)
+	}
 
 	w.buildTray(preSettings)
 

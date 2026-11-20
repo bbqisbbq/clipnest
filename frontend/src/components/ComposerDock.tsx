@@ -59,13 +59,19 @@ export default function ComposerDock({ draft, onSaved, onNotify }: Props) {
   }, []);
 
   return (
-    <Composer
-      value={draft.text}
-      onChange={draft.setText}
-      onSave={(content) => void save(content)}
-      onImageFile={pasteImage}
-      busy={busy}
-      error={error}
-    />
+    <>
+      {/* 重启后从库里读回草稿时说一句：不然用户会以为"我上次写的怎么还在" */}
+      {draft.restored && draft.text.trim() ? (
+        <p className="snip-hint composer-restored">已恢复上次未保存的草稿</p>
+      ) : null}
+      <Composer
+        value={draft.text}
+        onChange={draft.setText}
+        onSave={(content) => void save(content)}
+        onImageFile={pasteImage}
+        busy={busy}
+        error={error}
+      />
+    </>
   );
 }

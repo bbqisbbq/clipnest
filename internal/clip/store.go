@@ -109,6 +109,9 @@ func Open(dir string) (*Store, error) {
 	for _, col := range []struct{ name, decl string }{
 		{"todo_state", "TEXT NOT NULL DEFAULT ''"},
 		{"todo_done_at", "TEXT NOT NULL DEFAULT ''"},
+		// 片段的执行类型（2.8.3）：以前直接写进 entries.kind，把 password/app/command
+		// 混进了"正文类型"枚举里。
+		{"snippet_kind", "TEXT NOT NULL DEFAULT ''"},
 	} {
 		if err := ensureColumn(db, "entries", col.name, col.decl); err != nil {
 			Logf(dir, "schema upgrade (entries.%s) failed: %v", col.name, err)
@@ -344,10 +347,16 @@ func (s *Store) SetMeta(k, v string) error {
 
 // AddTombstoneScoped records a deletion under a scope ("entry").
 func (s *Store) AddTombstoneScoped(scope, hash string, at time.Time, device string) {
+	addTombstoneScope(s.db, scope, hash, at, device)
+}
+
+// addTombstoneScope is the transaction-aware form: deleting an entry writes its
+// tombstone inside the same tx (see Store.DeleteEntry).
+func addTombstoneScope(db execer, scope, hash string, at time.Time, device string) {
 	if hash == "" {
 		return
 	}
-	_, _ = s.db.Exec(`
+	_, _ = db.Exec(`
 		INSERT INTO tombstones (hash, deleted_at, device, scope) VALUES (?,?,?,?)
 		ON CONFLICT(hash, scope) DO UPDATE SET
 			deleted_at = excluded.deleted_at, device = excluded.device`,

@@ -171,3 +171,16 @@
   border-radius: 999px;
   padding: 0 5px;
 }
+
+/* 刚勾掉的那一条：给 10 秒反悔窗口（勾错了不必去"已完成"里翻） */
+.todo-undo {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--surface-3);
+  color: var(--text-2);
+  font-size: 12px;
+}

@@ -79,7 +79,11 @@ func (s *ClipService) writeEntryToClipboard(e Entry) error {
 		}
 		return WriteHTMLToClipboard(e.HTML, e.Content)
 	case KindCustom:
-		data, _, err := s.store.LoadEntryBlob(memoImageToken(e.Content))
+		// 私有格式的字节挂在采集哈希下（正文只是格式名），见 SaveEntryBlobAs。
+		if e.Hash == "" {
+			return fmt.Errorf("「%s」没有可用的原始数据", e.FormatName)
+		}
+		data, _, err := s.store.LoadEntryBlob(e.Hash)
 		if err != nil {
 			return fmt.Errorf("「%s」的原始数据已不可用", e.FormatName)
 		}

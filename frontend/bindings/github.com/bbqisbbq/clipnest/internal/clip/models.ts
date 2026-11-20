@@ -84,6 +84,12 @@ export interface Entry {
     "useCount"?: number;
 
     /**
+     * SnippetKind 是「回车时做什么」（粘贴/打开/启动/执行），和 Kind（正文是什么）
+     * 不是一回事：一段命令的正文是文本，但它的片段类型是 command。
+     */
+    "snippetKind"?: string;
+
+    /**
      * 生命周期：nil = 永久。现在所有条目都不自动过期（以保留为主）。
      */
     "expiresAt"?: string | null;
@@ -486,6 +492,18 @@ export interface Snippet {
      */
     "apps"?: string[] | null;
     "excludeApps"?: string[] | null;
+}
+
+/**
+ * SnippetFields 是片段设置里那些"只属于片段"的字段。
+ */
+export interface SnippetFields {
+    "trigger": string;
+    "caseSensitive": boolean;
+    "keepTrigger": boolean;
+    "apps": string[] | null;
+    "excludeApps": string[] | null;
+    "groupName": string;
 }
 
 /**

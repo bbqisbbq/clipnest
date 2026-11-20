@@ -151,15 +151,14 @@ textarea {
 
 /* 标准属性：Firefox / 新 Chromium 也认 */
 .side-scroll,
-.memo-timeline,
-.snip-preview,
-.composer-preview {
+.memo-timeline {
   scrollbar-color: var(--scrollbar) transparent;
   scrollbar-width: thin;
 }
 .muted {
   color: var(--text-3);
-}.is-error {
+}
+.is-error {
   color: var(--danger);
 }
 
@@ -173,10 +172,7 @@ pre,
 kbd,
 samp,
 .mono,
-.is-mono,
-.memo-input,
-.composer-input,
-.cm-editor {
+.is-mono {
   font-family: var(--font-mono);
   font-variant-ligatures: normal;
   font-feature-settings: "calt" 1;

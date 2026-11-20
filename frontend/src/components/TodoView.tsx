@@ -13,7 +13,8 @@ type Props = {
   onOpenEntry: (entry: Entry) => void;
   onNotify: (msg: string) => void;
   onChanged: () => void;
-  onGoEntries: () => void;
+  /** 空态那个按钮：回到内容页并**预填**一行「- [ ] 」 */
+  onStartTask: () => void;
   /** 后台采集/同步进来新条目时 +1：重扫一遍待办，别等下次切页面 */
   liveSignal: number;
 };
@@ -43,11 +44,13 @@ function sourceLabel(r: TodoRef): string {
   return `${short} · ${timeLabel(r.entryCreatedAt)}`;
 }
 
-export default function TodoView({ onOpenEntry, onNotify, onChanged, onGoEntries, liveSignal }: Props) {
+export default function TodoView({ onOpenEntry, onNotify, onChanged, onStartTask, liveSignal }: Props) {
   const [rows, setRows] = useState<TodoRef[]>([]);
   const [loading, setLoading] = useState(true);
   const [showDone, setShowDone] = useState(false);
   const [error, setError] = useState("");
+  // 刚勾掉的那一条：给一个立刻反悔的机会（勾错了不用去已完成里翻）
+  const [lastDone, setLastDone] = useState<{ row: TodoRef; at: number } | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -88,15 +91,32 @@ export default function TodoView({ onOpenEntry, onNotify, onChanged, onGoEntries
       try {
         await ClipService.SetTodoDone(row.entryId, row.item.key, nextDone);
         onChanged();
-        if (nextDone) onNotify(`已完成：${row.item.text.slice(0, 24)}`);
+        if (nextDone) {
+          setLastDone({ row: { ...row, item: { ...row.item, done: nextDone } }, at: Date.now() });
+          onNotify(`已完成：${row.item.text.slice(0, 24)}`);
+        } else if (lastDone && rowKey(lastDone.row) === rowKey(row)) {
+          setLastDone(null);
+        }
       } catch (err) {
         patch(!nextDone);
         onNotify(`切换失败：${String(err)}`);
         void load();
       }
     },
-    [load, onChanged, onNotify],
+    [lastDone, load, onChanged, onNotify],
   );
+
+  // 「撤销」10 秒后自动收起（再久就成了常驻噪音）
+  useEffect(() => {
+    if (!lastDone) return;
+    const t = window.setTimeout(() => setLastDone(null), 10_000);
+    return () => window.clearTimeout(t);
+  }, [lastDone]);
+
+  const undoLast = useCallback(() => {
+    if (!lastDone) return;
+    void toggle(lastDone.row);
+  }, [lastDone, toggle]);
 
   const jump = useCallback(
     async (row: TodoRef) => {
@@ -121,6 +141,14 @@ export default function TodoView({ onOpenEntry, onNotify, onChanged, onGoEntries
         <span className="todo-count">
           {open.length} 未完成{done.length ? ` · ${done.length} 已完成` : ""}
         </span>
+        {lastDone ? (
+          <span className="todo-undo">
+            已勾掉「{lastDone.row.item.text.slice(0, 18)}」
+            <button className="link-btn" onClick={undoLast}>
+              撤销
+            </button>
+          </span>
+        ) : null}
       </header>
 
       <div className="todo-body">
@@ -132,8 +160,8 @@ export default function TodoView({ onOpenEntry, onNotify, onChanged, onGoEntries
             <p className="todo-empty-sub">
               在底部「记一条」里写一行 <code>- [ ] 买牛奶</code>，它就会出现在这里。
             </p>
-            <button className="btn btn-primary btn-sm" onClick={onGoEntries}>
-              去写一条
+            <button className="btn btn-primary btn-sm" onClick={onStartTask}>
+              写一条待办
             </button>
           </div>
         ) : null}

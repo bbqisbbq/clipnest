@@ -210,7 +210,9 @@ func (r *syncRun) mergePeer(res syncPeerResult) syncPeerStats {
 			continue
 		}
 		if mi.Blob != "" {
-			r.peerHasBlob[mi.Hash+mi.Blob] = true
+			// 键要和 buildOwnPackage 查的一致（`entry-<hash><ext>`）：少了前缀
+			// 就永远查不到，于是每次同步都把对方的附件重传一遍。
+			r.peerHasBlob["entry-"+mi.Hash+mi.Blob] = true
 		}
 	}
 	r.peerTombstones = append(r.peerTombstones, res.pkg.index.Deleted...)
@@ -243,6 +245,10 @@ func (r *syncRun) mergePeer(res syncPeerResult) syncPeerStats {
 			continue
 		}
 		if local, ok := s.store.findEntryByHash(remote.Hash); ok {
+			// 同一内容在两端各被采集过一次：两条行的 hash 相同、id 不同。
+			// 按远端 id upsert 会插出第二条重复卡片（而且此后每轮同步都可能再加一条），
+			// 所以这里沿用本地 id —— 内容相同，本来就该是同一条。
+			remote.ID = local.ID
 			if !remote.UpdatedAt.After(local.UpdatedAt) {
 				// 只把置顶这类"或"语义的标记并过来
 				if remote.Pinned && !local.Pinned {
@@ -263,11 +269,12 @@ func (r *syncRun) mergePeer(res syncPeerResult) syncPeerStats {
 				Logf(s.store.Dir(), "merge entry %s: %v", remote.Hash, err)
 			}
 		}
-		// 附件：内容寻址，正文里的 memoimg:<hash> 天然对得上
-		if token := memoImageToken(remote.Content); token != "" {
-			ext := blobExtForKind(remote.Kind)
+		// 附件：图片靠正文里的 memoimg 令牌（内容寻址，天然对得上）；
+		// 私有格式没有令牌，按采集哈希挂在同一个键下（见 entryBlobKey）。
+		if key := entryBlobKey(remote); key != "" {
+			ext := entryBlobExt(remote)
 			if payload, ok := res.pkg.blobs["entry-"+remote.Hash+ext]; ok {
-				if _, err := s.store.SaveEntryBlob(payload, strings.TrimPrefix(ext, ".")); err != nil {
+				if err := s.store.SaveEntryBlobAs(key, payload, strings.TrimPrefix(ext, ".")); err != nil {
 					Logf(s.store.Dir(), "restore entry blob %s: %v", remote.Hash, err)
 				}
 			}
@@ -362,6 +369,9 @@ func (r *syncRun) push(upload bool) (syncPushInfo, error) {
 	}
 	_ = s.store.SetMeta("sync.lastPush", fingerprint)
 	info.pushed = true
+	// 墓碑裁剪放到上传成功之后：放在组包阶段会改变下一轮指纹，
+	// 于是每次空闲 tick 都白推一个整包（见 buildOwnPackage 的说明）。
+	s.store.PruneTombstones(time.Now().AddDate(0, 0, -tombstoneRetentionDays))
 	Logf(s.store.Dir(), "sync: pushed %s (%d KiB)", target, len(payload)/1024)
 	return info, nil
 }

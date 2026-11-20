@@ -40,7 +40,9 @@ func (s *ClipService) refreshFilesLoop() {
 		case <-s.stopCh:
 			return
 		case <-ticker.C:
-			for _, e := range s.store.ListEntries(EntryQuery{Kind: string(KindFiles), Limit: 500}) {
+			// Tail：只看最新的文件类条目。缺了它就是每 3 分钟重扫最旧的那 500 条，
+			// 新条目的「文件还在不在」永远停在采集那一刻。
+			for _, e := range s.store.ListEntries(EntryQuery{Kind: string(KindFiles), Limit: 500, Tail: true}) {
 				if updated, ok := s.store.RefreshEntryFiles(e.ID); ok {
 					s.emit("clip:updated", updated)
 				}
@@ -62,7 +64,12 @@ func (s *ClipService) handleClipboardChange() {
 	}
 
 	cap, err := captureClipboard()
-	if err != nil || cap == nil {
+	if err != nil {
+		// 静默失败是排查噩梦的根源：用户报"某类内容采不到"时，日志里得有线索。
+		Logf(s.store.Dir(), "capture read failed: %v", err)
+		return
+	}
+	if cap == nil {
 		return
 	}
 
@@ -109,6 +116,7 @@ func (s *ClipService) handleClipboardChange() {
 
 	entry, isNew, err := s.store.SaveCapture(*cap)
 	if err != nil {
+		Logf(s.store.Dir(), "save capture failed (kind=%s, format=%q): %v", cap.Kind, cap.FormatName, err)
 		return
 	}
 
@@ -223,6 +231,9 @@ func (s *ClipService) CloseCapture() {
 // EnsureCaptureHotkey repairs a profile whose captureHotkey ended up empty
 // because an older build shipped no default for it. Runs once (meta marker), so
 // a later deliberate clear is respected.
+//
+// 修好之后要**真的重新注册热键**：以前只写库，而热键是在 Start 之前按旧设置
+// 注册的，于是"被治愈"的那一次启动里 Ctrl+Shift+N 依然是空的。
 func (s *ClipService) EnsureCaptureHotkey() {
 	if s.store.Meta("capture.hotkeyInit") != "" {
 		return
@@ -232,6 +243,10 @@ func (s *ClipService) EnsureCaptureHotkey() {
 		st.CaptureHotkey = DefaultSettings().CaptureHotkey
 		if err := s.store.SaveSettings(st); err != nil {
 			Logf(s.store.Dir(), "capture hotkey heal failed: %v", err)
+		} else if s.hooks.OnSettings != nil {
+			if err := s.hooks.OnSettings(st); err != nil {
+				Logf(s.store.Dir(), "capture hotkey re-register failed: %v", err)
+			}
 		}
 	}
 	_ = s.store.SetMeta("capture.hotkeyInit", "1")

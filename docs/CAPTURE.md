@@ -51,7 +51,7 @@ WM_CLIPBOARDUPDATE  ──►  消息窗口(专用线程)  ──►  channel  �
 - **限额**：只有「单条文本长度上限」会跳过内容（`MaxTextLength`，0 = 不限制）。
   **不自动清理历史**：没有最大条数、没有保留天数，条目只在你手动删除/归档时消失。
 - **持久化**：直接写 SQLite（`clipnest.db`，WAL）；正文与元数据在 `entries` 表，
-  图片/自定义字节在 `entry_blobs`，超过 512 KB 的落盘 `memo_files/`。
+  图片/自定义字节在 `entry_blobs`，超过 512 KB 的落盘 `entry_files/`。
 
 ## 四、已知抓不到/会打折的情况（诚实清单）
 

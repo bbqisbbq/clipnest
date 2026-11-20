@@ -1,12 +1,4 @@
-/* 片段视图：片段列表、片段编辑器字段、变量 chip、预览排版与分段控件。
-   段末还带着几处对前面规则的小补丁（seg-control、link-btn 等），保持原序。 */
 
-/* ---------------- snippets view ---------------- */
-
-/* 片段页：只有侧栏 + 内容两列 */
-.app.is-snippets .workspace {
-  grid-template-columns: 218px minmax(0, 1fr);
-}
 
 .snippets {
   display: grid;
@@ -14,19 +6,18 @@
   min-height: 0;
   overflow: hidden;
   border-left: 1px solid var(--border-soft);
-}.chip.is-on {
+}
+.chip.is-on {
   border-color: var(--accent-line);
   background: var(--accent-tint);
   color: var(--accent);
-}.snip-empty {
+}
+.snip-empty {
   color: var(--text-dim);
   font-size: 12px;
   line-height: 1.7;
   padding: 18px 8px;
-}.snip-row.is-active {
-  border-color: var(--accent-line);
-  background: var(--accent-tint);
-}.snip-trigger,
+}
 .picker-trigger {
   padding: 0 5px;
   border-radius: 4px;
@@ -38,19 +29,14 @@
 
 .picker-trigger {
   margin-right: 6px;
-}.snip-fields .field {
-  grid-template-columns: 68px minmax(0, 1fr);
-}
-
-.snip-fields .field.is-stacked {
-  grid-template-columns: 1fr;
 }
 
 .snip-hint {
   margin: -2px 0 4px 68px;
   font-size: 12px;
   color: var(--text-3);
-}.snip-error {
+}
+.snip-error {
   margin: 6px 0 0;
   font-size: 12px;
   color: var(--danger);
@@ -71,23 +57,13 @@
   font-size: 12px;
   color: var(--text-3);
   font-style: normal;
-}.snip-fields .field-control,
-.snip-fields .input {
-  min-width: 0;
-  width: 100%;
-  max-width: 100%;
-}
-
-.snip-fields .field-control {
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
 
 .snip-hint {
   margin-left: 0;
   padding-left: 68px;
-}.link-btn {
+}
+.link-btn {
   margin-left: 8px;
   padding: 0;
   border: 0;
@@ -95,7 +71,8 @@
   color: var(--accent);
   font-size: 12px;
   cursor: pointer;
-}.side-sub {
+}
+.side-sub {
   display: flex;
   flex-direction: column;
   gap: 1px;
@@ -117,8 +94,6 @@ input:focus-visible,
 textarea:focus-visible {
   outline: 1px solid var(--accent-line);
   outline-offset: 1px;
-}.detail-snippet-row .link-btn {
-  margin: 0;
 }
 /* 分段控件（主题切换等） */
 .seg-control {
@@ -146,7 +121,8 @@ textarea:focus-visible {
 
 .seg-item:hover:not(.is-on) {
   color: var(--text);
-}.snip-hint code {
+}
+.snip-hint code {
   padding: 1px 5px;
   border-radius: 4px;
   background: var(--accent-tint);

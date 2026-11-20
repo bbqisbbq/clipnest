@@ -1,6 +1,7 @@
 package clip
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -10,6 +11,13 @@ import (
 // entries 表的结构与读写：schema、列清单、行 ↔ Entry 映射、保存（含 FTS 索引）、
 // 取单条、按 hash 查找、删除，以及「原样合并远端条目」（不重写时间戳）。
 // 不负责：查询语言（entry_query.go）、采集入库（entry.go）、附件字节（entry_blob.go）。
+
+// execer 由 *sql.DB 与 *sql.Tx 共同满足：写路径要「条目行 + FTS 行 + 墓碑」在
+// 同一个事务里，否则索引失败会留下一条永远搜不到的条目，删除半途失败会留下
+// 「本机还在、对端已删」的不一致。
+type execer interface {
+	Exec(query string, args ...any) (sql.Result, error)
+}
 
 // ---- schema -------------------------------------------------------------
 
@@ -45,6 +53,9 @@ CREATE TABLE IF NOT EXISTS entries (
   exclude_apps   TEXT NOT NULL DEFAULT '',
   group_name     TEXT NOT NULL DEFAULT '',
   use_count      INTEGER NOT NULL DEFAULT 0,
+  -- 片段的"按类型执行"语义（text/password/image/file/url/app/command/html）。
+  -- 不能塞进 kind：kind 回答的是"正文是什么"，两者不是一一对应（见 snippet.go）。
+  snippet_kind   TEXT NOT NULL DEFAULT '',
 
   expires_at   TEXT NOT NULL DEFAULT '',
   created_at   TEXT NOT NULL,
@@ -87,11 +98,11 @@ CREATE TABLE IF NOT EXISTS entry_filters (
 
 const entryColumns = `id, content, kind, source, title, tags, actions, pinned, archived,
 	hash, seen_count, copy_count, source_app, width, height, html, rtf, format_name, format_id, files,
-	trigger_key, case_sensitive, keep_trigger, apps, exclude_apps, group_name, use_count,
+	trigger_key, case_sensitive, keep_trigger, apps, exclude_apps, group_name, use_count, snippet_kind,
 	expires_at, created_at, updated_at, todo_state, todo_done_at`
 
 // entryPlaceholders must stay in sync with entryColumns (INSERT 的 ? 个数)。
-const entryPlaceholders = `?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?`
+const entryPlaceholders = `?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?`
 
 func scanEntry(sc scannable) (Entry, error) {
 	var (
@@ -111,6 +122,7 @@ func scanEntry(sc scannable) (Entry, error) {
 		&e.Hash, &e.SeenCount, &e.CopyCount, &e.SourceApp, &e.Width, &e.Height,
 		&e.HTML, &e.RTF, &e.FormatName, &formatID, &files,
 		&e.TriggerKey, &caseSensitive, &keepTrigger, &apps, &excludeApps, &e.GroupName, &e.UseCount,
+		&e.SnippetKind,
 		&expiresAt, &createdAt, &updatedAt, &todoState, &todoDoneAt)
 	if err != nil {
 		return Entry{}, err
@@ -188,7 +200,29 @@ func (s *Store) SaveEntry(in Entry) (Entry, error) {
 	// 待办派生列由正文算出（不信任调用方传来的值）
 	deriveTodo(&in, now)
 
-	if _, err := s.db.Exec(`
+	tx, err := s.db.Begin()
+	if err != nil {
+		return Entry{}, err
+	}
+	defer func() { _ = tx.Rollback() }() // 提交后的 Rollback 是空操作
+	if err := upsertEntry(tx, in); err != nil {
+		return Entry{}, err
+	}
+	if err := indexEntryTx(tx, in); err != nil {
+		// 索引写不进去就整条回滚：宁可这次保存失败，也不要留下一条搜不到的条目。
+		return Entry{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return Entry{}, err
+	}
+	return in, nil
+}
+
+// upsertEntry writes one row: insert, or update every content-bearing column on
+// conflict. Shared by SaveEntry (which stamps updated_at = now) and mergeEntry
+// (which preserves the peer's timestamps) so the two can never drift apart.
+func upsertEntry(db execer, e Entry) error {
+	_, err := db.Exec(`
 		INSERT INTO entries (`+entryColumns+`)
 		VALUES (`+entryPlaceholders+`)
 		ON CONFLICT(id) DO UPDATE SET
@@ -206,21 +240,16 @@ func (s *Store) SaveEntry(in Entry) (Entry, error) {
 			exclude_apps=excluded.exclude_apps, group_name=excluded.group_name,
 			expires_at=excluded.expires_at, updated_at=excluded.updated_at,
 			todo_state=excluded.todo_state, todo_done_at=excluded.todo_done_at`,
-		in.ID, in.Content, string(in.Kind), string(in.Source), in.Title,
-		TagSpec(in.Tags), actionSpec(in.Actions), boolInt(in.Pinned), boolInt(in.Archived),
-		in.Hash, in.SeenCount, in.CopyCount, in.SourceApp, in.Width, in.Height,
-		in.HTML, in.RTF, in.FormatName, in.FormatID, encodeFiles(in.Files),
-		in.TriggerKey, boolInt(in.CaseSensitive), boolInt(in.KeepTrigger),
-		joinList(in.Apps), joinList(in.ExcludeApps), in.GroupName, in.UseCount,
-		encodeTimePtr(in.ExpiresAt), encodeTime(in.CreatedAt), encodeTime(in.UpdatedAt),
-		in.TodoState, encodeTimePtr(in.TodoDoneAt),
-	); err != nil {
-		return Entry{}, err
-	}
-	if err := s.indexEntry(in); err != nil {
-		Logf(s.dir, "entry fts index failed: %v", err)
-	}
-	return in, nil
+		e.ID, e.Content, string(e.Kind), string(e.Source), e.Title,
+		TagSpec(e.Tags), actionSpec(e.Actions), boolInt(e.Pinned), boolInt(e.Archived),
+		e.Hash, e.SeenCount, e.CopyCount, e.SourceApp, e.Width, e.Height,
+		e.HTML, e.RTF, e.FormatName, e.FormatID, encodeFiles(e.Files),
+		e.TriggerKey, boolInt(e.CaseSensitive), boolInt(e.KeepTrigger),
+		joinList(e.Apps), joinList(e.ExcludeApps), e.GroupName, e.UseCount, e.SnippetKind,
+		encodeTimePtr(e.ExpiresAt), encodeTime(e.CreatedAt), encodeTime(e.UpdatedAt),
+		e.TodoState, encodeTimePtr(e.TodoDoneAt),
+	)
+	return err
 }
 
 func encodeTimePtr(t *time.Time) string {
@@ -230,8 +259,10 @@ func encodeTimePtr(t *time.Time) string {
 	return encodeTime(*t)
 }
 
-func (s *Store) indexEntry(e Entry) error {
-	if _, err := s.db.Exec(`DELETE FROM entries_fts WHERE id = ?`, e.ID); err != nil {
+// indexEntryTx rewrites the FTS rows for one entry inside the caller's
+// transaction, so the index can never disagree with the row itself.
+func indexEntryTx(db execer, e Entry) error {
+	if _, err := db.Exec(`DELETE FROM entries_fts WHERE id = ?`, e.ID); err != nil {
 		return err
 	}
 	// 标题也进索引：`@随记@` 这类目标条目要靠名字搜得到。
@@ -239,7 +270,7 @@ func (s *Store) indexEntry(e Entry) error {
 	if t := strings.TrimSpace(e.Title); t != "" {
 		fields = strings.TrimSpace(fields + " " + t)
 	}
-	_, err := s.db.Exec(`INSERT INTO entries_fts (id, content, tags) VALUES (?,?,?)`,
+	_, err := db.Exec(`INSERT INTO entries_fts (id, content, tags) VALUES (?,?,?)`,
 		e.ID, e.Content, fields)
 	return err
 }
@@ -267,18 +298,39 @@ func (s *Store) findEntryByHash(hash string) (Entry, bool) {
 	return e, true
 }
 
-// DeleteEntry removes an entry and its index row, and leaves a tombstone so
-// peers drop their copy too.
+// DeleteEntry removes an entry, its index row and a tombstone for peers — all in
+// one transaction, in that order. 先删后写墓碑：反过来的话，删除语句失败会留下
+// 一条「本机还在、对端已经删掉」的分叉。
 func (s *Store) DeleteEntry(id string) bool {
-	if e, ok := s.GetEntry(id); ok && e.Hash != "" {
-		s.AddTombstoneScoped("entry", e.Hash, nowUTC(), hostName())
+	e, ok := s.GetEntry(id)
+	if !ok {
+		return false
 	}
-	res, err := s.db.Exec(`DELETE FROM entries WHERE id = ?`, id)
+	tx, err := s.db.Begin()
 	if err != nil {
 		return false
 	}
-	_, _ = s.db.Exec(`DELETE FROM entries_fts WHERE id = ?`, id)
+	defer func() { _ = tx.Rollback() }()
+	res, err := tx.Exec(`DELETE FROM entries WHERE id = ?`, id)
+	if err != nil {
+		Logf(s.dir, "delete entry %s: %v", id, err)
+		return false
+	}
+	if _, err := tx.Exec(`DELETE FROM entries_fts WHERE id = ?`, id); err != nil {
+		Logf(s.dir, "delete entry fts %s: %v", id, err)
+		return false
+	}
+	if e.Hash != "" {
+		addTombstoneScope(tx, "entry", e.Hash, nowUTC(), hostName())
+	}
+	if err := tx.Commit(); err != nil {
+		return false
+	}
 	n, _ := res.RowsAffected()
+	// 只有真的带着附件时才去扫全表找孤儿，纯文本删除不必付这个代价。
+	if n > 0 && entryBlobKey(e) != "" {
+		s.GCBlobs()
+	}
 	return n > 0
 }
 
@@ -292,42 +344,17 @@ func (s *Store) mergeEntry(e Entry) error {
 	// 派生列一律本端重算：旧版客户端上传的条目没有 todo_state，
 	// 直接覆盖会让本端待办状态凭空消失（见设计文档 1.4）。
 	deriveTodo(&e, e.UpdatedAt)
-	if _, err := s.db.Exec(`
-		INSERT INTO entries (`+entryColumns+`)
-		VALUES (`+entryPlaceholders+`)
-		ON CONFLICT(id) DO UPDATE SET
-			content=excluded.content, kind=excluded.kind, source=excluded.source,
-			title=excluded.title,
-			tags=excluded.tags, actions=excluded.actions,
-			pinned=excluded.pinned, archived=excluded.archived,
-			hash=excluded.hash, source_app=excluded.source_app,
-			width=excluded.width, height=excluded.height,
-			html=excluded.html, rtf=excluded.rtf,
-			format_name=excluded.format_name, format_id=excluded.format_id,
-			files=excluded.files,
-			trigger_key=excluded.trigger_key, case_sensitive=excluded.case_sensitive,
-			keep_trigger=excluded.keep_trigger, apps=excluded.apps,
-			exclude_apps=excluded.exclude_apps, group_name=excluded.group_name,
-			expires_at=excluded.expires_at, updated_at=excluded.updated_at,
-			todo_state=excluded.todo_state, todo_done_at=excluded.todo_done_at`,
-		e.ID, e.Content, string(e.Kind), string(e.Source), e.Title,
-		TagSpec(e.Tags), actionSpec(e.Actions), boolInt(e.Pinned), boolInt(e.Archived),
-		e.Hash, e.SeenCount, e.CopyCount, e.SourceApp, e.Width, e.Height,
-		e.HTML, e.RTF, e.FormatName, e.FormatID, encodeFiles(e.Files),
-		e.TriggerKey, boolInt(e.CaseSensitive), boolInt(e.KeepTrigger),
-		joinList(e.Apps), joinList(e.ExcludeApps), e.GroupName, e.UseCount,
-		encodeTimePtr(e.ExpiresAt), encodeTime(e.CreatedAt), encodeTime(e.UpdatedAt),
-		e.TodoState, encodeTimePtr(e.TodoDoneAt),
-	); err != nil {
+
+	tx, err := s.db.Begin()
+	if err != nil {
 		return err
 	}
-	return s.indexEntry(e)
+	defer func() { _ = tx.Rollback() }()
+	if err := upsertEntry(tx, e); err != nil {
+		return err
+	}
+	if err := indexEntryTx(tx, e); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
-
-// FindEntryByTitle returns the live entry whose title matches name
-// (case-insensitive). 隐写模式 uses it to resolve `@名称@` to a landing entry.
-
-// AppendTextToEntry appends text to an entry, separated by a blank line.
-//
-// It re-reads the row and saves it back whole: a partial Entry from the caller
-// would silently reset tags, actions or the trigger key.

@@ -25,6 +25,7 @@ export type {
     FilterGroup,
     Settings,
     Snippet,
+    SnippetFields,
     Stats,
     SyncDetail,
     SyncDeviceInfo,

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import MarkdownSurface, { type MarkdownSurfaceHandle } from "./MarkdownSurface";
 import SnippetFields from "./SnippetFields";
 import { ClipService, type Entry } from "../lib/api";
-import { useChoose, useConfirm } from "./Dialog";
+import { isDialogOpen, useChoose, useConfirm } from "./Dialog";
 import { SNIPPET_VARS } from "../lib/snippetTemplate";
 
 // 条目详情：占右侧整块区域，不是一个浮层。
@@ -67,9 +67,12 @@ export default function EntryDetailView(props: Props) {
     return draft !== entry.content || trigger !== (entry.triggerKey ?? "") || !sameActions;
   }, [draft, actions, trigger, entry]);
 
+  // 脏标记回调放进 ref：props 是每次父组件渲染新建的对象，直接进依赖会每帧都调一次
+  const dirtyCb = useRef(props.onDirtyChange);
+  dirtyCb.current = props.onDirtyChange;
   useEffect(() => {
-    props.onDirtyChange?.(dirty);
-  }, [dirty, props]);
+    dirtyCb.current?.(dirty);
+  }, [dirty]);
 
   const save = useCallback(async () => {
     const content = (editorRef.current?.getValue() ?? draft).trim();
@@ -80,8 +83,11 @@ export default function EntryDetailView(props: Props) {
     setBusy(true);
     setError("");
     try {
+      // 先取一份库里的最新值再覆盖：这份 entry 是打开详情时的快照，
+      // 期间可能有同步把对端的修改拉了进来，整行回写会把它们抹掉。
+      const fresh = await ClipService.GetEntry(entry.id);
       const saved = await ClipService.SaveEntry({
-        ...entry,
+        ...fresh,
         content,
         actions,
         triggerKey: trigger.trim(),
@@ -100,6 +106,16 @@ export default function EntryDetailView(props: Props) {
       setBusy(false);
     }
   }, [actions, draft, entry, props, trigger]);
+
+  // 片段设置保存后重新读一条：以前回调里传的是编辑前的 entry，
+  // 会把用户刚配好的字段又写回旧值。
+  const reloadEntry = useCallback(async () => {
+    try {
+      props.onSaved(await ClipService.GetEntry(entry.id));
+    } catch (err) {
+      props.onNotify(`刷新失败：${String(err)}`);
+    }
+  }, [entry.id, props]);
 
   const remove = useCallback(async () => {
     try {
@@ -163,9 +179,12 @@ export default function EntryDetailView(props: Props) {
         return;
       }
       if (e.key === "Escape") {
+        // 有弹窗挡在前面时（三向选择"继续编辑/保存/放弃"）不接管：
+        // 以前两边都处理 Esc，一次按键会"关掉弹窗 + 又弹一个"。
+        if (isDialogOpen()) return;
         // Vditor 在 IR 下用 Esc 退出"待选择"状态，这里只在没有浮层时接管
         e.preventDefault();
-        requestBack();
+        void requestBack();
       }
     };
     window.addEventListener("keydown", onKey);
@@ -261,7 +280,7 @@ export default function EntryDetailView(props: Props) {
           {entry.triggerKey || trigger ? (
             <section className="detail-block">
               <h4>片段设置</h4>
-              <SnippetFields entry={{ ...entry, triggerKey: trigger }} onSaved={() => props.onSaved(entry)} onNotify={props.onNotify} />
+              <SnippetFields entry={{ ...entry, triggerKey: trigger }} onSaved={() => void reloadEntry()} onNotify={props.onNotify} />
             </section>
           ) : null}
 
@@ -292,10 +311,33 @@ export default function EntryDetailView(props: Props) {
           <section className="detail-block detail-block--danger">
             <h4>操作</h4>
             <div className="detail-ops">
-              <button className="link-btn" onClick={() => void ClipService.CopyEntry(entry.id)}>
+              <button
+                className="link-btn"
+                onClick={() =>
+                  void (async () => {
+                    try {
+                      await ClipService.CopyEntry(entry.id);
+                      props.onNotify("已复制到剪贴板");
+                    } catch (err) {
+                      props.onNotify(`复制失败：${String(err)}`);
+                    }
+                  })()
+                }
+              >
                 复制内容
               </button>
-              <button className="link-btn" onClick={() => void ClipService.OpenEntry(entry.id)}>
+              <button
+                className="link-btn"
+                onClick={() =>
+                  void (async () => {
+                    try {
+                      await ClipService.OpenEntry(entry.id);
+                    } catch (err) {
+                      props.onNotify(`打开失败：${String(err)}`);
+                    }
+                  })()
+                }
+              >
                 用系统默认程序打开
               </button>
               <button

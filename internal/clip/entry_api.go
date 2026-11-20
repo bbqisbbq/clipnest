@@ -91,6 +91,10 @@ func (s *ClipService) DeleteEntry(id string) error {
 	}
 	// 删掉的可能是片段：索引里不能留着它
 	s.refreshTriggers()
+	// 主窗口与快速粘贴窗都订阅这个事件：在 picker 里删掉一条，主列表也要跟着少一条，
+	// 否则点进去只会得到"条目不存在"。
+	s.emit("clip:deleted", id)
+	s.emit("clip:stats", s.store.Stats())
 	return nil
 }
 
@@ -114,6 +118,35 @@ func (s *ClipService) SetEntryArchived(id string, archived bool) (Entry, error) 
 	}
 	e.Archived = archived
 	// 归档会把条目从可展开的片段里摘掉（EntryTriggers 只看未归档的）
+	return s.SaveEntry(e)
+}
+
+// SnippetFields 是片段设置里那些"只属于片段"的字段。
+type SnippetFields struct {
+	Trigger       string   `json:"trigger"`
+	CaseSensitive bool     `json:"caseSensitive"`
+	KeepTrigger   bool     `json:"keepTrigger"`
+	Apps          []string `json:"apps"`
+	ExcludeApps   []string `json:"excludeApps"`
+	GroupName     string   `json:"groupName"`
+}
+
+// SetSnippetFields updates only the snippet settings of one entry.
+//
+// 详情页以前是 `SaveEntry({...entry, ...patch})`：拿一份读到的旧快照整行回写，
+// 内容、标签、置顶全跟着回滚（连同步刚拉回来的对端修改一起）。这个接口改哪几列
+// 就写哪几列，其余保持库里当前的样子。
+func (s *ClipService) SetSnippetFields(id string, f SnippetFields) (Entry, error) {
+	e, ok := s.store.GetEntry(id)
+	if !ok {
+		return Entry{}, errors.New("条目不存在")
+	}
+	e.TriggerKey = strings.TrimSpace(f.Trigger)
+	e.CaseSensitive = f.CaseSensitive
+	e.KeepTrigger = f.KeepTrigger
+	e.Apps = f.Apps
+	e.ExcludeApps = f.ExcludeApps
+	e.GroupName = strings.TrimSpace(f.GroupName)
 	return s.SaveEntry(e)
 }
 
@@ -284,6 +317,17 @@ func (s *ClipService) DeleteFilter(id string) error {
 }
 
 // RestoreFilters brings back every builtin the user removed.
+//
+// 侧栏 `⋯` 里能删的内置项只有「置顶」（其余是系统维度，见 DeleteFilter）。
+// 删掉之后 `filters.hidden` 记着它，界面上再没有任何入口能还原 —— 以前这里
+// 只剩一行注释，函数根本不存在，于是删除等于永久消失。
+func (s *ClipService) RestoreFilters() ([]EntryFilter, error) {
+	if err := s.store.SetMeta(metaHiddenFilters, ""); err != nil {
+		return nil, err
+	}
+	Logf(s.store.Dir(), "filters restored to builtins")
+	return s.GetFilters(), nil
+}
 
 // CountEntriesWith reports how many entries match q — 筛选器弹窗的实时预览。
 func (s *ClipService) CountEntriesWith(q EntryQuery) int { return s.store.CountEntriesMatching(q) }

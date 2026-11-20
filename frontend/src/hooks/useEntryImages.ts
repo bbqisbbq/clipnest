@@ -36,5 +36,6 @@ export function useEntryImages(texts: string[]) {
     };
   }, [texts, imgCache, ensureImages]);
 
-  return { imgCache, ensureImages };
+  // 只为内部 effect 服务：外部拿 imgCache 就够了（导出没人用等于多一个过期 API）
+  return { imgCache };
 }

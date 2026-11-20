@@ -20,4 +20,4 @@ node scratch\layout-preview\probe.mjs entries todo         # 打印关键元素�
 小窗（picker 468×424 / capture 620×220）不能靠 `--window-size`：Windows 的头less 窗口
 有约 500px 的最小宽度，量出来的视口比真窗口宽，右边会被裁。脚本里改成固定尺寸的容器。
 
-设计取舍与这一次改动的来龙去脉见 `docs/design/2026-11-19-layout-rhythm.md`。
+设计取舍见 `docs/HISTORY.md`（"一个影响很大的决定"一节与踩坑清单）。

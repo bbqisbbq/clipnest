@@ -46,23 +46,23 @@
 .btn-danger {
   background: color-mix(in srgb, var(--danger) 12%, transparent);
   border-color: color-mix(in srgb, var(--danger) 30%, transparent);
-  color: #f09090;
+  color: color-mix(in srgb, var(--danger) 72%, var(--text));
 }
 
 .btn-danger:hover {
   background: color-mix(in srgb, var(--danger) 20%, transparent);
-  color: #ffa8a8;
+  color: color-mix(in srgb, var(--danger) 62%, var(--text));
 }
 
 .btn-danger-ghost {
   background: transparent;
   border-color: color-mix(in srgb, var(--danger) 24%, transparent);
-  color: #d98a8a;
+  color: color-mix(in srgb, var(--danger) 58%, var(--text-2));
 }
 
 .btn-danger-ghost:hover {
   background: color-mix(in srgb, var(--danger) 10%, transparent);
-  color: #f0a0a0;
+  color: color-mix(in srgb, var(--danger) 66%, var(--text));
 }
 
 .btn-sm {

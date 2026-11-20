@@ -119,13 +119,52 @@ export default function FilterDialog({ filter, isNew, onClose, onSaved, onDelete
     }
   }, [filter.id, filter.name, onDeleted, onNotify]);
 
+  // 关窗前确认：手滑点到遮罩/按 Esc 不该把刚拼好的规则整份丢掉。
+  const dirty =
+    name.trim() !== (filter.name ?? "").trim() ||
+    icon !== (filter.icon || "memo") ||
+    (!!isNew && (rule.conditions?.length ?? 0) > 0);
+  const requestClose = useCallback(async () => {
+    if (!dirty) {
+      onClose();
+      return;
+    }
+    if (
+      await confirmDialog({
+        message: "这份筛选器还没保存，确定放弃修改？",
+        danger: true,
+        confirmLabel: "放弃修改",
+      })
+    ) {
+      onClose();
+    }
+  }, [dirty, confirmDialog, onClose]);
+
+  // Esc 关闭（和上面的遮罩点击走同一套判断）
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      void requestClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [requestClose]);
+
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal filter-dialog" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-backdrop" onClick={() => void requestClose()}>
+      <div
+        className="modal filter-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="filter-dialog-title"
+        onClick={(e) => e.stopPropagation()}
+      >
         <header className="filter-dialog-head">
-          <h3>{isNew ? "新建筛选器" : "编辑筛选器"}</h3>
+          <h3 id="filter-dialog-title">{isNew ? "新建筛选器" : "编辑筛选器"}</h3>
           {filter.builtin ? <span className="filter-tag">内置</span> : null}
-          <button className="filter-close" onClick={onClose} title="关闭">
+          <button className="filter-close" onClick={() => void requestClose()} title="关闭">
             ×
           </button>
         </header>

@@ -155,11 +155,46 @@ func snippetKindOf(k Kind) SnippetKind {
 	}
 }
 
+// snippetKindOfEntry recovers a snippet's execution kind. 2.8.3 起它单独存一列
+// （entries.snippet_kind）；旧数据把片段类型直接写进了 entries.kind，这里照原样
+// 认回来，免得升级后「命令片段」退化成「粘贴文本」。
+func snippetKindOfEntry(e Entry) SnippetKind {
+	if k := strings.TrimSpace(e.SnippetKind); k != "" {
+		return SnippetKind(k)
+	}
+	switch k := SnippetKind(e.Kind); k {
+	case SnippetPassword, SnippetApp, SnippetCommand, SnippetHTML:
+		return k
+	}
+	return snippetKindOf(e.Kind)
+}
+
+// kindOfSnippet is the inverse: what the body *is*, for the kind column, the
+// filters and the attachment extension.
+func kindOfSnippet(k SnippetKind) Kind {
+	switch k {
+	case SnippetImage:
+		return KindImage
+	case SnippetFile:
+		return KindFiles
+	case SnippetURL:
+		return KindLink
+	case SnippetHTML:
+		return KindRichText
+	default: // text / password / app / command
+		return KindText
+	}
+}
+
 func snippetFromEntry(e Entry) Snippet {
+	title := strings.TrimSpace(e.Title)
+	if title == "" {
+		title = firstLineOf(e.Content)
+	}
 	return Snippet{
 		ID:            e.ID,
-		Kind:          snippetKindOf(e.Kind),
-		Title:         firstLineOf(e.Content),
+		Kind:          snippetKindOfEntry(e),
+		Title:         title,
 		Hash:          e.Hash,
 		Trigger:       e.TriggerKey,
 		Group:         e.GroupName,
@@ -348,9 +383,10 @@ func (s *ClipService) SaveSnippet(sp Snippet, imageDataB64 string) (Snippet, err
 	e := Entry{
 		ID:            id,
 		Content:       content,
-		Kind:          Kind(sp.Kind),
+		Kind:          kindOfSnippet(sp.Kind),
 		Source:        SourceManual,
 		Actions:       []string{ActionSnippet},
+		Title:         strings.TrimSpace(sp.Title),
 		Pinned:        sp.Pinned,
 		TriggerKey:    strings.TrimSpace(sp.Trigger),
 		CaseSensitive: sp.CaseSensitive,
@@ -358,6 +394,8 @@ func (s *ClipService) SaveSnippet(sp Snippet, imageDataB64 string) (Snippet, err
 		Apps:          sp.Apps,
 		ExcludeApps:   sp.ExcludeApps,
 		GroupName:     sp.Group,
+		UseCount:      sp.UseCount,
+		SnippetKind:   string(sp.Kind),
 		Hash:          hash,
 		CreatedAt:     sp.CreatedAt,
 		UpdatedAt:     sp.UpdatedAt,

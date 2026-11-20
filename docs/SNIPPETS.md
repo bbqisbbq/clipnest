@@ -146,6 +146,6 @@ blobs/<name>            历史附件 + 片段图片的原始字节
 ## 七、数据在哪
 
 - `%APPDATA%\ClipNest\clipnest.db` 的 `entries` 表（片段 = 带 `snippet` 能力的条目，
-  正文在 `content`、缩写与触发选项是同一行的字段），图片在 `entry_blobs` / `memo_files/`
+  正文在 `content`、缩写与触发选项是同一行的字段），图片在 `entry_blobs` / `entry_files/`
 - 代码位置：`internal/clip/snippet.go`（片段 ↔ 条目的适配）、`snippet_actions.go`（动作与弹窗入口）、
   `snippet_host.go` + `internal/expand/`（缩写钩子与展开引擎）

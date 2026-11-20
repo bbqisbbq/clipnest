@@ -16,7 +16,7 @@ export default function AppearanceSection({ draft, patch }: Props) {
   const contrast = useMemo(() => checkContrast(presetByID(draft.themePreset).tokens), [draft.themePreset]);
 
   return (
-    <Section title="外观" desc="配色预设 + 可选的深浅方案 + 你自己的 CSS。三者叠加生效，改完点保存。">
+    <Section title="外观" desc="配色预设 + 可选的深浅方案 + 你自己的 CSS。三者叠加生效，改动会自动保存。">
       <Row label="深浅" tip="跟随系统会随 Windows 的深色/浅色设置自动切换；选了预设时以预设的明暗为准。">
         <div className="seg-control">
           {(["system", "dark", "light"] as const).map((choice) => (

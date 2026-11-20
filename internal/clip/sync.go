@@ -145,7 +145,7 @@ func (s *ClipService) syncLoop() {
 		return
 	}
 	interval := time.Duration(st.SyncIntervalMin) * time.Minute
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(s.bgCtx)
 	s.syncCancel = cancel
 	s.syncRestart.Unlock()
 

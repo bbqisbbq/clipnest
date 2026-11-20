@@ -63,3 +63,13 @@ export const SettingsChanged = "settings:changed";
  */
 export const SyncStatus = "sync:status";
 
+/**
+ * Name of the custom event "ui:navigate".
+ */
+export const UiNavigate = "ui:navigate";
+
+/**
+ * Name of the custom event "update:available".
+ */
+export const UpdateAvailable = "update:available";
+

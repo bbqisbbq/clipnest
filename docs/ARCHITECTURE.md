@@ -147,7 +147,7 @@ src/theme-light.css      主题引擎管不到的浅色补丁（--k-* / --shadow
   `--read-pad`（居中留白）三个 token 统一了时间线、输入区、待办、详情正文。
   新页面用 `padding-inline: var(--read-pad)` + `max-width: var(--read-w)`，
   **不要**在滚动容器里用 `margin: 0 auto` 居中（滚动条会吃掉 9px，列心左移，和头部差半格）。
-  改完跑 `scratch/layout-preview/snap.mjs` 对比截图，见 `docs/design/2026-11-19-layout-rhythm.md`。
+  改完跑 `scratch/layout-preview/snap.mjs` 对比截图（`scratch/layout-preview/measure-cal.mjs` 量日历列宽）。
 - **字体分两套**：`--font-ui` = Inter + Noto Sans SC（比例宽度，长中文段落好读）；
   `--font-mono` = Maple Mono NF CN（等宽，`styles/fonts.css` 里只有一个 400 字面）。
   等宽字体铺满界面会把中文撑成 1.2em 宽、行拉长，所以别再把它塞进 `--font-ui`。
@@ -159,13 +159,19 @@ src/theme-light.css      主题引擎管不到的浅色补丁（--k-* / --shadow
 ## 三、数据模型（唯一真相）
 
 ```
-entries        条目：标题（可选）+ 内容 + 标签 + actions（clipboard / snippet）+ 待办派生列
-entry_blobs    附件：内容寻址，≤512KB 进库、更大落盘 memo_files/
+entries        条目：标题（可选）+ 内容 + 标签 + actions（clipboard / snippet）
+               + 待办派生列（todo_state / todo_done_at）
+               + 片段的执行类型（snippet_kind：text/password/image/file/url/app/command/html）
+entry_blobs    附件：内容寻址，≤512KB 进库、更大落盘 entry_files/（删条目后回收孤儿）
 entries_fts    全文索引（trigram，中文子串可搜；标题也进索引）
 entry_filters  用户保存的筛选器（含规则树 JSON）
 tombstones     删除墓碑（同步用）
 meta           键值对（设备 id、一次性标记、filters.hidden、composer.draft、capture.size）
 ```
+
+**写入有事务边界**：`SaveEntry` / `mergeEntry` 把「条目行 + FTS 行」放在同一个事务里（索引写不进去就整条回滚，
+不会留下"存住了但搜不到"的条目）；`DeleteEntry` 在一个事务里做「删行 → 删索引 → 写墓碑」，顺序反了会留下
+"本机还在、对端已删"的分叉；清空历史是单事务 + 一次附件回收。
 
 **草稿不是条目**：输入框里敲了一半的东西存在 `meta.composer.draft`（只有一条键值、只在本机），
 不进 `entries`、不进同步包、也不算内容哈希的一部分——半成品不该被当成历史，也不该同步到别的机器。
@@ -176,9 +182,14 @@ meta           键值对（设备 id、一次性标记、filters.hidden、compos
 （`todo.go` 的 `deriveTodo`）。勾选改的是正文那一个字符，`hash` 不变，所以同步配对不受影响。
 派生列**不跨端传**：`mergeEntry` 一律本端重算，否则版本混跑时旧客户端会把状态抹掉。
 
-`entries.title` 目前没有界面在写（旧版隐写模式用它做 `@名称@` 的落点）；空标题的条目在卡片上不多一行。
+`entries.title` 现在由片段写入（`SaveSnippet` 存用户起的标题；读的时候没标题才退回正文首行）。
+空标题的条目在卡片上不多一行。隐写模式也用它做 `@名称@` 的落点。
 表结构是 `CREATE TABLE IF NOT EXISTS`，**新增列必须同时加 `ensureColumn` 迁移**（见 `store.go`），
-否则老库不会自动长出新列。
+否则老库不会自动长出新列（`title` / `todo_state` / `todo_done_at` / `snippet_kind` 都是这么加的）。
+
+**片段的执行类型单独一列**：`kind` 回答"正文是什么"（text/link/image/files/rich/custom），
+`snippet_kind` 回答"回车时做什么"（粘贴/打开/启动/执行）。早期把 `password`/`app`/`command` 直接写进
+`kind`，结果类型筛选里多了几个不存在的正文类型，标题也存不下来。旧数据不用迁：读的时候认 `kind` 里的旧值。
 
 `items` / `memos` / `snippets` 三张表已在 2.0.0 删除：它们表达的是同一种东西的
 三种形态，现在统一为 `entries` + `actions`。片段 = 带 `snippet` 能力的条目。
@@ -221,7 +232,7 @@ meta           键值对（设备 id、一次性标记、filters.hidden、compos
 
 ```powershell
 go build -o bin\clipnest-dev.exe .        # 后端 + 内嵌前端产物
-go test ./internal/...                    # 存储/查询/待办/筛选规则/同步/展开引擎
+go test ./internal/...                    # 存储/查询/待办/筛选规则/同步/展开引擎/附件回收（audit_fix_test.go）
 cd frontend; npx tsc --noEmit; npx vite build --mode production
 pwsh -File scripts\visual-check\check-css.ps1   # 样式回归截图（改 CSS 后跑）
 pwsh -STA -File scratch\e2e-capture-resize.ps1  # 记一笔浮层：拖动/拉伸/尺寸记忆（真鼠标事件）
@@ -230,10 +241,11 @@ pwsh -STA -File scratch\shot-tray-menu.ps1      # 托盘菜单截图 + 点「打
 pwsh -STA -File scratch\e2e-live-and-draft.ps1  # 复制后不切页面就能看到新条目 + 草稿跨重启
 pwsh -STA -File scratch\e2e-draft-robust.ps1    # 敲完立刻收起窗口（点 ×）再强杀，草稿不丢
 pwsh -STA -File scratch\e2e-theme-shots.ps1     # 4 个主题预设各截一张整窗
+pwsh -STA -File scratch\smoke-2.8.3.ps1        # 冒烟：沙箱 APPDATA 起一次、截图、扫日志里的 error/warn
 node scratch\theme-audit.mjs                    # 主题对比度体检（5 预设 × 4 底色 × 7 文字）
 ```
 
-三个 `-STA` 脚本都会**先停掉正在跑的安装版**（否则 SingleInstance 会让沙箱实例直接
+上面这些 `-STA` 脚本都会**先停掉正在跑的安装版**（否则 SingleInstance 会让沙箱实例直接
 退出），收尾再把它拉起来；数据走沙箱 `%APPDATA%`，不碰真实库。
 
 `go vet ./internal/...` 现在是**零告警**：`win32_windows.go` 的 `ptrFromUintptr` 与
@@ -247,4 +259,4 @@ node scratch\theme-audit.mjs                    # 主题对比度体检（5 预�
 2. `store.go` + `entry_store.go` 抽成 `internal/store`，`Entry` 抽成 `internal/model`，
    `clip` 只留 service / sync / snippet（会改绑定路径，一次只动一层并装机验证）。
 3. `*_windows.go` 抽成 `internal/winplat`（同上，注意绑定与构建 tag）。
-4. `Picker.tsx` 与 `Capture.tsx` 已经共用 `MarkdownSurface`，可以再共用一层 Composer。
+4. `Composer.tsx` / `EntryDetailView.tsx` / `Capture.tsx` 已经共用 `MarkdownSurface`（`Picker.tsx` 只是列表，不含编辑器），可以再抽一层 Composer 外壳。

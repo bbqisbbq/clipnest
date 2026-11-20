@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { EntryFilter } from "../lib/api";
 import Calendar from "./Calendar";
 import {
@@ -57,6 +57,9 @@ function renderNavIcon(name: string, size: number) {
     case "all": return <IconAll size={size} />;
     case "snippet": return <IconSnippet size={size} />;
     case "memo": return <IconMemo size={size} />;
+    case "pin": return <IconPin size={size} />;
+    // 「待办」是筛选器弹窗里可选的一个图标；以前漏了这一支，选它总渲染成图钉。
+    case "todo": return <IconTodo size={size} />;
     case "star": return <IconStar size={size} />;
     case "folder": return <IconFolder size={size} />;
     case "files": return <IconFiles size={size} />;
@@ -76,6 +79,27 @@ export default function Sidebar(props: Props) {
   const filterActive = view === "entries";
   // 筛选器的 ⋯ 菜单：一次只开一个
   const [menuFor, setMenuFor] = useState<string | null>(null);
+
+  // 菜单的关闭方式：点外面、按 Esc。以前只靠 onMouseLeave —— 点别处关不掉，
+  // 键盘用户更是只能在菜单里打转。
+  useEffect(() => {
+    if (!menuFor) return;
+    const close = (ev: MouseEvent | KeyboardEvent) => {
+      if (ev instanceof KeyboardEvent) {
+        if (ev.key === "Escape") setMenuFor(null);
+        return;
+      }
+      const t = ev.target as HTMLElement | null;
+      if (t?.closest(".side-menu") || t?.closest(".side-more")) return;
+      setMenuFor(null);
+    };
+    window.addEventListener("mousedown", close);
+    window.addEventListener("keydown", close);
+    return () => {
+      window.removeEventListener("mousedown", close);
+      window.removeEventListener("keydown", close);
+    };
+  }, [menuFor]);
   // 日历的圆点跟着当前筛选器走，所以要把它的查询传下去
   const activeQuery =
     props.filterProps.filters.find((f) => f.id === props.filterProps.activeFilterId)?.query ?? ({} as EntryFilter["query"]);
@@ -151,7 +175,8 @@ export default function Sidebar(props: Props) {
                 </div>
 
                 {menuFor === f.id ? (
-                  <div className="side-menu" onMouseLeave={() => setMenuFor(null)}>
+                  <div className="side-menu" onMouseLeave={() => setMenuFor(null)}
+                  role="menu">
                     <button
                       onClick={() => {
                         setMenuFor(null);

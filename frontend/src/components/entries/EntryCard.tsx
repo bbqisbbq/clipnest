@@ -1,10 +1,14 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { marked } from "marked";
 import type { Entry } from "../../lib/api";
 import { resolveImages } from "../../lib/images";
 
 // 时间线里的一条内容卡片：正文（Markdown 渲染 + 图片换真 src）、元信息、操作按钮。
 // 折叠遮罩的测量也在这里，因为"有没有溢出"是卡片自己的布局事实。
+//
+// 性能：时间线一次可能挂几十张卡片，任何一次 state 变化（搜索框敲一个字）都会
+// 重渲染整棵树。所以 marked.parse 走 useMemo，组件本身 memo（只比 entry 引用、
+// 展开态与图片缓存 —— 上层每次新建的箭头函数不影响渲染结果）。
 
 const ACTION_LABEL: Record<string, string> = { clipboard: "剪贴板", snippet: "片段" };
 
@@ -34,11 +38,20 @@ export type EntryCardProps = {
   onDelete: () => void;
 };
 
-export default function EntryCard(props: EntryCardProps) {
+function EntryCard(props: EntryCardProps) {
   const { entry: e, expanded, imgCache } = props;
   const collected = e.source === "clipboard";
   const inClipboard = (e.actions ?? []).includes("clipboard");
-  const html = resolveImages(marked.parse(e.content, { async: false }) as string, imgCache);
+  const html = useMemo(
+    () => resolveImages(marked.parse(e.content, { async: false }) as string, imgCache),
+    [e.content, imgCache],
+  );
+  // 文件引用：原文件被移动/删除后，后端会把 exists 置 false（每 3 分钟扫一次）。
+  // 以前这个状态在前端从来没被渲染过，用户以为历史里那些文件都还在。
+  const missingFiles = (e.files ?? []).filter((f) => !f.exists);
+  const missingLabel = missingFiles.length
+    ? `${missingFiles.length}/${e.files?.length ?? 0} 项已失效`
+    : "";
 
   // 单击 = 展开/收起，双击 = 打开编辑器。单击要延迟 180ms 再执行，否则双击的
   // 第一次点击已经把卡片折起来了（一开一合，看着像闪了一下）。
@@ -97,6 +110,28 @@ export default function EntryCard(props: EntryCardProps) {
       } ${overflows ? "is-collapsible" : ""} ${expanded ? "is-expanded" : ""}`}
       onClick={handleClick}
       onDoubleClick={handleDoubleClick}
+      // 键盘可达：Tab 能落到卡片上，Enter 展开/收起，Ctrl+Enter 进详情，Delete 删除。
+      // 以前只有鼠标能操作，键盘用户根本进不去任何一条内容。
+      tabIndex={0}
+      role="article"
+      aria-label={e.title || e.content.slice(0, 60) || "条目"}
+      onKeyDown={(ev) => {
+        if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey)) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          props.onEdit();
+          return;
+        }
+        if (ev.key === "Enter") {
+          ev.preventDefault();
+          props.onToggleExpand();
+          return;
+        }
+        if (ev.key === "Delete" || ev.key === "Backspace") {
+          ev.preventDefault();
+          props.onDelete();
+        }
+      }}
       title={expanded ? "点击收起 · 双击编辑" : overflows ? "点击展开全文 · 双击编辑" : undefined}
     >
       {e.title ? <h3 className="memo-card-title">{e.title}</h3> : null}
@@ -153,6 +188,14 @@ export default function EntryCard(props: EntryCardProps) {
           </span>
         ))}
         {e.triggerKey ? <span className="entry-trigger">{e.triggerKey}</span> : null}
+        {missingLabel ? (
+          <span
+            className="entry-missing"
+            title={missingFiles.map((f) => f.path).join("\n")}
+          >
+            {missingLabel}
+          </span>
+        ) : null}
         {collected ? <span className="memo-src">{sourceLabel(e)}</span> : null}
         <span className="memo-actions">
           <button
@@ -215,3 +258,6 @@ export default function EntryCard(props: EntryCardProps) {
     </article>
   );
 }
+
+// 只比"内容是否变"：上层每次渲染都会新建回调，比进去等于白 memo。
+export default memo(EntryCard, (a, b) => a.entry === b.entry && a.expanded === b.expanded && a.imgCache === b.imgCache);

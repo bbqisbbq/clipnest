@@ -27,6 +27,18 @@ type syncConfig struct {
 	user     string
 	pass     string
 	deviceID string
+	// ctx 来自 ClipService.bgCtx：退出时取消，在途的 HTTP 请求立刻返回，
+	// Shutdown 才等得到后台循环。
+	ctx context.Context
+}
+
+// ctxWithTimeout bounds one request, and inherits the service lifetime.
+func (c syncConfig) ctxWithTimeout() (context.Context, context.CancelFunc) {
+	parent := c.ctx
+	if parent == nil {
+		parent = context.Background()
+	}
+	return context.WithTimeout(parent, syncHTTPTimeout)
 }
 
 func (s *ClipService) syncConfig() (syncConfig, error) {
@@ -43,6 +55,7 @@ func (s *ClipService) syncConfig() (syncConfig, error) {
 		user:     st.SyncUser,
 		pass:     st.SyncPass,
 		deviceID: deviceID,
+		ctx:      s.bgCtx,
 	}, nil
 }
 
@@ -118,7 +131,7 @@ func (c syncConfig) newRequest(ctx context.Context, method, rel string, body io.
 
 // davGet returns (body, true) or (nil, false) when the file does not exist.
 func (c syncConfig) davGet(rel string) ([]byte, bool, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), syncHTTPTimeout)
+	ctx, cancel := c.ctxWithTimeout()
 	defer cancel()
 
 	req, err := c.newRequest(ctx, http.MethodGet, rel, nil)
@@ -150,7 +163,7 @@ func (c syncConfig) davGet(rel string) ([]byte, bool, error) {
 
 func (c syncConfig) davPut(rel, contentType string, payload []byte) error {
 	put := func() (*http.Response, error) {
-		ctx, cancel := context.WithTimeout(context.Background(), syncHTTPTimeout)
+		ctx, cancel := c.ctxWithTimeout()
 		defer cancel()
 		req, err := c.newRequest(ctx, http.MethodPut, rel, bytes.NewReader(payload))
 		if err != nil {
@@ -187,7 +200,7 @@ func (c syncConfig) mkcol(dir string) error {
 	if dir == "." || dir == "/" || dir == "" {
 		return nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), syncHTTPTimeout)
+	ctx, cancel := c.ctxWithTimeout()
 	defer cancel()
 	req, err := c.newRequest(ctx, "MKCOL", dir+"/", nil)
 	if err != nil {
@@ -219,7 +232,7 @@ type davEntry struct {
 }
 
 func (c syncConfig) listPackages(dir string) ([]davEntry, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), syncHTTPTimeout)
+	ctx, cancel := c.ctxWithTimeout()
 	defer cancel()
 	req, err := c.newRequest(ctx, "PROPFIND", dir+"/", strings.NewReader(
 		`<?xml version="1.0" encoding="utf-8"?><propfind xmlns="DAV:"><prop><resourcetype/></prop></propfind>`))

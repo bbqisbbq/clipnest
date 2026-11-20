@@ -1,8 +1,6 @@
 package main
 
 import (
-	"log"
-
 	"github.com/wailsapp/wails/v3/pkg/application"
 
 	"github.com/bbqisbbq/clipnest/internal/clip"
@@ -30,7 +28,7 @@ func (w *wiring) buildTray(preSettings clip.Settings) {
 	menu := application.NewMenu()
 	menu.Add("快速粘贴（光标处）").OnClick(func(_ *application.Context) {
 		if err := w.svc.ShowPicker(); err != nil {
-			log.Printf("打开快速粘贴窗失败: %v", err)
+			clip.Logf(w.dataDir, "打开快速粘贴窗失败: %v", err)
 		}
 	})
 
@@ -38,9 +36,12 @@ func (w *wiring) buildTray(preSettings clip.Settings) {
 	w.pauseItem.OnClick(func(_ *application.Context) {
 		st := w.svc.GetSettings()
 		updated, err := w.svc.SetCapture(!st.Capture)
-		if err == nil {
-			setPauseLabel(w.pauseItem, updated.Capture)
+		if err != nil {
+			// 以前这里静默 return：点了菜单毫无反应，日志里也没有一条。
+			clip.Logf(w.dataDir, "托盘切换收集开关失败: %v", err)
+			return
 		}
+		setPauseLabel(w.pauseItem, updated.Capture)
 	})
 
 	menu.AddSeparator()
@@ -48,7 +49,7 @@ func (w *wiring) buildTray(preSettings clip.Settings) {
 	w.autoStartItem.OnClick(func(_ *application.Context) {
 		enabled := !w.svc.IsAutoStartEnabled()
 		if _, err := w.svc.SetAutoStart(enabled); err != nil {
-			log.Printf("切换开机启动失败: %v", err)
+			clip.Logf(w.dataDir, "切换开机启动失败: %v", err)
 		}
 		w.autoStartItem.SetChecked(w.svc.IsAutoStartEnabled())
 	})

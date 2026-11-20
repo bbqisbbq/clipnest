@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Events } from "@wailsio/runtime";
-import { ClipService, type Entry, type Snippet } from "./lib/api";
+import { ClipService, EventNames, type Entry, type Snippet } from "./lib/api";
 import { formatBytes, formatRelative } from "./lib/format";
 import { IconPin, IconSearch, IconTrash, IconFolder, kindIcon } from "./components/Icons";
 
@@ -13,6 +13,8 @@ const SNIPPET_LABEL: Record<string, string> = {
   url: "网址",
   app: "程序",
   command: "命令",
+  // 富文本片段：以前标签表里没有它，界面上直接露出英文 "html"
+  html: "富文本",
 };
 
 const SNIPPET_ACTION: Record<string, string> = {
@@ -65,18 +67,29 @@ export default function Picker() {
   useEffect(() => {
     void loadItems();
     const offs = [
-      Events.On("clip:new", () => void loadItems()),
-      Events.On("clip:updated", () => void loadItems()),
-      Events.On("picker:opened", () => {
+      Events.On(EventNames.ClipNew, () => void loadItems()),
+      Events.On(EventNames.ClipUpdated, () => void loadItems()),
+      Events.On(EventNames.PickerOpened, () => {
         setQuery("");
         setActive(0);
         setStatus("");
         void loadItems();
       }),
+      // 粘贴失败发生在窗口已经藏起来之后：不在这里显示，用户只会觉得"回车没反应"。
+      Events.On(EventNames.PickerPasteFailed, (ev) => setStatus(`粘贴失败：${String(ev.data ?? "")}`)),
     ];
     inputRef.current?.focus();
     return () => offs.forEach((off) => off());
   }, [loadItems]);
+
+  // 上下键移动时把选中行滚进视口：以前 listRef 只挂不用，
+  // 选到第 10 条以后高亮就跑到视野外，等于盲选。
+  useEffect(() => {
+    const host = listRef.current;
+    if (!host) return;
+    const el = host.querySelector<HTMLElement>(`[data-index="${active}"]`);
+    el?.scrollIntoView({ block: "nearest" });
+  }, [active, rows.length]);
 
   // 片段查询（防抖，随输入变化；tick 用于动作后手动刷新）
   useEffect(() => {
@@ -209,10 +222,9 @@ export default function Picker() {
         void act(rows[active], "delete");
         return;
       }
-      if (e.key === "1" && snippetMode && query === "-") {
-        // 输入第二个 "-" 由输入框处理，这里不拦截
-      }
-      if (/^[1-9]$/.test(e.key) && !e.altKey && !e.metaKey) {
+      // 数字直选：只在没输入关键词时生效。搜索框一直有焦点，
+      // 以前无条件拦 1-9，搜 "2026" 会直接粘第 2 条。
+      if (query === "" && /^[1-9]$/.test(e.key) && !e.altKey && !e.metaKey) {
         const idx = Number(e.key) - 1;
         if (idx < rows.length) {
           e.preventDefault();
@@ -346,6 +358,8 @@ export default function Picker() {
                 key={item.id}
                 data-index={index}
                 className={`picker-row ${index === active ? "is-active" : ""}`}
+                role="option"
+                aria-selected={index === active}
                 onMouseEnter={() => setActive(index)}
                 onClick={() => void pick(row, true)}
               >

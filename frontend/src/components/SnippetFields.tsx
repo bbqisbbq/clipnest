@@ -32,15 +32,17 @@ export default function SnippetFields({ entry, onSaved, onNotify }: Props) {
   const save = async () => {
     setBusy(true);
     try {
-      await ClipService.SaveEntry({
-        ...entry,
-        triggerKey: trigger.trim(),
+      // 只交这几个字段：以前是 `SaveEntry({...entry, ...})` 整行回写，
+      // 详情页里那份 entry 可能已经过期（正文改过没存、同步拉回了对端修改），
+      // 一保存就把内容/标签/置顶一起盖回去。
+      await ClipService.SetSnippetFields(entry.id, {
+        trigger: trigger.trim(),
         caseSensitive,
         keepTrigger,
         apps: splitCsv(apps),
         excludeApps: splitCsv(excludeApps),
         groupName: group.trim(),
-      } as never);
+      });
       onNotify("片段设置已保存");
       onSaved();
     } catch (err) {

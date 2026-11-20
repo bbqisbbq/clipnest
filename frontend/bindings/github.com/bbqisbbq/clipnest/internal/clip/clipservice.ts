@@ -111,6 +111,9 @@ export function DownloadUpdate(): $CancellablePromise<string> {
  * EnsureCaptureHotkey repairs a profile whose captureHotkey ended up empty
  * because an older build shipped no default for it. Runs once (meta marker), so
  * a later deliberate clear is respected.
+ * 
+ * 修好之后要**真的重新注册热键**：以前只写库，而热键是在 Start 之前按旧设置
+ * 注册的，于是"被治愈"的那一次启动里 Ctrl+Shift+N 依然是空的。
  */
 export function EnsureCaptureHotkey(): $CancellablePromise<void> {
     return $Call.ByID(3754874877);
@@ -404,6 +407,17 @@ export function Render(t: expand$0.Trigger): $CancellablePromise<[string, number
 }
 
 /**
+ * RestoreFilters brings back every builtin the user removed.
+ * 
+ * 侧栏 `⋯` 里能删的内置项只有「置顶」（其余是系统维度，见 DeleteFilter）。
+ * 删掉之后 `filters.hidden` 记着它，界面上再没有任何入口能还原 —— 以前这里
+ * 只剩一行注释，函数根本不存在，于是删除等于永久消失。
+ */
+export function RestoreFilters(): $CancellablePromise<$models.EntryFilter[] | null> {
+    return $Call.ByID(844173800);
+}
+
+/**
  * SaveCaptureSize remembers the size the user left the window at.
  * 
  * 只记「真的拖出来的」尺寸：小于下限的值不是用户拖出来的（窗口刚创建、被隐藏时
@@ -503,6 +517,17 @@ export function SetEntryPinned(id: string, pinned: boolean): $CancellablePromise
  */
 export function SetOwnWindowCheck(fn: any): $CancellablePromise<void> {
     return $Call.ByID(2318530103, fn);
+}
+
+/**
+ * SetSnippetFields updates only the snippet settings of one entry.
+ * 
+ * 详情页以前是 `SaveEntry({...entry, ...patch})`：拿一份读到的旧快照整行回写，
+ * 内容、标签、置顶全跟着回滚（连同步刚拉回来的对端修改一起）。这个接口改哪几列
+ * 就写哪几列，其余保持库里当前的样子。
+ */
+export function SetSnippetFields(id: string, f: $models.SnippetFields): $CancellablePromise<$models.Entry> {
+    return $Call.ByID(4093568813, id, f);
 }
 
 /**

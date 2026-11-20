@@ -33,7 +33,7 @@
   padding: 13px 16px 12px;
   border-bottom: 1px solid var(--border-soft);
   border-radius: var(--r-lg) var(--r-lg) 0 0;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.015), transparent);
+  background: var(--elev-card);
 }
 
 .card-head h3 {

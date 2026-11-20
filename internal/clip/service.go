@@ -15,7 +15,7 @@ import (
 // 设置与开机自启（service_settings.go）。
 
 // Version is shown in the UI and written to the log on start.
-const Version = "2.8.2"
+const Version = "2.8.3"
 
 // AppInfo is static information the frontend needs for the about/settings view.
 type AppInfo struct {
@@ -70,6 +70,12 @@ type ClipService struct {
 	suppressAt   time.Time
 	stopCh       chan struct{}
 	stopped      bool
+
+	// bg 收集所有后台循环，bgCtx 让正在跑的 HTTP 请求随退出一起取消。
+	// Shutdown 先等它们收尾再关库，否则同步会对着已关闭的 *sql.DB 写。
+	bg       sync.WaitGroup
+	bgCtx    context.Context
+	bgCancel context.CancelFunc
 	// targetHwnd is the window that had focus when the picker was opened; it is
 	// where the pasted content must land.
 	targetHwnd uintptr
@@ -110,30 +116,50 @@ func NewClipService(dataDir string, hooks Hooks) (*ClipService, error) {
 		hooks:  hooks,
 		stopCh: make(chan struct{}),
 	}
+	s.bgCtx, s.bgCancel = context.WithCancel(context.Background())
 	s.engine = expand.New(s)
 	return s, nil
 }
 
+// spawn runs a background loop that Shutdown waits for.
+func (s *ClipService) spawn(fn func()) {
+	s.bg.Add(1)
+	go func() {
+		defer s.bg.Done()
+		fn()
+	}()
+}
+
 // Start begins listening for clipboard updates.
 func (s *ClipService) Start() error {
+	// 老 profile 的「记一笔」热键自愈（修完会重新注册，见 EnsureCaptureHotkey）
+	s.EnsureCaptureHotkey()
+	// 后台循环先起来：剪贴板监听失败（消息窗被别的程序挡住这类极端情况）不该
+	// 连带把同步、更新检查、缩写展开一起掐掉 —— 那会让程序"看起来正常但什么都不做"。
+	s.spawn(s.refreshFilesLoop)
+	s.spawn(s.syncLoop)
+	s.restartUpdateCheck()
+	s.refreshTriggers()
+	s.applyExpander(s.store.Settings())
+
 	w, err := StartWatcher()
 	if err != nil {
+		Logf(s.store.Dir(), "clipboard watcher start failed: %v", err)
+		s.emit("capture:opened", "监听失败")
 		return err
 	}
 	s.watcher = w
-	go s.captureLoop()
-	go s.refreshFilesLoop()
-	go s.syncLoop()
-	s.restartUpdateCheck()
-	s.EnsureCaptureHotkey()
-	s.refreshTriggers()
-	s.applyExpander(s.store.Settings())
+	s.spawn(s.captureLoop)
 	// Whatever is already on the clipboard when the app starts is also part of
 	// "what went through the clipboard", so record it once.
-	go func() {
-		time.Sleep(400 * time.Millisecond)
+	s.spawn(func() {
+		select {
+		case <-s.stopCh:
+			return
+		case <-time.After(400 * time.Millisecond):
+		}
 		s.handleClipboardChange()
-	}()
+	})
 	return nil
 }
 
@@ -157,6 +183,12 @@ func (s *ClipService) Shutdown() {
 		s.syncCancel = nil
 	}
 	s.syncRestart.Unlock()
+	s.updateRestart.Lock()
+	if s.updateCancel != nil {
+		s.updateCancel()
+		s.updateCancel = nil
+	}
+	s.updateRestart.Unlock()
 	// 退出前把防抖窗口里的草稿写掉：先停掉定时器（免得它在 store.Close 之后再触发），
 	// 再同步写一次。这一步必须早于 store.Close。
 	s.draftMu.Lock()
@@ -167,6 +199,23 @@ func (s *ClipService) Shutdown() {
 	s.draftMu.Unlock()
 	if err := s.flushComposerDraft(); err != nil {
 		Logf(s.store.Dir(), "draft flush on shutdown failed: %v", err)
+	}
+
+	// 取消在途请求，再等后台循环收尾：同步正写到一半就关库，会刷出
+	// "database is closed" 并可能中断一次 merge。
+	s.bgCancel()
+	done := make(chan struct{})
+	go func() {
+		s.bg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		// 还有循环卡着（理论上不该有）：进程马上就退出，WAL 是崩溃安全的，
+		// 不干净地 Close 也好过让它们对着已关闭的库写。
+		Logf(s.store.Dir(), "shutdown: background loops still running after 5s, leaving db open")
+		return
 	}
 	_ = s.store.Close()
 }

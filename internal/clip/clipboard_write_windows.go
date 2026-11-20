@@ -83,6 +83,12 @@ func WriteTextToClipboard(text string) error {
 // clipboard, the same way browsers do.
 func WriteHTMLToClipboard(fragment, plain string) error {
 	payload := buildHTMLPayload(fragment)
+	initFormats()
+	// 先确认格式就绪再动剪贴板：以前这里少了 initFormats，"自动收集"关着启动时
+	// formats.html 还是 0，于是先 EmptyClipboard 再失败 —— 用户的剪贴板被清空。
+	if formats.html == 0 {
+		return errors.New("当前系统没有可用的 HTML 剪贴板格式")
+	}
 	if err := openClipboard(); err != nil {
 		return err
 	}

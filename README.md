@@ -47,7 +47,7 @@ ClipNest 在你使用电脑时安静地记录进入过系统剪贴板的一切�
   贴图自动存成附件。正文里写 `#标签` 自动归类、可置顶/归档、中文子串搜索（SQLite FTS5 trigram）；
   没有用户、分享、评论，也没有服务端。
   > 注意：IR 模式保存时会按 Markdown 规范整理一次格式（表格对齐、`[x]` 大写），这是引擎行为，
-  > 幂等且不影响同步配对；设计取舍见 [docs/design/2026-11-19-todo-filters-editor.md](docs/design/2026-11-19-todo-filters-editor.md)。
+  > 幂等且不影响同步配对；为什么这样取舍见 [docs/HISTORY.md](docs/HISTORY.md)。
 - **工具栏可自己配**：设置 → 编辑器工具栏，详情视图与底部输入框分别挑按钮（含分隔线），不用的一律可以关掉。
 - **条目详情**：双击卡片在**右侧整区**打开（不是弹窗），顶部面包屑返回、`⌘S` 保存、`Esc` 返回，
   右栏是能力/片段/元信息面板；返回时列表的滚动位置不动。
@@ -74,7 +74,7 @@ ClipNest 在你使用电脑时安静地记录进入过系统剪贴板的一切�
 - **去重**：按内容哈希去重，重复复制只更新时间戳与次数，不产生垃圾条目。
 - **置顶 / 搜索 / 归类**：全部、我写的、剪贴板、片段、图片、置顶、已归档（筛选器可保存、可自定义）；
   搜索匹配正文、文件名与来源程序。
-- **一键回填**：点「复制」或双击条目，把内容重新写回剪贴板，并抑制自己写入产生的回声记录。
+- **一键回填**：点「复制」把内容重新写回剪贴板（双击卡片是进详情编辑），并抑制自己写入产生的回声记录。
 - **单条长度上限**：超过设定字符数的文本会被跳过（0 = 不限制）。**历史不会自动清理**——不删就一直在。
 - **隐私**：可整体暂停收集；程序不按来源程序过滤，密码管理器复制出来的内容请手动删除。
 - **其它**：开机自启（写 HKCU Run）、单实例（第二次启动只是把窗口拉到前台）、诊断日志。
@@ -102,6 +102,7 @@ ClipNest 在你使用电脑时安静地记录进入过系统剪贴板的一切�
 | 文件 | 安装到 | 权限 |
 | --- | --- | --- |
 | `clipnest-<版本>-amd64-setup.exe` | `C:\Program Files\bbqisbbq\ClipNest` | 需要管理员（UAC） |
+| `clipnest-<版本>-amd64-setup.exe.sig` | 不安装，自动更新用它验签 | 必须与安装包一起上传 |
 
 每个 Release 都只带**它自己那个版本**的安装包（外加 2.7.1 起的 `.sig`）。自动更新只看
 `/releases/latest`，所以旧版本的包留在原地既不会被误装，也方便回滚到指定版本。
@@ -265,7 +266,7 @@ wails3 task windows:package             # NSIS 全用户安装包（需要 NSIS�
 | 打开管理窗口 | 托盘图标左键 |
 | 收起到托盘 | 标题栏右上 ×（等于最小化到托盘，不是退出） |
 | 最小化 / 最大化 | 标题栏右上按钮，或双击标题栏空白处 |
-| 上下选择 / 复制 / 删除 / 搜索 | `↑` `↓` / `Enter`、双击 / `Delete` / `Ctrl+F` |
+| 展开 / 进详情 / 删除 / 搜索 | `Tab` 进卡片 → `Enter` 展开、`Ctrl+Enter` 进详情、`Delete` 删除；`Ctrl+F` 到搜索框 |
 | 彻底退出 | 托盘菜单 →「退出 ClipNest」，或设置页底部「退出 ClipNest」 |
 
 托盘右键菜单只有 6 项，都是「在主窗口里做不方便」的动作：
@@ -277,14 +278,14 @@ wails3 task windows:package             # NSIS 全用户安装包（需要 NSIS�
 ![设置](docs/images/settings.png)
 
 每个开关/输入框右侧的 <kbd>ⓘ</kbd> 是说明：悬停即可看，点击可固定住（键盘 `Tab` + `Enter` 也行）。
-底部固定操作条显示「有未保存的修改 / 设置已保存」，可以撤销。
+设置是**自动保存**的：没有保存/撤销按钮，停手 400ms 落盘，页头一行状态告诉你存没存上（失败会自动重试三次）。`Esc` 或左上「← 返回」离开设置页。
 
 ## 数据与存储
 
 ```
 %APPDATA%\ClipNest\
   clipnest.db     # SQLite 数据库：条目 + 全文索引 + 图片/私有格式的 BLOB（WAL 模式）
-  memo_files\     # 超过 512 KB 的附件落盘（库里只留内容寻址的元数据）
+  entry_files\     # 超过 512 KB 的附件落盘（库里只留内容寻址的元数据）
   settings.json   # 采集/快捷键/同步/更新/外观等设置
   clipnest.log    # 诊断日志（启动、同步、弹窗定位、前端异常、更新）
 ```
@@ -329,17 +330,20 @@ internal/clip/
   win32_windows.go            Win32 基元：剪贴板 API、前景程序、开机自启
   shell_windows.go            ShellExecute / 资源管理器定位
   platform_other.go           非 Windows 桩实现（保持可编译）
+internal/winplat/            输入注入（SendInput / Unicode / Chord），与业务无关的平台层
+internal/expand/             缩写展开引擎（零业务知识，只认 Host 接口）
 内部按职责分文件的完整表格见 docs/ARCHITECTURE.md
 frontend/                     React + TS + Vite
   src/App.tsx                 管理窗薄壳：装 hooks、切视图、转发通知
   src/Picker.tsx              快速粘贴弹窗（`?mode=picker`）；src/Capture.tsx 是快速输入窗
-  src/hooks/                  useAppData / useEntries / useEntryImages / useTheme / useToast
+  src/hooks/                  useAppData / useEntries / useFilters / useComposerDraft / useEntryImages / useTheme / useToast
   src/components/
     TitleBar / Sidebar / Calendar / Tip / Icons     布局与小组件
     EntriesView + entries/EntryCard                 统一内容视图与卡片
     SettingsView + settings/*                       设置页编排者与八个分区（含 Editor）
-    EntryDetailView / Composer / MarkdownSurface / SnippetFields / Dialog / HotkeyInput / Lightbox
-  src/lib/                    api（绑定封装）、themes（配色预设与对比度自检）、images、format、window
+    EntryDetailView / Composer + ComposerDock / MarkdownSurface / SnippetFields / TodoView
+    FilterDialog + FilterRuleEditor / Dialog / HotkeyInput / Lightbox
+  src/lib/                    api（绑定封装）、themes（配色预设与对比度自检）、editorToolbar、images、dates、format、window
   src/styles/                 按域拆开的样式（fonts/base/layout/entries/controls/settings/picker/snippets/timeline/editor/detail/todo/filter/vditor-theme，共 14 个）
   src/theme-light.css         主题引擎管不到的浅色补丁
   bindings/                   wails3 生成的 TS 绑定（改了 Go 导出面要重新生成）
@@ -355,8 +359,10 @@ docs/CAPTURE.md               收集机制、格式覆盖矩阵与已知缺口
 docs/SYNC.md                  WebDAV 同步配置、合并规则与限制
 docs/SNIPPETS.md              片段库/缩写触发/触发选项/同步行为
 docs/FILE-STRATEGY.md         文件复制的方案对比与数据模型
-docs/CODE-REVIEW-2026-11-20.md 代码审查 + 主题对比度体检（含同步排查清单）
-docs/design/                  历史设计记录（Memos 集成、统一条目模型、触发引擎评估）
+docs/CHANGELOG.md             从 2.0 到当前版本的精简变更史（每版一行到几行）
+docs/HISTORY.md               审查/审计与设计取舍：为什么这样做、踩过哪些坑
+docs/release-notes-v<版本>.md  各版发布说明（发布页的 --notes-file）
+docs/design/                  仍在生效的设计记录
 ```
 
 ## 排查：开机启动弹出一个黑框

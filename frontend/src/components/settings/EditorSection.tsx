@@ -54,7 +54,7 @@ export default function EditorSection({ draft, patch }: Props) {
   return (
     <Section
       title="编辑器工具栏"
-      desc="挑你想在工具栏上看到的按钮。改完点保存，重新打开编辑器后生效（分隔线可以自己排分组）。"
+      desc="挑你想在工具栏上看到的按钮，改动会自动保存，重新打开编辑器后生效（分隔线可以自己排分组）。"
     >
       {TARGETS.map(({ key, title, desc, fallback }) => {
         const list = currentList(draft, key, fallback);

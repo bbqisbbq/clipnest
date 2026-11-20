@@ -121,7 +121,7 @@ export default function SyncSection({
         <button
           className="btn btn-ghost"
           onClick={onSyncNow}
-          disabled={!settings?.syncEnabled || syncStatus?.inProgress}
+          disabled={!draft.syncEnabled || syncStatus?.inProgress}
         >
           <IconSync size={14} />
           {syncStatus?.inProgress ? "同步中…" : "立即同步"}
@@ -173,7 +173,7 @@ export default function SyncSection({
       {panel?.configured && peerCount === 0 ? (
         <p className="sync-hint">
           远端目前只有本机这一个包，没有可拉取的内容。另一台机器上也要在「设置 → 云同步」里
-          打开同步、填**同一个**目录与账号，并点一次「立即同步」——它的包出现在上面这张表里之后，
+          打开同步、填<strong>同一个</strong>目录与账号，并点一次「立即同步」——它的包出现在上面这张表里之后，
           这边才会拉到东西。如果那边已经点过却仍不出现，先在那台机器上用「测试连接」看是连上了还是报错。
         </p>
       ) : null}

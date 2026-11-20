@@ -30,6 +30,16 @@ export default function SnippetsSection({ draft, patch }: Props) {
           onChange={(e) => patch({ expandEndChars: e.target.value })}
         />
       </Row>
+      {/* 后端一直在用它（snippet_host.go 的 suffixOf），但界面上没有出口 ——
+          用户只能吃默认值 "-"。 */}
+      <Row label="缩写后缀" tip="另一种收尾方式：打完「缩写 + 这个后缀」立刻展开，例如 addr- 。留空则只认上面的触发字符。">
+        <input
+          className="input is-trigger"
+          value={draft.expandSuffix}
+          placeholder="-"
+          onChange={(e) => patch({ expandSuffix: e.target.value })}
+        />
+      </Row>
     </Section>
   );
 }

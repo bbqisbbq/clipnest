@@ -70,6 +70,7 @@ var (
 	procGlobalAlloc                = kernel32.NewProc("GlobalAlloc")
 	procGlobalLock                 = kernel32.NewProc("GlobalLock")
 	procGlobalUnlock               = kernel32.NewProc("GlobalUnlock")
+	procGlobalFree                 = kernel32.NewProc("GlobalFree")
 	procGlobalSize                 = kernel32.NewProc("GlobalSize")
 	procGetModuleHandleW           = kernel32.NewProc("GetModuleHandleW")
 	procOpenProcess                = kernel32.NewProc("OpenProcess")
@@ -181,12 +182,14 @@ func setClipboardBytes(format uint32, data []byte) error {
 	}
 	ptr, _, _ := procGlobalLock.Call(h)
 	if ptr == 0 {
+		procGlobalFree.Call(h) // 失败路径也要还回去，否则每次重试漏一块全局内存
 		return errors.New("GlobalLock failed")
 	}
 	copy(unsafe.Slice((*byte)(ptrFromUintptr(ptr)), len(data)), data)
 	procGlobalUnlock.Call(h)
 
 	if r, _, serr := procSetClipboardData.Call(uintptr(format), h); r == 0 {
+		procGlobalFree.Call(h) // 系统没有接手，句柄还是我们的
 		return fmt.Errorf("SetClipboardData: %v", serr)
 	}
 	return nil // the system owns the handle now

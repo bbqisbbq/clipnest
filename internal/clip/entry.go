@@ -77,6 +77,9 @@ type Entry struct {
 	ExcludeApps   []string `json:"excludeApps,omitempty"`
 	GroupName     string   `json:"groupName,omitempty"`
 	UseCount      int      `json:"useCount,omitempty"`
+	// SnippetKind 是「回车时做什么」（粘贴/打开/启动/执行），和 Kind（正文是什么）
+	// 不是一回事：一段命令的正文是文本，但它的片段类型是 command。
+	SnippetKind string `json:"snippetKind,omitempty"`
 
 	// 生命周期：nil = 永久。现在所有条目都不自动过期（以保留为主）。
 	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
@@ -242,6 +245,26 @@ func (s *Store) SaveCapture(c Captured) (*Entry, bool, error) {
 	if len(c.PNG) > 0 {
 		if token, err := s.SaveEntryBlob(c.PNG, "png"); err == nil {
 			content = "![](" + token + ")"
+		} else {
+			Logf(s.dir, "save capture png failed: %v", err)
+		}
+	}
+	// 私有格式（Excel 区间、颜色、音频…）的正文只有一个格式名，字节必须单独落库，
+	// 否则「原样粘回」是空承诺：回填时按 Entry.Hash 取这份 payload。
+	if c.Kind == KindCustom {
+		if len(c.Binary) == 0 {
+			return nil, false, errors.New("自定义格式内容为空")
+		}
+		key := c.Hash
+		if key == "" {
+			sum := sha256.Sum256(c.Binary)
+			key = hex.EncodeToString(sum[:])[:24]
+		}
+		if err := s.SaveEntryBlobAs(key, c.Binary, "bin"); err != nil {
+			return nil, false, err
+		}
+		if content == "" {
+			content = c.FormatName
 		}
 	}
 	if content == "" {
@@ -250,9 +273,13 @@ func (s *Store) SaveCapture(c Captured) (*Entry, bool, error) {
 	if content == "" {
 		return nil, false, errors.New("没有可保存的内容")
 	}
-	// 内容已经在库里（哪怕它当初是手写进来的）就不再建第二条，只刷新时间
-	if existing, ok := s.findEntryByHash(contentHash(content)); ok {
-		return s.bumpSeen(existing.ID)
+	// 内容已经在库里（哪怕它当初是手写进来的）就不再建第二条，只刷新时间。
+	// 私有格式例外：它们的正文只是格式名，两个不同的 Excel 区间会撞成同一个内容
+	// 哈希，走这一层会把后一份数据悄悄吞掉（只按上面的采集哈希去重）。
+	if c.Kind != KindCustom {
+		if existing, ok := s.findEntryByHash(contentHash(content)); ok {
+			return s.bumpSeen(existing.ID)
+		}
 	}
 
 	saved, err := s.SaveEntry(Entry{
@@ -299,23 +326,54 @@ func (s *Store) BumpCopyCount(id string) error {
 }
 
 // DeleteAllUnpinned clears the history but keeps pinned entries.
+//
+// 一次事务搞定：上千条逐条删除 = 上千次 autocommit（还会逐条写 FTS 与墓碑），
+// 慢到界面像卡死。墓碑照样一条不落，附件最后统一回收一次。
 func (s *Store) DeleteAllUnpinned() int {
-	rows, err := s.db.Query(`SELECT id FROM entries WHERE pinned = 0`)
+	tx, err := s.db.Begin()
 	if err != nil {
 		return 0
 	}
-	var ids []string
+	defer func() { _ = tx.Rollback() }()
+
+	type target struct{ id, hash string }
+	var list []target
+	rows, err := tx.Query(`SELECT id, hash FROM entries WHERE pinned = 0`)
+	if err != nil {
+		return 0
+	}
 	for rows.Next() {
-		var id string
-		if rows.Scan(&id) == nil {
-			ids = append(ids, id)
+		var t target
+		if rows.Scan(&t.id, &t.hash) == nil {
+			list = append(list, t)
 		}
 	}
 	rows.Close()
-	for _, id := range ids {
-		s.DeleteEntry(id)
+	if len(list) == 0 {
+		return 0
 	}
-	return len(ids)
+
+	now, host := nowUTC(), hostName()
+	for _, t := range list {
+		if t.hash != "" {
+			addTombstoneScope(tx, "entry", t.hash, now, host)
+		}
+	}
+	res, err := tx.Exec(`DELETE FROM entries WHERE pinned = 0`)
+	if err != nil {
+		Logf(s.dir, "clear history failed: %v", err)
+		return 0
+	}
+	if _, err := tx.Exec(`DELETE FROM entries_fts WHERE id NOT IN (SELECT id FROM entries)`); err != nil {
+		Logf(s.dir, "clear history fts failed: %v", err)
+		return 0
+	}
+	if err := tx.Commit(); err != nil {
+		return 0
+	}
+	n, _ := res.RowsAffected()
+	s.GCBlobs()
+	return int(n)
 }
 
 // RefreshEntryFiles re-stats the file references of one entry.

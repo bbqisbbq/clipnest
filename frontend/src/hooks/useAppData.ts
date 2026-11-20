@@ -24,6 +24,7 @@ export type AppData = {
   refreshAll: () => Promise<void>;
   saveSettings: (next: Settings) => Promise<boolean>;
   setSettings: (next: Settings) => void;
+  setSyncStatus: (next: SyncStatus) => void;
 };
 
 export function useAppData(onError: (msg: string) => void): AppData {
@@ -100,5 +101,6 @@ export function useAppData(onError: (msg: string) => void): AppData {
     refreshAll,
     saveSettings,
     setSettings,
+    setSyncStatus,
   };
 }

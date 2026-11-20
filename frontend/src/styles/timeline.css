@@ -1,9 +1,4 @@
-/* 时间线视图：Memos 风格按日分组卡片、底部输入区、统一内容视图、日历，
-   以及卡片折叠/展开的裁切遮罩。 */
-
-/* ---------------- 备忘（Memos 风格时间线） ---------------- */
-
-.app.is-memos .workspace { grid-template-columns: 218px minmax(0, 1fr); }/* 头部与时间线共用同一条阅读列：搜索框的左边缘和第一张卡片的左边缘对齐，
+/* 头部与时间线共用同一条阅读列：搜索框的左边缘和第一张卡片的左边缘对齐，
    而不是一个贴面板、一个居中对齐。 */
 .memo-head {
   display: flex; align-items: center; gap: 12px;
@@ -166,8 +161,6 @@ body.is-capture { background: transparent; }
 
 .capture-box { flex: 1; min-height: 0; }
 .capture-box .md-surface { padding: 0; }
-/* 底部输入区的预览块 */
-.memo-composer .memo-preview { flex: 1; min-height: 0; overflow-y: auto; }
 /* Markdown 编辑器（CodeMirror 6）：容器只负责占位，内部样式由组件注入 */
 /* 编辑器容器（Vditor 包在 .md-surface 里，见 styles/vditor-theme.css）。
    刻意**没有边框**：详情视图里它铺满整块区域，外面套一圈圆角描边既多余又显得廉价；
@@ -229,7 +222,8 @@ body.is-capture { background: transparent; }
   border: 0;
   border-radius: 0;
   background: transparent;
-}.composer-actions {
+}
+.composer-actions {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -252,21 +246,8 @@ body.is-capture { background: transparent; }
   text-overflow: ellipsis;
 }
 .composer-btns { margin-left: auto; display: flex; align-items: center; gap: 12px; flex: none; }
-.composer-error { margin: 8px 0 0; max-width: var(--read-w); margin-left: auto; margin-right: auto; }
-
-/* 侧栏菜单自定义：拖动与改名 */
-.side-item .nav-edit-btn {
-  margin-left: 6px;
-  opacity: 0;
-  font-size: 12px;
-  color: var(--text-3);
-  transition: opacity .12s var(--ease);
-}
-.side-item:hover .nav-edit-btn { opacity: 1; }
-.side-item .nav-edit-btn:hover { color: var(--accent); }
-.side-item.is-dragging { opacity: .55; cursor: grabbing; }.nav-icon-choice.is-on { border-color: var(--accent); color: var(--accent); background: var(--accent-tint); }/* 备忘里的图片：自适应宽度、圆角、点击不变形 */
-.memo-body img,
-.composer-preview img {
+.composer-error { margin: 8px 0 0; max-width: var(--read-w); margin-left: auto; margin-right: auto; }/* 备忘里的图片：自适应宽度、圆角、点击不变形 */
+.memo-body img {
   display: block;
   max-width: 100%;
   height: auto;
@@ -274,8 +255,7 @@ body.is-capture { background: transparent; }
   border-radius: var(--r-md);
   border: 1px solid var(--border-soft);
 }
-.memo-body img[alt]:not([src]),
-.composer-preview img[alt]:not([src]) {
+.memo-body img[alt]:not([src]) {
   min-height: 24px;
   border-style: dashed;
 }
@@ -521,3 +501,41 @@ body.is-capture { background: transparent; }
 .entry-image img,
 .memo-body img { cursor: zoom-in; }
 
+
+/* 顶部更新提示条（App.tsx）：只在发现新版本时出现 */
+.update-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--accent-line);
+  background: var(--accent-tint);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.update-bar span {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 卡片上「N 项已失效」：文件引用被移动/删除后的提示 */
+.entry-missing {
+  padding: 0 5px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--warn) 16%, transparent);
+  color: var(--warn);
+  font-size: 11px;
+}
+
+/* 列表加载/查询失败：空态文字同款排版，但用危险色 */
+.snip-empty.is-error {
+  color: var(--danger);
+}
+
+/* 「草稿已恢复」提示：跟着输入框走，不占额外高度 */
+.composer-restored {
+  margin: 0 0 4px;
+  padding-inline: var(--read-pad);
+  color: var(--text-3);
+}
