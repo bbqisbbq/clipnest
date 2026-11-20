@@ -368,17 +368,3 @@ func (s *ClipService) GetEntryCalendar(month string, q EntryQuery) []DayCount {
 func parseMonthStart(month string) (time.Time, error) {
 	return time.ParseInLocation("2006-01", month, time.Local)
 }
-
-// QuickMemo turns whatever text is on the clipboard right now into a handwritten
-// entry. Used by the tray "记一笔" item: no window, no focus stealing.
-func (s *ClipService) QuickMemo() (Entry, error) {
-	cap, err := captureClipboard()
-	if err != nil || cap == nil {
-		return Entry{}, errors.New("读不到剪贴板")
-	}
-	text := strings.TrimSpace(cap.Text)
-	if text == "" {
-		return Entry{}, errors.New("剪贴板里没有文本")
-	}
-	return s.store.SaveEntry(Entry{Content: text, Source: SourceManual, Kind: KindText})
-}

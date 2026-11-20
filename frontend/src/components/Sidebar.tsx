@@ -70,6 +70,10 @@ function renderNavIcon(name: string, size: number) {
 
 export default function Sidebar(props: Props) {
   const { view } = props;
+  // 「待办」是独立入口（一套自己的数据），和筛选器不是同一层：待办页时
+  // activeFilterId 还停在上一屏的筛选器上，两个都点亮就成了"同时选中两个"。
+  // 所以只有真正在内容视图时，筛选器行才带 is-active。
+  const filterActive = view === "entries";
   // 筛选器的 ⋯ 菜单：一次只开一个
   const [menuFor, setMenuFor] = useState<string | null>(null);
   // 日历的圆点跟着当前筛选器走，所以要把它的查询传下去
@@ -113,7 +117,7 @@ export default function Sidebar(props: Props) {
               // 行本身不是 <button>：里面还要放 ⋯ 按钮（button 不能嵌套 button）
               <div className="side-item-wrap" key={f.id}>
                 <div
-                  className={`side-item ${props.filterProps.activeFilterId === f.id ? "is-active" : ""}`}
+                  className={`side-item ${filterActive && props.filterProps.activeFilterId === f.id ? "is-active" : ""}`}
                   role="button"
                   tabIndex={0}
                   onClick={() => props.filterProps.onSelectFilter(f)}

@@ -10,16 +10,24 @@ import (
 
 // buildTray builds the tray icon and its menu.
 //
+// 菜单只放"托盘上干、在主窗口里干不方便"的动作，一共三条思路：
+//   1. 快捷动作（快速粘贴、暂停收集）——不用切窗口；
+//   2. 常用开关/入口（开机自启、打开设置、打开数据目录）；
+//   3. 退出。
+// 有主窗口就能做的事（显示窗口、检查更新、清空历史）不在这里重复：
+// 左键点图标就是"显示/聚焦窗口"，其余都在设置页里，并且带确认。
+//
 // 菜单项里的 pauseItem / autoStartItem 会被别处改标签或勾选状态（暂停收集、
 // 设置页改开机自启），所以存回 wiring 上，而不是留成 buildTray 的局部变量。
 func (w *wiring) buildTray(preSettings clip.Settings) {
 	tray := w.app.SystemTray.New()
 	tray.SetIcon(appIcon)
-	tray.SetTooltip("ClipNest 剪贴板管理器")
+	// 菜单里的"显示管理窗口"已经去掉了，提示里补一句左键的作用，
+	// 否则新用户不知道点图标能唤回窗口。
+	tray.SetTooltip("ClipNest 剪贴板管理器（左键打开）")
 	tray.OnClick(w.showWindow)
 
 	menu := application.NewMenu()
-	menu.Add("显示管理窗口").OnClick(func(_ *application.Context) { w.showWindow() })
 	menu.Add("快速粘贴（光标处）").OnClick(func(_ *application.Context) {
 		if err := w.svc.ShowPicker(); err != nil {
 			log.Printf("打开快速粘贴窗失败: %v", err)
@@ -35,15 +43,7 @@ func (w *wiring) buildTray(preSettings clip.Settings) {
 		}
 	})
 
-	// 记一笔：把剪贴板当前文本直接存成一条手写条目，不弹窗、不抢焦点
-	menu.Add("记一笔（剪贴板内容）").OnClick(func(_ *application.Context) {
-		go func() {
-			if _, err := w.svc.QuickMemo(); err != nil {
-				log.Printf("记一笔失败: %v", err)
-			}
-		}()
-	})
-
+	menu.AddSeparator()
 	w.autoStartItem = menu.AddCheckbox("开机自动启动", w.svc.IsAutoStartEnabled())
 	w.autoStartItem.OnClick(func(_ *application.Context) {
 		enabled := !w.svc.IsAutoStartEnabled()
@@ -52,31 +52,28 @@ func (w *wiring) buildTray(preSettings clip.Settings) {
 		}
 		w.autoStartItem.SetChecked(w.svc.IsAutoStartEnabled())
 	})
-	menu.AddSeparator()
-	checkUpdateItem := menu.Add("检查更新…")
-	checkUpdateItem.OnClick(func(_ *application.Context) {
-		go func() {
-			info := w.svc.CheckUpdate()
-			w.showWindow()
-			if info.Error != "" {
-				log.Printf("检查更新失败: %s", info.Error)
-			}
-		}()
+	menu.Add("打开设置").OnClick(func(_ *application.Context) {
+		w.showWindow()
+		w.navigate("settings")
 	})
-	menu.Add("清空未收藏的历史").OnClick(func(_ *application.Context) {
-		_, _ = w.svc.DeleteAll()
-	})
-	sub := menu.AddSubmenu("更多")
-	sub.Add("打开数据目录").OnClick(func(_ *application.Context) {
+	menu.Add("打开数据目录").OnClick(func(_ *application.Context) {
 		_ = w.svc.OpenDataDir()
 	})
-	sub.Add("打开设置").OnClick(func(_ *application.Context) {
-		w.showWindow()
-		w.app.Event.Emit("ui:navigate", "settings")
-	})
+
 	menu.AddSeparator()
 	menu.Add("退出 ClipNest").OnClick(func(_ *application.Context) { w.quit() })
 	tray.SetMenu(menu)
+}
+
+// navigate 让主窗口切到指定视图（前端 App 监听 ui:navigate）。
+//
+// 事件在窗口刚 Show 出来时发，前端还没挂监听就会丢——所以窗口本来就是
+// 可见的常见情况下它照样送达；窗口是刚唤回来的，前端本来就在跑（只是隐藏），
+// 监听一直都在。两种情况都不需要重试。
+func (w *wiring) navigate(target string) {
+	if w.app != nil {
+		w.app.Event.Emit("ui:navigate", target)
+	}
 }
 
 func pauseLabel(capturing bool) string {

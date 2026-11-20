@@ -362,14 +362,6 @@ export function PromoteToSnippet(id: string, trigger: string): $CancellablePromi
 }
 
 /**
- * QuickMemo turns whatever text is on the clipboard right now into a handwritten
- * entry. Used by the tray "记一笔" item: no window, no focus stealing.
- */
-export function QuickMemo(): $CancellablePromise<$models.Entry> {
-    return $Call.ByID(3490807694);
-}
-
-/**
  * Quit exits the application (tray menu "退出" uses the same path).
  */
 export function Quit(): $CancellablePromise<void> {

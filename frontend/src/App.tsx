@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Events } from "@wailsio/runtime";
 import { useToast } from "./hooks/useToast";
 import { useTheme } from "./hooks/useTheme";
 import { useAppData } from "./hooks/useAppData";
@@ -119,6 +120,15 @@ export default function App() {
     if (view === "settings") closeSettings();
     else openSettings();
   }, [view, closeSettings, openSettings]);
+
+  // 托盘菜单「打开设置」发来的导航请求。之前后端只管 emit、前端没人听，
+  // 于是那一条等于"把窗口唤到前台、停在原来那一屏"，菜单名对不上行为。
+  useEffect(() => {
+    const off = Events.On("ui:navigate", (ev) => {
+      if (String(ev.data) === "settings") openSettings();
+    });
+    return () => off();
+  }, [openSettings]);
 
   const openTodos = useCallback(() => {
     if (view === "todo") {

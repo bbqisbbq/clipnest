@@ -8,7 +8,7 @@
 ```
 main.go                 启动顺序：路径与日志、设置预读、--show/--background、服务与 App、Run
 wire.go                 窗口与热键开关（wiring 结构体：三个窗口、托盘项状态、当前热键）
-tray.go                 托盘图标与菜单
+tray.go                 托盘图标与菜单（只放"在托盘上干、在主窗口里干不方便"的动作）
 internal/winplat/       Win32 输入注入（SendInput/INPUT 结构体、Unicode 注入、Chord/Paste、前台窗口）
 internal/expand/         缩写展开引擎（零业务知识，只认 Host 接口；注入走 winplat）
 internal/clip/           业务层：条目、捕获、片段、同步、绑定 API
@@ -225,7 +225,12 @@ go test ./internal/...                    # 存储/查询/待办/筛选规则/�
 cd frontend; npx tsc --noEmit; npx vite build --mode production
 pwsh -File scripts\visual-check\check-css.ps1   # 样式回归截图（改 CSS 后跑）
 pwsh -STA -File scratch\e2e-capture-resize.ps1  # 记一笔浮层：拖动/拉伸/尺寸记忆（真鼠标事件）
+pwsh -STA -File scratch\check-sidebar-active.ps1 # 侧栏高亮：待办 ⇄ 内容不同时点亮两行（真鼠标点击）
+pwsh -STA -File scratch\shot-tray-menu.ps1      # 托盘菜单截图 + 点「打开设置」验证跳转
 ```
+
+三个 `-STA` 脚本都会**先停掉正在跑的安装版**（否则 SingleInstance 会让沙箱实例直接
+退出），收尾再把它拉起来；数据走沙箱 `%APPDATA%`，不碰真实库。
 
 `go vet ./internal/...` 现在是**零告警**：`win32_windows.go` 的 `ptrFromUintptr` 与
 `expand/wininput_windows.go` 的 `hookParamPtr` 两个 shim 已经把 `unsafe.Pointer`
