@@ -3,6 +3,7 @@ import { Events } from "@wailsio/runtime";
 import MarkdownSurface, { type MarkdownSurfaceHandle, warmUpMarkdown } from "./components/MarkdownSurface";
 import { ClipService, EventNames } from "./lib/api";
 import { drag, noDrag } from "./lib/window";
+import { useSettingsTheme } from "./hooks/useTheme";
 
 // 快速输入窗（Ctrl+Shift+N）：光标处弹出来，写完 Enter 保存、Esc 关闭。
 //
@@ -31,6 +32,9 @@ export default function Capture() {
   const editorRef = useRef<MarkdownSurfaceHandle | null>(null);
   const textRef = useRef(text);
   textRef.current = text;
+
+  // 主题跟着设置走：这个窗随应用一起创建、一直活着，不订阅就永远停在启动时那套配色。
+  useSettingsTheme();
 
   // 卡片底色的 alpha 跟着设置走。这个窗随应用一起创建、一直活着，所以必须听
   // settings:changed——否则在设置页调完得重启才看得到效果。

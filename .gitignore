@@ -58,3 +58,7 @@ scratch/*.zip
 scratch/transparency-shots/
 scratch/tmp-profile-transparency/
 
+
+# 沙箱 APPDATA（各 e2e 脚本自己建，含 WebView2 缓存与真实条目）
+scratch/tmp-profile-*/
+

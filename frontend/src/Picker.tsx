@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Events } from "@wailsio/runtime";
 import { ClipService, EventNames, type Entry, type Snippet } from "./lib/api";
+import { useSettingsTheme } from "./hooks/useTheme";
 import { formatBytes, formatRelative } from "./lib/format";
 import { IconPin, IconSearch, IconTrash, IconFolder, kindIcon } from "./components/Icons";
 
@@ -33,6 +34,8 @@ type Row = { kind: "entry"; entry: Entry } | { kind: "snippet"; snippet: Snippet
 type RowAction = "pin" | "archive" | "delete";
 
 export default function Picker() {
+  // 快速粘贴窗和「记一笔」一样是常驻窗口：不订阅设置就永远停在启动时那套配色。
+  useSettingsTheme();
   const [items, setItems] = useState<Entry[]>([]);
   const [snippets, setSnippets] = useState<Snippet[]>([]);
   const [query, setQuery] = useState("");

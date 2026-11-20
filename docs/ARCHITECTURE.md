@@ -88,7 +88,7 @@ internal/clip/           业务层：条目、捕获、片段、同步、绑定 
 src/App.tsx              薄壳：装 hooks、切视图（含"关设置回原处"）、转发通知（不写业务）
 src/hooks/
   useToast.ts            全局通知
-  useTheme.ts            主题落地（预设 + 自定义 CSS + 原生边框）
+  useTheme.ts            主题落地的唯一入口：useTheme(settings) 给主窗口、useSettingsTheme() 给常驻弹窗
   useAppData.ts          设置 / 应用信息 / 同步状态 / 筛选器 / 计数
   useEntries.ts          条目列表数据层：分页、上滑加载更早、按天分组、贴底滚动
   useEntryImages.ts      正文 memoimg: 引用的按需加载缓存
@@ -237,7 +237,8 @@ go test ./internal/...                    # 存储/查询/待办/筛选规则/�
 cd frontend; npx tsc --noEmit; npx vite build --mode production
 pwsh -File scripts\visual-check\check-css.ps1   # 样式回归截图（改 CSS 后跑）
 pwsh -STA -File scratch\e2e-capture-resize.ps1  # 记一笔浮层：拖动/拉伸/尺寸记忆（真鼠标事件）
-pwsh -File scratch\e2e-capture-transparency.ps1 # 记一笔浮层：圆角真透明 + 卡片半透明（按像素量，不看截图印象）
+pwsh -File scratch\e2e-capture-transparency.ps1 # 记一笔浮层：圆角真透明 + 卡片半透明（按像素量；浅色主题要加 -Preset default-light -Backdrop '#1e6fd9'）
+pwsh -STA -File scratch\check-theme-sync.ps1          # 两个弹窗真的收到 settings:changed（托盘「暂停收集」触发一次）
 pwsh -STA -File scratch\check-sidebar-active.ps1 # 侧栏高亮：待办 ⇄ 内容不同时点亮两行（真鼠标点击）
 pwsh -STA -File scratch\shot-tray-menu.ps1      # 托盘菜单截图 + 点「打开设置」验证跳转
 pwsh -STA -File scratch\e2e-live-and-draft.ps1  # 复制后不切页面就能看到新条目 + 草稿跨重启

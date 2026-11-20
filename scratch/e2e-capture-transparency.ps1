@@ -11,6 +11,15 @@
 # 运行前会停掉安装版 ClipNest（单实例锁按 app id 抢），跑完再把它拉起来。
 #
 # 用法：pwsh -NoProfile -File scratch\e2e-capture-transparency.ps1
+param(
+  # 主题预设（lib/themes.ts 里的 id）：测浅色主题时传 default-light / pure-light
+  [string]$Preset = 'default-dark',
+  # 深浅方案：留空则按预设自己的明暗（settings.theme = system 时以预设为准）
+  [string]$Theme = 'system',
+  # 背后那块窗口的底色（#rrggbb）：白色会让你看不出浅色主题的透明（白叠白）
+  [string]$Backdrop = '#ffffff'
+)
+
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type @'
@@ -65,8 +74,8 @@ function Start-DevApp([int]$transparency) {
     capture             = $true
     hotkey              = 'Ctrl+Shift+V'
     captureHotkey       = 'Ctrl+Shift+N'
-    themePreset         = 'default-dark'
-    theme               = 'dark'
+    themePreset         = $Preset
+    theme               = $Theme
     showOnLaunch        = $false
     autoStart           = $false
     updateCheck         = $false
@@ -95,17 +104,29 @@ function Shot-Region([IntPtr]$hwnd, [string]$name) {
   return [pscustomobject]@{ Bitmap = $bmp; Pad = $pad; Rect = $rect }
 }
 
-# 拍一张"卡片真的画上去了"的截图：卡片是深色的，若中心点还是浅色（WebView2 还没画完）
-# 就等一会儿重拍。不做这一步会量到"窗口还没渲染"的全透明白。
+# 拍一张"卡片真的画上去了"的截图。判据不能是"中心点够不够暗"——浅色主题下卡片是米白的，
+# 那条会把画好的窗口当成没渲染。改成看**画面里有没有内容**：卡片上有标题、占位符、按钮，
+# 整幅图的亮度标准差远大于"一片纯色桌面"。标准差太小就等一会儿重拍。
 function Shot-Card([IntPtr]$hwnd, [string]$name) {
   for ($i = 0; $i -lt 6; $i++) {
     $shot = Shot-Region $hwnd $name
-    $center = $shot.Bitmap.GetPixel([int]($shot.Bitmap.Width / 2), [int]($shot.Bitmap.Height / 2))
-    if ($center.R -lt 140) { return $shot }
+    $lum = New-Object System.Collections.Generic.List[double]
+    $stepX = [Math]::Max(1, [int]($shot.Bitmap.Width / 16))
+    $stepY = [Math]::Max(1, [int]($shot.Bitmap.Height / 10))
+    for ($y = 0; $y -lt $shot.Bitmap.Height; $y += $stepY) {
+      for ($x = 0; $x -lt $shot.Bitmap.Width; $x += $stepX) {
+        $c = $shot.Bitmap.GetPixel($x, $y)
+        $lum.Add(0.299 * $c.R + 0.587 * $c.G + 0.114 * $c.B)
+      }
+    }
+    $mean = ($lum | Measure-Object -Average).Average
+    $var = 0.0; foreach ($v in $lum) { $var += ($v - $mean) * ($v - $mean) }
+    $sd = [Math]::Sqrt($var / $lum.Count)
+    if ($sd -ge 12) { return $shot }
     $shot.Bitmap.Dispose()
     Start-Sleep -Milliseconds 700
   }
-  throw "截图里看不到卡片（$name 一直是浅色）：窗口没渲染出来"
+  throw "截图里看不到卡片（$name 一直是一片纯色，标准差 < 12）：窗口没渲染出来"
 }
 
 $installedWasRunning = [bool](Get-Process clipnest -ErrorAction SilentlyContinue)
@@ -113,6 +134,9 @@ $installedWasRunning = [bool](Get-Process clipnest -ErrorAction SilentlyContinue
 # 起一个 dev 实例 → 让白色文本框拿到焦点 → 热键弹出 → 截一张「卡片已画好」的图
 # → 返回三个采样点：圆角外侧（= 背后的桌面/窗口）、卡片空白处、卡片中心。
 function Measure-Capture([int]$transparency, [string]$shotName) {
+  # 每次都用指定底色的新目标窗（复用上一次的白窗会让 -Backdrop 失效）
+  Get-Process | Where-Object { $_.MainWindowTitle -eq 'ClipNest paste target' } | ForEach-Object { try { $_.Kill() } catch {} }
+  $env:CLIPNEST_TARGET_BG = $Backdrop
   $log = Start-DevApp $transparency
 
   $target = Wait-For {
@@ -156,45 +180,78 @@ function Measure-Capture([int]$transparency, [string]$shotName) {
 }
 
 try {
-  $a = Measure-Capture 0 'capture-transparency-0.png'
-  $b = Measure-Capture 30 'capture-transparency-30.png'
+  $a = Measure-Capture 0 "capture-transparency-0-$Preset.png"
+  $b = Measure-Capture 30 "capture-transparency-30-$Preset.png"
 
+  # 背后那块窗口的预期颜色（就是 -Backdrop 给的那个）
+  $bgExpected = [System.Drawing.ColorTranslator]::FromHtml($Backdrop)
   $fmt = { param($c) "$($c.R),$($c.G),$($c.B)" }
   Write-Host "0%   : 圆角外侧=$(& $fmt $a.Corner)  卡片=$(& $fmt $a.Card)   ($($a.Size))"
   Write-Host "30%  : 圆角外侧=$(& $fmt $b.Corner)  卡片=$(& $fmt $b.Card)   ($($b.Size))"
 
-  # 1) 圆角外侧不是窗口底色（14,16,21），而是背后的浅色窗口 → 窗口真的透明
-  if ($a.Corner.R -gt 150 -and $a.Corner.R - $a.Card.R -gt 100) {
-    $results.Add("PASS 0% 时圆角外侧是背后的浅色窗口 ($(& $fmt $a.Corner))，不是窗口底色——窗口真透明")
+  # 判定不写死任何主题的具体色值（浅色/深色预设的 --surface 差着十万八千里），
+  # 只认三件物理事实：
+  #   ① 圆角外侧 = 背后那块窗口的颜色（窗口真透明）
+  #   ② 0% 时卡片与背后明显不同（卡片不透明）
+  #   ③ 30% 时卡片朝背后的方向移动了一截、但没走到头（真混合，且混合层还压着自己的底色）
+  # 换底色（白/蓝）、换主题预设时这些都成立；具体色值打印出来供人看。
+  $pick = @{ Name = 'R'; C0 = $a.Card.R; C30 = $b.Card.R; BG = $a.Corner.R }
+  foreach ($c in @(
+      @{ Name = 'G'; C0 = $a.Card.G; C30 = $b.Card.G; BG = $a.Corner.G },
+      @{ Name = 'B'; C0 = $a.Card.B; C30 = $b.Card.B; BG = $a.Corner.B })) {
+    if ([Math]::Abs($c.BG - $c.C0) -gt [Math]::Abs($pick.BG - $pick.C0)) { $pick = $c }
+  }
+  $gap = $pick.BG - $pick.C0          # 不透明卡片与背后的差
+  $moved = $pick.C30 - $pick.C0       # 半透明之后卡片移动了多少
+  Write-Host ("主通道 {0}: 实心 {1} → 半透明 {2}，背后 {3}（跨度 {4}，移动 {5}）" -f `
+    $pick.Name, $pick.C0, $pick.C30, $pick.BG, $gap, $moved)
+
+  # 1) 圆角外侧 = 背后窗口（±25，抗抗锯齿与 DWM 阴影）
+  $cornerOK = [Math]::Abs($a.Corner.R - $bgExpected.R) -le 25 -and
+              [Math]::Abs($a.Corner.G - $bgExpected.G) -le 25 -and
+              [Math]::Abs($a.Corner.B - $bgExpected.B) -le 25
+  if ($cornerOK) {
+    $results.Add("PASS 圆角外侧 = 背后窗口的颜色 ($(& $fmt $a.Corner))，不是窗口底色——窗口真透明")
   } else {
-    $results.Add("FAIL 0% 时圆角外侧 $(& $fmt $a.Corner) 看起来还是实底（卡片 $(& $fmt $a.Card)）")
+    $results.Add("FAIL 圆角外侧 $(& $fmt $a.Corner) ≠ 背后窗口 $(& $fmt $bgExpected)：窗口还是实底")
   }
 
-  # 2) 0% 时卡片是实心 surface（#0e1015 = 14,16,21）
-  if ([Math]::Abs($a.Card.R - 14) -le 6 -and [Math]::Abs($a.Card.G - 16) -le 6 -and [Math]::Abs($a.Card.B - 21) -le 6) {
-    $results.Add("PASS 0% 时卡片是实心 surface ($(& $fmt $a.Card))")
-  } else {
-    $results.Add("FAIL 0% 时卡片 $(& $fmt $a.Card)，期望 14,16,21")
+  # 背后与卡片本身几乎同色（例如浅色主题 + 白文档）时，"半透明"在物理上就看不出差别：
+  # 白叠白。这种情况不算失败，但要明确说出来，别让人以为开关没生效。
+  if ([Math]::Abs($gap) -lt 40) {
+    $results.Add(("NOTE 卡片与背后只差 {0}（$Backdrop）：这个组合本来就看不出透明，换彩色/深色背景再测" -f [int][Math]::Abs($gap)))
   }
 
-  # 3) 30% 时卡片明显变浅 = 真的与背后的东西混合了。不锁死具体数值：混合层里还有
-  #    一层 DWM backdrop（Acrylic）自己的底色，算不出一个能写死的期望值。
-  #    但方向必须对：比实心 surface 浅一大截，同时又还没浅到跟背后一样。
-  if ($b.Card.R -ge $a.Card.R + 25 -and $b.Card.R -le $b.Corner.R - 25) {
-    $results.Add(("PASS 30% 时卡片 {0} 比实心 {1} 明显更浅，且仍比背后 {2} 深——半透明真的生效" -f `
-      (& $fmt $b.Card), (& $fmt $a.Card), (& $fmt $b.Corner)))
+  # 2) 0% 时卡片与背后明显不同（不透明的卡片）。背景与卡片同色时这条量不出来，跳过。
+  if ([Math]::Abs($gap) -lt 40) {
+    $results.Add("SKIP 0% 的卡片不透明判定：背后与卡片太接近，量不出来")
   } else {
-    $results.Add(("FAIL 30% 时卡片 {0} 没有与背后混合（实心 {1}，背后 {2}）：alpha 被合到黑底上了" -f `
-      (& $fmt $b.Card), (& $fmt $a.Card), (& $fmt $b.Corner)))
+    $results.Add(("PASS 0% 时卡片 {0} 与背后 {1} 明显不同（差 {2}）：卡片不透明" -f `
+      (& $fmt $a.Card), (& $fmt $a.Corner), [int][Math]::Abs($gap)))
+  }
+  # 3) 30% 时卡片朝背后移动了、且没走到头
+  $towardBackdrop = [Math]::Sign($moved) -eq [Math]::Sign($gap)
+  $visiblyMoved = [Math]::Abs($moved) -ge 8
+  $notSwallowed = [Math]::Abs($moved) -lt [Math]::Abs($gap) - 8
+  if ([Math]::Abs($gap) -lt 40) {
+    $results.Add("SKIP 30% 的混合判定：背后与卡片太接近，量不出来（见上面的 NOTE）")
+  } elseif ($towardBackdrop -and $visiblyMoved -and $notSwallowed) {
+    $results.Add(("PASS 30% 时卡片 {0} 朝背后移动了 {1}（跨度 {2}）——半透明真的与背后混合" -f `
+      (& $fmt $b.Card), [int]$moved, [int]$gap))
+  } else {
+    $results.Add(("FAIL 30% 时卡片 {0} 没有与背后混合（实心 {1}，背后 {2}，移动 {3}）" -f `
+      (& $fmt $b.Card), (& $fmt $a.Card), (& $fmt $a.Corner), [int]$moved))
   }
 
-  # 4) 半透明之后圆角外侧仍然透明（别用"把整窗改成不透明 + 浅色"来糊弄）
-  if ($b.Corner.R -gt 150) {
-    $results.Add("PASS 30% 时圆角外侧仍是背后的窗口 ($(& $fmt $b.Corner))")
+  # 4) 半透明之后圆角外侧仍然透明
+  $cornerStillOK = [Math]::Abs($b.Corner.R - $bgExpected.R) -le 25 -and
+                   [Math]::Abs($b.Corner.G - $bgExpected.G) -le 25 -and
+                   [Math]::Abs($b.Corner.B - $bgExpected.B) -le 25
+  if ($cornerStillOK) {
+    $results.Add("PASS 30% 时圆角外侧仍是背后窗口 ($(& $fmt $b.Corner))")
   } else {
-    $results.Add("FAIL 30% 时圆角外侧 $(& $fmt $b.Corner) 变实了")
-  }
-  $results | ForEach-Object { Write-Host $_ }
+    $results.Add("FAIL 30% 时圆角外侧 $(& $fmt $b.Corner) 变实了（背后是 $(& $fmt $bgExpected)）")
+  }  $results | ForEach-Object { Write-Host $_ }
   $failed = @($results | Where-Object { $_ -like 'FAIL*' }).Count
   Write-Host ("E2E-RESULT: {0} (shots: {1})" -f $(if ($failed -eq 0) { 'PASS' } else { "FAIL x$failed" }), $shots)
   exit $(if ($failed -eq 0) { 0 } else { 1 })
@@ -207,3 +264,6 @@ finally {
     Write-Host "已把安装版 ClipNest 拉起来：$installedExe --background"
   }
 }
+
+
+
