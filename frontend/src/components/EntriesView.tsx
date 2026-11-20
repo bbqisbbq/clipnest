@@ -25,6 +25,8 @@ type Props = {
   draftText: string;
   /** 输入框存下一条后 +1：重载列表并贴到底部 */
   reloadSignal: number;
+  /** 后台采集/同步进来新条目时 +1：重载列表，但不把用户拽回底部 */
+  liveSignal: number;
   onNotify: (message: string) => void;
   onChanged: () => void;
   onOpenDetail: (entry: Entry) => void;
@@ -35,6 +37,7 @@ export default function EntriesView({
   day,
   draftText,
   reloadSignal,
+  liveSignal,
   onNotify,
   onChanged,
   onOpenDetail,
@@ -67,6 +70,14 @@ export default function EntriesView({
     void loadLatest();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reloadSignal]);
+
+  // 后台来的新条目（复制了东西 / 同步拉到别人写的）：直接出现在列表里，
+  // 不用切一下页面才看见。滚动位置不动——用户可能正翻着旧记录。
+  useEffect(() => {
+    if (liveSignal === 0) return;
+    void loadLatest({ stick: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveSignal]);
 
   // ---- 卡片操作 ----------------------------------------------------------
 

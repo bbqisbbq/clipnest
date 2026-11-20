@@ -18,7 +18,9 @@
 
   --text: #e9ebf0;
   --text-2: #a4abba;
-  --text-3: #6e7686;
+  /* 与预设 default-dark 保持一致：弱化文字要在 --surface-3 上也过 4.5:1，
+     11~12px 的小字才不会糊（原来是 #6e7686，3.70:1）。见 lib/themes.ts。 */
+  --text-3: #7e8593;
   /* 旧名（picker / snippets 里用过）：别让它变成未定义变量，
      否则 color: var(--text-dim) 整条声明失效、文字亮成正文色。 */
   --text-dim: var(--text-3);
@@ -180,3 +182,26 @@ samp,
   font-feature-settings: "calt" 1;
 }
 
+
+/* ---------------- 可访问性（全局，一处生效） ---------------- */
+
+/* 键盘焦点圈：以前只有 snippets.css 里给 select/input/textarea 写了一份，
+   按钮、侧栏行、菜单项靠键盘 Tab 过去时完全看不出焦点在哪。鼠标点击不会命中
+   :focus-visible，所以视觉上不会多出一圈。 */
+:focus-visible {
+  outline: 2px solid var(--accent-line);
+  outline-offset: 1px;
+}
+
+/* 系统开了"减少动画"时，把过渡/动画压到几乎瞬时：
+   桌面工具里的位移与淡入对前庭敏感的人是实打实的负担。 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -386,6 +386,10 @@ func (r *syncRun) report(info syncPushInfo, settingsPulled, settingsPushed bool)
 	}
 	if len(r.peers) > 0 {
 		result += fmt.Sprintf("（%d 台设备）", len(r.peers)+1)
+	} else {
+		// 只有本机一个包时，"拉取 0 条"看起来像"一切正常"，其实是**没有对方可拉**。
+		// 这句是给"另一台机器怎么没同步过来"直接给答案的。
+		result += "（远端只有本机一个包：其他设备还没上传过）"
 	}
 
 	s.syncMu.Lock()

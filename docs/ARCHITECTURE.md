@@ -40,7 +40,7 @@ internal/clip/           业务层：条目、捕获、片段、同步、绑定 
 | `service_capture.go` | 采集管线（合并 45ms、去重、回写抑制）+ 快速输入窗（含尺寸记忆：`capture.size` → meta） |
 | `service_paste.go` | 条目 → 系统：复制回剪贴板、打开、picker 弹窗三件套 |
 | `service_settings.go` | 设置保存与副作用（自启、展开器、两个后台循环） |
-| `draft.go` | 快捷输入框的未保存草稿（meta 键 `composer.draft`，跟着 clipnest.db 走） |
+| `draft.go` | 快捷输入框的未保存草稿（meta 键 `composer.draft`，跟着 clipnest.db 走）。**写库防抖在 Go 侧**（前端每键送一次，内存立即更新 + 400ms 合并写），`FlushComposerDraft`（前端在收起窗口/退出前调）与 `Shutdown` 兜底 |
 | `entry_api.go` | 绑定给前端的条目 API + 筛选器 CRUD |
 | `syncpanel.go` | 设置页「设备包」面板的数据形状 |
 
@@ -227,6 +227,10 @@ pwsh -File scripts\visual-check\check-css.ps1   # 样式回归截图（改 CSS �
 pwsh -STA -File scratch\e2e-capture-resize.ps1  # 记一笔浮层：拖动/拉伸/尺寸记忆（真鼠标事件）
 pwsh -STA -File scratch\check-sidebar-active.ps1 # 侧栏高亮：待办 ⇄ 内容不同时点亮两行（真鼠标点击）
 pwsh -STA -File scratch\shot-tray-menu.ps1      # 托盘菜单截图 + 点「打开设置」验证跳转
+pwsh -STA -File scratch\e2e-live-and-draft.ps1  # 复制后不切页面就能看到新条目 + 草稿跨重启
+pwsh -STA -File scratch\e2e-draft-robust.ps1    # 敲完立刻收起窗口（点 ×）再强杀，草稿不丢
+pwsh -STA -File scratch\e2e-theme-shots.ps1     # 4 个主题预设各截一张整窗
+node scratch\theme-audit.mjs                    # 主题对比度体检（5 预设 × 4 底色 × 7 文字）
 ```
 
 三个 `-STA` 脚本都会**先停掉正在跑的安装版**（否则 SingleInstance 会让沙箱实例直接

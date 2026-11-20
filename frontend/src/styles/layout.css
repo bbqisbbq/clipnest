@@ -50,7 +50,8 @@
   width: 21px;
   height: 21px;
   border-radius: var(--r-sm);
-  color: #fff;
+  /* 强调色块上的字跟主题走：深色预设的强调色偏亮，配白字只有 2.7:1 */
+  color: var(--on-accent);
   /* 渐变 + 彩色光晕是"网页营销页"的标志，桌面工具用一个实心色块就够 */
   background: var(--accent);
 }
@@ -89,13 +90,13 @@
 
 .tb-pill.is-live {
   color: var(--ok);
-  border-color: rgba(69, 199, 141, 0.3);
-  background: rgba(69, 199, 141, 0.09);
+  border-color: color-mix(in srgb, var(--ok) 30%, transparent);
+  background: color-mix(in srgb, var(--ok) 9%, transparent);
 }
 
 .tb-pill.is-live .tb-dot {
   background: var(--ok);
-  box-shadow: 0 0 0 3px rgba(69, 199, 141, 0.16);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 16%, transparent);
 }
 
 .tb-spacer {
@@ -125,8 +126,9 @@
 }
 
 .win-btn.is-close:hover {
-  background: #d64545;
-  color: var(--text);
+  /* 关窗键的红底走 token：写死 #d64545 在暖白/纸感预设下和 --danger 是两种红 */
+  background: var(--danger);
+  color: var(--surface);
 }
 
 /* ---------------- sidebar ---------------- */

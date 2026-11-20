@@ -61,6 +61,9 @@ export default function SyncSection({
   };
 
   const lastSync = syncStatus?.lastSync ? formatDateTime(syncStatus.lastSync) : "从未同步";
+  // 远端有没有"别的设备"：只有本机一个包时，同步成功也不代表数据在流动，
+  // 得把这件事说出来，否则"拉取 0 条新增"会被当成一切正常。
+  const peerCount = (panel?.devices ?? []).filter((d) => !d.self).length;
 
   return (
     <Section title="云同步（WebDAV · 每台机器一个包）" desc="把整份历史打成自己的一个 zip 包，按内容哈希与其他机器合并。">
@@ -130,7 +133,9 @@ export default function SyncSection({
             <>
               <span>{lastSync}</span>
               {syncStatus?.lastResult ? <span>· {syncStatus.lastResult}</span> : null}
-              {syncStatus?.devices ? <span>· {syncStatus.devices} 台设备</span> : null}
+              {syncStatus?.devices ? (
+                <span>{syncStatus.devices > 1 ? `· ${syncStatus.devices} 台设备` : "· 只有本机"}</span>
+              ) : null}
             </>
           )}
         </span>
@@ -163,6 +168,14 @@ export default function SyncSection({
             </div>
           ))}
         </div>
+      ) : null}
+
+      {panel?.configured && peerCount === 0 ? (
+        <p className="sync-hint">
+          远端目前只有本机这一个包，没有可拉取的内容。另一台机器上也要在「设置 → 云同步」里
+          打开同步、填**同一个**目录与账号，并点一次「立即同步」——它的包出现在上面这张表里之后，
+          这边才会拉到东西。如果那边已经点过却仍不出现，先在那台机器上用「测试连接」看是连上了还是报错。
+        </p>
       ) : null}
 
       {panel?.last?.at ? (

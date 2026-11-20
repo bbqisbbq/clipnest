@@ -48,6 +48,9 @@ export default function App() {
   const [settingsReturn, setSettingsReturn] = useState<"entries" | "todo">("entries");
   // 输入框存下一条后给时间线的一次性信号（时间线此刻可能没挂载，见 EntriesView）
   const [savedTick, setSavedTick] = useState(0);
+  // 后台来的变化（复制了东西、同步拉到别的设备写的、清空历史）也走一次信号：
+  // 以前列表只在挂载/换筛选器时加载一次，于是"复制完得切一下页面才看得见"。
+  const [liveTick, setLiveTick] = useState(0);
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   // 确认框走全局 DialogProvider（以前这里有第四套自己写的 modal 状态）
   const confirm = useConfirm();
@@ -129,6 +132,22 @@ export default function App() {
     });
     return () => off();
   }, [openSettings]);
+
+  // 采集/同步的通知（后端 service_capture.go / sync_run.go 里 emit）。
+  // 列表、待办、侧栏计数都跟着刷——这是"复制完立刻看见"的唯一来源。
+  useEffect(() => {
+    const bump = () => {
+      setLiveTick((n) => n + 1);
+      void data.refreshMeta();
+    };
+    const offs = [
+      Events.On("clip:new", bump),
+      Events.On("clip:bumped", bump),
+      Events.On("clip:updated", bump),
+      Events.On("clip:cleared", bump),
+    ];
+    return () => offs.forEach((off) => off());
+  }, [data.refreshMeta]);
 
   const openTodos = useCallback(() => {
     if (view === "todo") {
@@ -256,6 +275,7 @@ export default function App() {
                 day={selectedDay}
                 draftText={draft.text}
                 reloadSignal={savedTick}
+                liveSignal={liveTick}
                 onNotify={notify}
                 onChanged={() => void data.refreshMeta()}
                 onOpenDetail={(e) => openDetail(e, "entries")}
@@ -268,6 +288,7 @@ export default function App() {
                 onChanged={() => void data.refreshMeta()}
                 onOpenEntry={(e) => openDetail(e, "todo")}
                 onGoEntries={() => setView("entries")}
+                liveSignal={liveTick}
               />
             ) : null}
 

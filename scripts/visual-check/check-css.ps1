@@ -30,7 +30,7 @@ if (-not $Out) { $Out = Join-Path $root "scratch\visual-check.png" }
 $tokens = @"
 --bg:#0a0b0f; --surface:#0e1015; --surface-2:#13161c; --surface-3:#191d25;
 --border:#21252e; --border-soft:#1a1e26; --border-strong:#2c313b;
---text:#e9ebf0; --text-2:#a4abba; --text-3:#6e7686;
+--text:#e9ebf0; --text-2:#a4abba; --text-3:#7e8593;
 --accent:#7d8cff; --accent-2:#9d7bff;
 --accent-tint:rgba(125,140,255,.14); --accent-line:rgba(125,140,255,.42);
 --ok:#45c78d; --warn:#e0a253; --danger:#ee6a6a;

@@ -228,6 +228,15 @@ func (w *wiring) createWindows(preSettings clip.Settings, hidden bool) {
 		w.win.Hide()
 	})
 
+	// 收起窗口时给前端递个信号：草稿的写库防抖在后端（internal/clip/draft.go），
+	// 前端收到就立刻 Flush 一次。原生 Hide 不一定会让页面收到 visibilitychange，
+	// 所以这条不能省——否则"敲完立刻点 ×"可能丢最后几个字。
+	w.win.RegisterHook(events.Common.WindowHide, func(_ *application.WindowEvent) {
+		if w.app != nil {
+			w.app.Event.Emit("app:hidden", "")
+		}
+	})
+
 	// Quick paste popup. Frameless, always on top, hidden until the hotkey
 	// asks for it; it hides itself as soon as it loses focus.
 	w.picker = w.app.Window.NewWithOptions(application.WebviewWindowOptions{

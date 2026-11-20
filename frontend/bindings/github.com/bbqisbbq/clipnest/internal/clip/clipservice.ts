@@ -124,6 +124,14 @@ export function FallbackPaste(text: string): $CancellablePromise<void> {
 }
 
 /**
+ * FlushComposerDraft writes the pending draft right now. 前端在"窗口收起/退出前"
+ * 调一次，就不必赌防抖窗口还剩多少时间。
+ */
+export function FlushComposerDraft(): $CancellablePromise<void> {
+    return $Call.ByID(4253694382);
+}
+
+/**
  * ForegroundProcess is the focused window's image name ("code.exe").
  */
 export function ForegroundProcess(): $CancellablePromise<string> {
@@ -139,6 +147,9 @@ export function GetAppInfo(): $CancellablePromise<$models.AppInfo> {
 
 /**
  * GetComposerDraft returns the last unsaved draft (empty when there is none).
+ * 
+ * 还挂在内存里没落库的那一份优先：同一进程里的读者（重启前的自检、以后可能的
+ * 多窗口）不该读到旧值。
  */
 export function GetComposerDraft(): $CancellablePromise<string> {
     return $Call.ByID(3588030336);
@@ -459,9 +470,12 @@ export function SetCapture(enabled: boolean): $CancellablePromise<$models.Settin
 }
 
 /**
- * SetComposerDraft persists the unsaved draft. An empty (or blank) value clears
+ * SetComposerDraft records the unsaved draft. An empty (or blank) value clears
  * it — that is what saving the entry does, so a stale draft never comes back
  * after a restart.
+ * 
+ * 立即返回：内存更新 + 排一次防抖写盘。应用已经在关闭（Shutdown 已跑过）时直接
+ * 忽略：那时库可能已经关了，再排定时器只会写到一个关掉的 DB 上。
  */
 export function SetComposerDraft(text: string): $CancellablePromise<void> {
     return $Call.ByID(641538572, text);

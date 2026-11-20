@@ -97,8 +97,17 @@ func (s *ClipService) TestSync() (string, error) {
 		return "连接成功，远端还没有任何设备的同步包（首次同步会创建）", nil
 	}
 	names := make([]string, 0, len(entries))
+	others := 0
 	for _, e := range entries {
 		names = append(names, fmt.Sprintf("%s（%s）", e.Name, humanBytes(int(e.Bytes))))
+		if e.Name != cfg.packageName() {
+			others++
+		}
+	}
+	if others == 0 {
+		// 只有自己的包：连得上、但"另一台机器"从没往这里写过。
+		return fmt.Sprintf("连接成功，但远端只有本机这一个包（%s）：其他设备还没上传过。"+
+			"请在另一台机器上打开 设置 → 云同步，填同一个目录、点「立即同步」。", names[0]), nil
 	}
 	return fmt.Sprintf("连接成功，远端有 %d 个设备的同步包：%s", len(entries), strings.Join(names, "、")), nil
 }

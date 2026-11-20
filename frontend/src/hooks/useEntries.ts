@@ -41,13 +41,15 @@ export function useEntries(baseQuery: EntryQuery) {
   // 贴底标志：新内容进来时，只有"本来就在底部"才跟着滚下去
   const stickToBottom = useRef(true);
 
-  const loadLatest = useCallback(async () => {
+  // stick=false 用于"后台采集进来的新条目"：不该把正在往上翻历史的用户拽回底部。
+  // 用户本来就在底部（stickToBottom 为 true）时，下面的分组 effect 照样会跟着滚。
+  const loadLatest = useCallback(async (opts?: { stick?: boolean }) => {
     try {
       const list =
         (await ClipService.GetEntries({ ...baseQuery, limit: PAGE_SIZE, tail: true } as never)) ?? [];
       setEntries(list);
       setHasMore(list.length >= PAGE_SIZE);
-      stickToBottom.current = true;
+      if (opts?.stick !== false) stickToBottom.current = true;
     } catch (err) {
       console.error(err);
     }

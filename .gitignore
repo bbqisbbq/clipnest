@@ -50,3 +50,6 @@ scratch/ui-review/dist-before.css
 
 # 端到端截图（本地看效果用，只入库脚本）
 scratch/e2e-shots/
+
+# 抓下来的远端包样本（含真实条目，别进仓库）
+scratch/*.zip

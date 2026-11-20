@@ -40,28 +40,28 @@
 
 .btn-ghost.is-on {
   color: var(--warn);
-  border-color: rgba(242, 195, 99, 0.4);
+  border-color: color-mix(in srgb, var(--warn) 40%, transparent);
 }
 
 .btn-danger {
-  background: rgba(238, 106, 106, 0.12);
-  border-color: rgba(238, 106, 106, 0.3);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 30%, transparent);
   color: #f09090;
 }
 
 .btn-danger:hover {
-  background: rgba(238, 106, 106, 0.2);
+  background: color-mix(in srgb, var(--danger) 20%, transparent);
   color: #ffa8a8;
 }
 
 .btn-danger-ghost {
   background: transparent;
-  border-color: rgba(238, 106, 106, 0.24);
+  border-color: color-mix(in srgb, var(--danger) 24%, transparent);
   color: #d98a8a;
 }
 
 .btn-danger-ghost:hover {
-  background: rgba(238, 106, 106, 0.1);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
   color: #f0a0a0;
 }
 

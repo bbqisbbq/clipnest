@@ -14,6 +14,8 @@ type Props = {
   onNotify: (msg: string) => void;
   onChanged: () => void;
   onGoEntries: () => void;
+  /** 后台采集/同步进来新条目时 +1：重扫一遍待办，别等下次切页面 */
+  liveSignal: number;
 };
 
 function timeLabel(iso: string): string {
@@ -41,7 +43,7 @@ function sourceLabel(r: TodoRef): string {
   return `${short} · ${timeLabel(r.entryCreatedAt)}`;
 }
 
-export default function TodoView({ onOpenEntry, onNotify, onChanged, onGoEntries }: Props) {
+export default function TodoView({ onOpenEntry, onNotify, onChanged, onGoEntries, liveSignal }: Props) {
   const [rows, setRows] = useState<TodoRef[]>([]);
   const [loading, setLoading] = useState(true);
   const [showDone, setShowDone] = useState(false);
@@ -62,6 +64,13 @@ export default function TodoView({ onOpenEntry, onNotify, onChanged, onGoEntries
   useEffect(() => {
     void load();
   }, [load]);
+
+  // 新条目可能带着新任务进来（复制了一段带 - [ ] 的文字、或同步拉到别人的）
+  useEffect(() => {
+    if (liveSignal === 0) return;
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveSignal]);
 
   const open = useMemo(() => rows.filter((r) => !r.item.done), [rows]);
   const done = useMemo(() => rows.filter((r) => r.item.done), [rows]);

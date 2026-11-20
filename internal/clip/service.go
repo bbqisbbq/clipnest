@@ -90,6 +90,13 @@ type ClipService struct {
 	// 设置变更时取消重排（见 update.go 的 restartUpdateCheck）。
 	updateRestart sync.Mutex
 	updateCancel  context.CancelFunc
+
+	// 快捷输入草稿：前端每敲一个字送到 draftPending，draftTimer 防抖合并成一次
+	// SQLite 写（见 draft.go）。Shutdown 时显式 flush，退出不丢最后几个字。
+	draftMu      sync.Mutex
+	draftPending string
+	draftDirty   bool
+	draftTimer   *time.Timer
 }
 
 // NewService opens the store inside dataDir.
@@ -150,6 +157,17 @@ func (s *ClipService) Shutdown() {
 		s.syncCancel = nil
 	}
 	s.syncRestart.Unlock()
+	// 退出前把防抖窗口里的草稿写掉：先停掉定时器（免得它在 store.Close 之后再触发），
+	// 再同步写一次。这一步必须早于 store.Close。
+	s.draftMu.Lock()
+	if s.draftTimer != nil {
+		s.draftTimer.Stop()
+		s.draftTimer = nil
+	}
+	s.draftMu.Unlock()
+	if err := s.flushComposerDraft(); err != nil {
+		Logf(s.store.Dir(), "draft flush on shutdown failed: %v", err)
+	}
 	_ = s.store.Close()
 }
 

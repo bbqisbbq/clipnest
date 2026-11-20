@@ -1,15 +1,22 @@
 /* 浅色主题：只保留主题引擎管不到的东西。
    颜色 token 的唯一来源是 lib/themes.ts（运行时写到 :root 的行内变量），
-   这里不再重复一份，否则会出现两套浅色数值互相打架。 */
-:root[data-theme="light"] {
+   这里不再重复一份，否则会出现两套浅色数值互相打架。
+
+   注意选择器用的是 **data-scheme**（= 当前预设自己的深浅），不是 data-theme
+   （= 用户/系统选的深浅）：两者可以不一致（例如系统深色但选了"纸感"预设）。
+   用 data-theme 的话，那种组合下浅色专属的这些覆盖根本不会生效，
+   深色那套 --k-* 会压到米白底上。lib/themes.ts 的 applyTheme 两个都写。 */
+:root[data-scheme="light"] {
   /* 六种条目类型的色相压到低饱和：原来是蓝/青/橙/紫/粉五个高饱和色，
-     同屏几行 chip 就很吵。现在统一往暖灰调靠，只靠明度区分。 */
-  --k-text: #8a5f3c;
+     同屏几行 chip 就很吵。现在统一往暖灰调靠，只靠明度区分。
+     k-text / k-image / k-custom 又各自压深一档：它们原来在最深的
+     --surface-3 上只有 4.15~4.42:1，小字看得吃力。 */
+  --k-text: #875d3b;
   --k-link: #2f6f5e;
-  --k-image: #8f6420;
+  --k-image: #865e1e;
   --k-files: #6c5a7a;
   --k-rich: #9a4a33;
-  --k-custom: #6f675b;
+  --k-custom: #6d655a;
 
   --backdrop: rgba(40, 34, 24, 0.34);
   --shadow-pop: 0 18px 40px rgba(60, 50, 34, 0.16);
@@ -19,12 +26,12 @@
   --elev-card: 0 1px 3px rgba(60, 50, 34, 0.06), 0 14px 30px -24px rgba(60, 50, 34, 0.3);
 }
 
-/* 原生控件（下拉框、滚动条）跟着主题走 */
-:root {
+/* 原生控件（下拉框、滚动条）跟着**当前预设**走，理由同上 */
+:root[data-scheme="dark"] {
   color-scheme: dark;
 }
 
-:root[data-theme="light"] {
+:root[data-scheme="light"] {
   color-scheme: light;
 }
 
@@ -37,24 +44,24 @@ select option,
 }
 
 /* 浅色下卡片/浮层的轻微阴影差异 */
-:root[data-theme="light"] .side {
+:root[data-scheme="light"] .side {
   background: var(--surface-2);
 }
 
-:root[data-theme="light"] .picker {
+:root[data-scheme="light"] .picker {
   background: var(--surface);
 }
 
-:root[data-theme="light"] .snip-preview,
-:root[data-theme="light"] .snip-preview pre {
+:root[data-scheme="light"] .snip-preview,
+:root[data-scheme="light"] .snip-preview pre {
   background: var(--surface-2);
 }
 
 /* 行内代码/缩写这类"轻强调块"跟着强调色走，别再写死一套蓝紫，
    否则换配色（比如暖白）时它们会留着上一套色。 */
-:root[data-theme="light"] .snip-preview code,
-:root[data-theme="light"] .snip-trigger,
-:root[data-theme="light"] .picker-trigger {
+:root[data-scheme="light"] .snip-preview code,
+:root[data-scheme="light"] .snip-trigger,
+:root[data-scheme="light"] .picker-trigger {
   background: var(--accent-tint);
   color: var(--accent);
 }
