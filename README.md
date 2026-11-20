@@ -105,7 +105,7 @@ ClipNest 在你使用电脑时安静地记录进入过系统剪贴板的一切�
 | `clipnest-<版本>-amd64-setup.exe.sig` | 不安装，自动更新用它验签 | 必须与安装包一起上传 |
 
 每个 Release 都只带**它自己那个版本**的安装包（外加 2.7.1 起的 `.sig`）。自动更新只看
-`/releases/latest`，所以旧版本的包留在原地既不会被误装，也方便回滚到指定版本。
+`/releases/latest`，所以每个版本都保留自己的安装包：不会被误装，也方便回滚到指定版本。
 
 安装包**未做 Authenticode 签名**，首次运行会触发 SmartScreen 提示（「更多信息 → 仍要运行」）。
 要签名的话脚本是现成的（自签名证书在 `build\signing\`，不入库）：
@@ -236,7 +236,7 @@ wails3 task windows:package             # NSIS 全用户安装包（需要 NSIS�
    **.sig 必须和安装包一起上传**：漏了的话更新检查会明确拒绝（"发布缺少签名文件"），
    所有用户都会停在旧版本。私钥在 `build/signing/ed25519.key`（gitignore，别外传）；
 5. 提交 + 打 tag：`git tag -a v<版本> -m "ClipNest <版本>"`，然后 `git push origin main --tags`；
-6. 建 GitHub Release，上传上面那**两个**文件（安装包 + `.sig`）；**只保留最新版本的安装包**，
+6. 建 GitHub Release，上传上面那**两个**文件（安装包 + `.sig`）。**每个版本都保留自己的安装包与 `.sig`**
    旧 release 的资产每次发版都清掉（release 本身留着当变更记录）。
 
 ## 使用
