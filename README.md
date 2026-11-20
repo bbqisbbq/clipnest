@@ -230,8 +230,13 @@ wails3 task windows:package             # NSIS 全用户安装包（需要 NSIS�
 2. `wails3 task common:update:build-assets`（同步 `build/**/Info.plist`、`windows/info.json`、`wails_tools.nsh` 等资产）；
 3. `wails3 task windows:package` → `bin\clipnest-amd64-installer.exe`，改名成 `clipnest-<版本>-amd64-setup.exe`
    （**只发全用户安装包**，不带 per-user 版本）；
-4. 提交 + 打 tag：`git tag -a v<版本> -m "ClipNest <版本>"`，然后 `git push origin main --tags`；
-5. 建 GitHub Release 并上传上面那一个安装包；**只保留最新版本的安装包**，旧 release 每次发版都清掉。
+4. **签名**：`go run ./scratch/signinstaller sign bin\clipnest-<版本>-amd64-setup.exe` → 同名 `.sig`，
+   再 `go run ./scratch/signinstaller verify <安装包> <安装包>.sig` 确认"签名有效"。
+   **.sig 必须和安装包一起上传**：漏了的话更新检查会明确拒绝（"发布缺少签名文件"），
+   所有用户都会停在旧版本。私钥在 `build/signing/ed25519.key`（gitignore，别外传）；
+5. 提交 + 打 tag：`git tag -a v<版本> -m "ClipNest <版本>"`，然后 `git push origin main --tags`；
+6. 建 GitHub Release，上传上面那**两个**文件（安装包 + `.sig`）；**只保留最新版本的安装包**，
+   旧 release 的资产每次发版都清掉（release 本身留着当变更记录）。
 
 ## 使用
 
