@@ -85,6 +85,7 @@ func main() {
 		ShowCaptureAt: w.showCaptureAt,
 		HideCapture:   w.hideCapture,
 		ApplyChrome:   w.applyChrome,
+		ApplyBackdrop: w.applyCaptureBackdrop,
 		HidePicker:    w.hidePicker,
 		OpenURL:       clip.OpenExternal,
 		OnSettings: func(st clip.Settings) error {

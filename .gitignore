@@ -53,3 +53,8 @@ scratch/e2e-shots/
 
 # 抓下来的远端包样本（含真实条目，别进仓库）
 scratch/*.zip
+
+# 透明弹窗实测的截图与沙箱 APPDATA（本地复现用，只入库脚本）
+scratch/transparency-shots/
+scratch/tmp-profile-transparency/
+

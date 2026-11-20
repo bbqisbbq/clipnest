@@ -14,7 +14,7 @@
     !define INFO_PRODUCTNAME "ClipNest"
 !endif
 !ifndef INFO_PRODUCTVERSION
-    !define INFO_PRODUCTVERSION "2.8.3"
+    !define INFO_PRODUCTVERSION "2.9.0"
 !endif
 !ifndef INFO_COPYRIGHT
     !define INFO_COPYRIGHT "(c) 2026 bbqisbbq"

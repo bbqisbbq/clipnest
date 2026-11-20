@@ -183,6 +183,7 @@ func (s *Store) loadSettings() error {
 	if err := json.Unmarshal(data, &st); err != nil {
 		return nil // corrupt file → keep defaults
 	}
+	st.normalize()
 	s.mu.Lock()
 	s.settings = st
 	s.mu.Unlock()
@@ -198,6 +199,7 @@ func (s *Store) Settings() Settings {
 
 // SaveSettings persists settings to disk and keeps the in-memory copy in step.
 func (s *Store) SaveSettings(st Settings) error {
+	st.normalize()
 	data, err := json.MarshalIndent(st, "", "  ")
 	if err != nil {
 		return err
@@ -222,6 +224,7 @@ func PeekSettings(dir string) (Settings, error) {
 	if err := json.Unmarshal(data, &st); err != nil {
 		return DefaultSettings(), err
 	}
+	st.normalize()
 	return st, nil
 }
 

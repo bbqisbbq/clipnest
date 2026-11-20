@@ -53,6 +53,13 @@ type Settings struct {
 	// ---- appearance ----
 	// ThemePreset selects a palette (see frontend/src/lib/themes.ts).
 	ThemePreset string `json:"themePreset"`
+	// CaptureTransparency is how much of the desktop shows through the
+	// quick-capture popup, in percent (0 = solid card, the default).
+	//
+	// 窗口本身是透明的（圆角外侧透出桌面），这一项只改卡片底色的 alpha：
+	// 0 时卡片完全不透明，只是四角真透明；大于 0 才有"能看见后面的窗口"的效果。
+	// WebView2 糊不了桌面背景，所以这里给不了毛玻璃，只能靠降低 alpha。
+	CaptureTransparency int `json:"captureTransparency"`
 	// ThemeCustomCSS is user-authored CSS applied on top of the preset.
 	ThemeCustomCSS string `json:"themeCustomCss"`
 	// EditorToolbar / ComposerToolbar 决定工具栏显示哪些按钮（Vditor 的 item 名）。
@@ -122,6 +129,22 @@ func DefaultSettings() Settings {
 		ThemePreset:      "default-dark",
 		ThemeCustomCSS:   "",
 		UpdateCheck:      true,
+	}
+}
+
+// MaxCaptureTransparency caps the popup's card alpha. Past ~50% the text sits on
+// whatever happens to be behind the window (a white document, a screenshot) and
+// stops being readable; the number is a UX ceiling, not a technical one.
+const MaxCaptureTransparency = 50
+
+// normalize clamps values that come from settings.json (user-editable) or from
+// the UI. Nothing downstream may assume a field arrived validated.
+func (st *Settings) normalize() {
+	switch {
+	case st.CaptureTransparency < 0:
+		st.CaptureTransparency = 0
+	case st.CaptureTransparency > MaxCaptureTransparency:
+		st.CaptureTransparency = MaxCaptureTransparency
 	}
 }
 

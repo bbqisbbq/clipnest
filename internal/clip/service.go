@@ -15,7 +15,7 @@ import (
 // 设置与开机自启（service_settings.go）。
 
 // Version is shown in the UI and written to the log on start.
-const Version = "2.8.3"
+const Version = "2.9.0"
 
 // AppInfo is static information the frontend needs for the about/settings view.
 type AppInfo struct {
@@ -55,6 +55,10 @@ type Hooks struct {
 	// ApplyChrome paints the native window parts (borders, caption) to match the
 	// current theme. Implemented by main.go because only it knows the window handles.
 	ApplyChrome func(dark bool, borderHex string)
+	// ApplyBackdrop switches the quick-capture window's DWM backdrop (Acrylic) on
+	// or off and reports whether it is now on. Implemented by main.go for the same
+	// reason as ApplyChrome. See backdrop_windows.go for why半透明 needs it.
+	ApplyBackdrop func(acrylic bool) bool
 	// OpenURL opens a link in the default browser.
 	OpenURL func(url string) error
 }
@@ -289,4 +293,14 @@ func (s *ClipService) SetWindowChrome(dark bool, borderHex string) {
 	if s.hooks.ApplyChrome != nil {
 		s.hooks.ApplyChrome(dark, borderHex)
 	}
+}
+
+// SetCaptureBackdrop 由快速输入窗自己调用：卡片要半透明时先请求一层 DWM backdrop，
+// 否则 WebView2 会把半透明像素合到黑底上（卡片反而更暗）。返回值 = 现在是否真的
+// 有这层背景；false 时前端必须把卡片画成不透明，别硬透。
+func (s *ClipService) SetCaptureBackdrop(enabled bool) bool {
+	if s.hooks.ApplyBackdrop == nil {
+		return false
+	}
+	return s.hooks.ApplyBackdrop(enabled)
 }

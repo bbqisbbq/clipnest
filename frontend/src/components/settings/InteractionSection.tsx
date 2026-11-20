@@ -24,6 +24,24 @@ export default function InteractionSection({ draft, patch, appInfo }: Props) {
       >
         <HotkeyInput value={draft.captureHotkey} onChange={(v) => patch({ captureHotkey: v })} />
       </Row>
+      {/* 窗口四角本来就是透明（圆角外侧透出桌面），这一项调的是卡片底色的 alpha。
+          「关」= 实心卡片；开了之后背景里的窗口/文档会直接透上来。 */}
+      <Row
+        label="「记一笔」弹窗透明"
+        tip="弹窗窗口本身一直是透明的（只是四角透出桌面），这项调卡片底色的透明程度：越大越能看见背后的窗口。注意这是真透明不是毛玻璃（糊不了桌面背景），调到 50% 以上文字会看不清，所以最高就到 50%。"
+      >
+        <div className="seg-control">
+          {[0, 15, 30, 50].map((value) => (
+            <button
+              key={value}
+              className={`seg-item ${(draft.captureTransparency ?? 0) === value ? "is-on" : ""}`}
+              onClick={() => patch({ captureTransparency: value })}
+            >
+              {value === 0 ? "关" : `${value}%`}
+            </button>
+          ))}
+        </div>
+      </Row>
       <Row label="选中后自动粘贴" tip="关闭后只写入剪贴板，需要自己按 Ctrl+V。">
         <Switch checked={draft.pasteOnPick} onChange={(v) => patch({ pasteOnPick: v })} />
       </Row>

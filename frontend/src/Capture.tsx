@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Events } from "@wailsio/runtime";
 import MarkdownSurface, { type MarkdownSurfaceHandle, warmUpMarkdown } from "./components/MarkdownSurface";
-import { ClipService } from "./lib/api";
+import { ClipService, EventNames } from "./lib/api";
 import { drag, noDrag } from "./lib/window";
 
 // 快速输入窗（Ctrl+Shift+N）：光标处弹出来，写完 Enter 保存、Esc 关闭。
@@ -14,14 +15,54 @@ import { drag, noDrag } from "./lib/window";
 //   · 拖动 —— 抬头那条（`.capture-head`）是拖动区（`--wails-draggable: drag`），
 //     里面的 × 必须显式 no-drag，否则点它会被当成想拖窗口。改大小不用前端做任何事：
 //     窗口去掉 DisableResize 后，Wails 运行时自己把四周边缘变成拉伸热区。
+//   · 透明 —— 窗口本身透明（wire.go: BackgroundTypeTransparent），只为了让 10px 圆角
+//     外面不垫一块矩形底色。卡片铺多少 alpha 由 Settings.CaptureTransparency 决定
+//     （0 = 实心，默认）。注意这是"真透明"而不是毛玻璃：WebView2 糊不了桌面背景。
+
+// 与 Go 侧 clip.MaxCaptureTransparency 同一个数：两边都钳一次，settings.json 被手改
+// 或前端算出脏值时都不会把卡片弄到看不清字。
+const MAX_TRANSPARENCY = 50;
 
 export default function Capture() {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [transparency, setTransparency] = useState(0);
   const editorRef = useRef<MarkdownSurfaceHandle | null>(null);
   const textRef = useRef(text);
   textRef.current = text;
+
+  // 卡片底色的 alpha 跟着设置走。这个窗随应用一起创建、一直活着，所以必须听
+  // settings:changed——否则在设置页调完得重启才看得到效果。
+  useEffect(() => {
+    let alive = true;
+    const apply = async (value: unknown) => {
+      const n = Math.round(Number(value));
+      const want = Number.isFinite(n) ? Math.min(MAX_TRANSPARENCY, Math.max(0, n)) : 0;
+      // 页面里的半透明像素只有在窗口背后有 DWM backdrop 时才真的与桌面混合，
+      // 否则会被合到黑底上（卡片反而比实心更暗）。所以先让后端开关那层 backdrop，
+      // 再按"它到底开没开起来"决定卡片透多少——老系统上开不起来就别硬透。
+      let backdrop = false;
+      try {
+        backdrop = await ClipService.SetCaptureBackdrop(want > 0);
+      } catch {
+        backdrop = false;
+      }
+      if (!alive) return;
+      setTransparency(want > 0 && !backdrop ? 0 : want);
+    };
+    void ClipService.GetSettings()
+      .then((st) => apply(st.captureTransparency))
+      .catch(() => undefined);
+    const off = Events.On(EventNames.SettingsChanged, (ev) => {
+      const st = ev.data as { captureTransparency?: number } | null;
+      if (st && st.captureTransparency !== undefined) void apply(st.captureTransparency);
+    });
+    return () => {
+      alive = false;
+      off();
+    };
+  }, []);
 
   // 挂载即预热：这个窗口在热键按下之前就已经存在了，预热不占用户可感知的时间。
   useEffect(() => {
@@ -71,7 +112,14 @@ export default function Capture() {
   }, []);
 
   return (
-    <div className="capture">
+    <div
+      className={`capture ${transparency > 0 ? "is-translucent" : ""}`}
+      style={
+        transparency > 0
+          ? { background: `color-mix(in srgb, var(--surface) ${100 - transparency}%, transparent)` }
+          : undefined
+      }
+    >
       <div className="capture-head" style={drag}>
         <span className="capture-dot" />
         <span className="capture-title">记一笔</span>

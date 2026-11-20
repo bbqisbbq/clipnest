@@ -484,6 +484,15 @@ export function SetCapture(enabled: boolean): $CancellablePromise<$models.Settin
 }
 
 /**
+ * SetCaptureBackdrop 由快速输入窗自己调用：卡片要半透明时先请求一层 DWM backdrop，
+ * 否则 WebView2 会把半透明像素合到黑底上（卡片反而更暗）。返回值 = 现在是否真的
+ * 有这层背景；false 时前端必须把卡片画成不透明，别硬透。
+ */
+export function SetCaptureBackdrop(enabled: boolean): $CancellablePromise<boolean> {
+    return $Call.ByID(4089052041, enabled);
+}
+
+/**
  * SetComposerDraft records the unsaved draft. An empty (or blank) value clears
  * it — that is what saving the entry does, so a stale draft never comes back
  * after a restart.

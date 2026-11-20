@@ -390,6 +390,16 @@ export interface Settings {
     "themePreset": string;
 
     /**
+     * CaptureTransparency is how much of the desktop shows through the
+     * quick-capture popup, in percent (0 = solid card, the default).
+     * 
+     * 窗口本身是透明的（圆角外侧透出桌面），这一项只改卡片底色的 alpha：
+     * 0 时卡片完全不透明，只是四角真透明；大于 0 才有"能看见后面的窗口"的效果。
+     * WebView2 糊不了桌面背景，所以这里给不了毛玻璃，只能靠降低 alpha。
+     */
+    "captureTransparency": number;
+
+    /**
      * ThemeCustomCSS is user-authored CSS applied on top of the preset.
      */
     "themeCustomCss": string;

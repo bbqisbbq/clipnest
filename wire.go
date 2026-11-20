@@ -128,6 +128,19 @@ func (w *wiring) applyChrome(dark bool, borderHex string) {
 	})
 }
 
+// applyCaptureBackdrop 打开/关闭「记一笔」窗口背后的 DWM Acrylic 层，返回是否真的开着。
+// 前端拿到 false 就把卡片画回不透明——半透明在没有 backdrop 的窗口里会被合到黑底上。
+func (w *wiring) applyCaptureBackdrop(acrylic bool) bool {
+	if w.capture == nil {
+		return false
+	}
+	on := false
+	application.InvokeSync(func() {
+		on = clip.SetWindowBackdrop(uintptr(w.capture.NativeWindow()), acrylic)
+	})
+	return on
+}
+
 // applyHotkey (re)registers the quick-paste hotkey. 空串表示"不注册"；
 // 同一个加速键重复调用是幂等的。
 func (w *wiring) applyHotkey(accel string) error {
@@ -284,7 +297,18 @@ func (w *wiring) createWindows(preSettings clip.Settings, hidden bool) {
 		HideOnFocusLost: true,
 		Windows: application.WindowsWindow{
 			Theme: application.SystemDefault,
+			// backdrop 在运行时由 SetCaptureBackdrop 开关（见 internal/clip/backdrop_windows.go），
+			// 建窗时先给 None：0% 透明度下不付合成开销，圆角也是干净的切边。
+			BackdropType: application.None,
 		},
+		// 和 picker 一样：窗口本身必须透明，否则那两个 10px 圆角外面会垫一块矩形底色
+		// （看起来就是浮在桌面上的一块方砖）。卡片自己是不是半透明由前端按
+		// Settings.CaptureTransparency 决定，这里只把"四角真透明"这件底层的事做掉。
+		// 用 Translucent 而不是 Transparent：两者在 Windows 上的 exStyle 完全相同
+		// （都是 WS_EX_NOREDIRECTIONBITMAP），差别只在 Wails 建窗时会不会顺手开 DWM
+		// backdrop；我们改成运行时自己开关，所以这里选哪个都行——选 Translucent 是为了
+		// 让"这窗打算用 backdrop"在代码里读得出来。
+		BackgroundType:   application.BackgroundTypeTranslucent,
 		BackgroundColour: application.NewRGB(14, 16, 21),
 		URL:              "/?mode=capture",
 	})

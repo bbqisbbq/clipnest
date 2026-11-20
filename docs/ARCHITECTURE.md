@@ -70,6 +70,7 @@ internal/clip/           业务层：条目、捕获、片段、同步、绑定 
 | `watcher_windows.go` | 消息窗口 + `WM_CLIPBOARDUPDATE` 监听 |
 | `picker_windows.go` | 光标定位、前台接管、合成 `Ctrl+V` |
 | `win32_windows.go` | Win32 基元：剪贴板 API、前景程序、注册表自启 |
+| `backdrop_windows.go` | 快速输入窗背后的 DWM Acrylic 层（`SetWindowBackdrop`，半透明卡片必要的前置） |
 | `shell_windows.go` | `ShellExecute` / 资源管理器定位 |
 | `platform_other.go` | 非 Windows 桩实现（保持可编译） |
 | `snippet_exec_windows.go` | 片段动作的 Windows 实现（粘贴 / 启动程序 / 打开网址） |
@@ -236,6 +237,7 @@ go test ./internal/...                    # 存储/查询/待办/筛选规则/�
 cd frontend; npx tsc --noEmit; npx vite build --mode production
 pwsh -File scripts\visual-check\check-css.ps1   # 样式回归截图（改 CSS 后跑）
 pwsh -STA -File scratch\e2e-capture-resize.ps1  # 记一笔浮层：拖动/拉伸/尺寸记忆（真鼠标事件）
+pwsh -File scratch\e2e-capture-transparency.ps1 # 记一笔浮层：圆角真透明 + 卡片半透明（按像素量，不看截图印象）
 pwsh -STA -File scratch\check-sidebar-active.ps1 # 侧栏高亮：待办 ⇄ 内容不同时点亮两行（真鼠标点击）
 pwsh -STA -File scratch\shot-tray-menu.ps1      # 托盘菜单截图 + 点「打开设置」验证跳转
 pwsh -STA -File scratch\e2e-live-and-draft.ps1  # 复制后不切页面就能看到新条目 + 草稿跨重启

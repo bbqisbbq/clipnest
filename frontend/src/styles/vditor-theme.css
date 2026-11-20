@@ -65,17 +65,25 @@
   padding-bottom: 0 !important;
 }
 
-/* 详情视图：正文区不要任何底色/边框。
-   Vditor 给编辑区铺了一层 --panel-background-color（比页面底色亮一档），
-   在纯色页面上看起来就像"套了个盒子"。 */
+/* 详情视图与快速输入窗：正文区不要任何底色/边框。
+   Vditor 给编辑区铺了一层 --panel-background-color（.vditor-ir pre.vditor-reset 那条，
+   比我们的 .vditor-reset 优先级高一档），在纯色页面上看起来就像"套了个盒子"。
+   快速输入窗那条尤其要紧：卡片可能是半透明的，编辑区若仍是实心 var(--surface)，
+   弹窗中间就成了一块不透明的补丁，透明等于白做。 */
 .md-surface--detail .vditor,
 .md-surface--detail .vditor-content,
 .md-surface--detail .vditor-ir,
-.md-surface--detail pre.vditor-reset {
+.md-surface--detail pre.vditor-reset,
+.md-surface--capture .vditor,
+.md-surface--capture .vditor-content,
+.md-surface--capture .vditor-ir,
+.md-surface--capture pre.vditor-reset {
   background: transparent !important;
   border: 0 !important;
   border-radius: 0 !important;
 }
+/* 加载态骨架也铺了 var(--surface)：半透明弹窗里会闪一下不透明的白/黑块。 */
+.md-surface--capture .md-surface-skeleton { background: transparent; }
 
 /* ---------- 3. 工具栏：去掉"低档边框"，用底色分层 ----------
    尺寸一律走 Vditor 自己的变量，不要手改 item 的 width/height：
