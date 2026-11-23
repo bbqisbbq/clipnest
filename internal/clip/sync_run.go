@@ -49,9 +49,16 @@ type syncRun struct {
 	// discovery
 	deviceInfo []SyncDeviceInfo
 	peers      []string
+	// ignoredRemote 是同步目录里认不出来的文件（旧布局 / 半截上传）：报给用户看，
+	// 静默忽略会让"对方明明在同步"这件事毫无线索。
+	ignoredRemote []string
+	// siblingHint 是"隔壁目录里也有 clipnest_data"的一句话解释（""=没有）。
+	siblingHint string
 
 	// pull
 	results []syncPeerResult
+	// peerFails 是这一轮读不动的对端包（名字+原因）。**不再中断整轮**。
+	peerFails []string
 
 	// merge（也是最终汇报的数字）
 	pulledNew     int
@@ -62,6 +69,11 @@ type syncRun struct {
 	peerTombstones []Tombstone
 	newestSettings *settingsPayload
 	peerItems      int
+
+	// push 阶段的附件统计（见 buildOwnPackage）
+	blobsSent    int
+	blobsCap     int
+	blobsMissing int
 }
 
 func (s *ClipService) syncOnce(upload bool) (SyncStatus, error) {
@@ -129,10 +141,11 @@ func (r *syncRun) listPeers() error {
 	if err := r.cfg.mkcol(syncDevicesDir); err != nil {
 		return err
 	}
-	entries, err := r.cfg.listPackages(syncDevicesDir)
+	entries, ignored, err := r.cfg.listPackages(syncDevicesDir)
 	if err != nil {
 		return err
 	}
+	r.ignoredRemote = ignored
 	r.deviceInfo = make([]SyncDeviceInfo, 0, len(entries)+1)
 	for _, e := range entries {
 		r.deviceInfo = append(r.deviceInfo, SyncDeviceInfo{
@@ -148,6 +161,11 @@ func (r *syncRun) listPeers() error {
 	}
 	if len(r.deviceInfo) == 0 {
 		r.deviceInfo = append(r.deviceInfo, SyncDeviceInfo{Name: r.ownName, Device: hostName(), Self: true})
+	}
+	// 没有对端包时才去体检隔壁目录：这是"两台各写各的"最直接的证据，
+	// 而且要多花几次 PROPFIND —— 有对端时就不必了。
+	if len(r.peers) == 0 {
+		r.siblingHint = r.cfg.siblingHint()
 	}
 	return nil
 }
@@ -185,10 +203,15 @@ func (r *syncRun) pull() error {
 
 // ---- 3. merge -----------------------------------------------------------
 
+// merge applies every peer package. 单个对端读不动（半截上传、旧布局、解析失败）
+// 只是**跳过它**：以前这里 return err，于是那一轮既不合并其他设备、也不上传自己
+// 的包，"一台坏包 = 这台机器永远同步不了"。并集语义下跳过是安全的——最多晚一轮。
 func (r *syncRun) merge() error {
 	for _, res := range r.results {
 		if res.err != nil {
-			return fmt.Errorf("读取 %s 失败: %w", res.name, res.err)
+			r.peerFails = append(r.peerFails, fmt.Sprintf("%s（%v）", res.name, res.err))
+			Logf(r.svc.store.Dir(), "sync: peer %s unreadable, skipped this round: %v", res.name, res.err)
+			continue
 		}
 		if res.pkg == nil {
 			continue
@@ -347,10 +370,17 @@ func (r *syncRun) push(upload bool) (syncPushInfo, error) {
 	}
 
 	// 用采纳过之后的设置：刚合并进来的远端设置如果不写进包，对端会一直把它当"更新"。
-	payload, fingerprint, err := s.buildOwnPackage(r.peerHasBlob, r.peerTombstones, s.store.Settings())
+	//
+	// 墓碑裁剪挪到组包**之前**：裁剪会改变墓碑集合，放在组包之后（老实现）会让
+	// 下一轮的指纹不同 —— 于是每次都白推一个整包。放在前面则指纹如实反映最终内容。
+	if n := s.store.PruneTombstones(time.Now().AddDate(0, 0, -tombstoneRetentionDays)); n > 0 {
+		Logf(s.store.Dir(), "sync: pruned %d expired tombstones", n)
+	}
+	payload, fingerprint, stats, err := s.buildOwnPackage(r.peerHasBlob, r.peerTombstones, s.store.Settings())
 	if err != nil {
 		return info, err
 	}
+	r.blobsSent, r.blobsCap, r.blobsMissing = stats.sent, stats.capped, stats.missing
 	info.bytes = int64(len(payload))
 
 	target := syncDevicesDir + "/" + r.ownName
@@ -369,9 +399,6 @@ func (r *syncRun) push(upload bool) (syncPushInfo, error) {
 	}
 	_ = s.store.SetMeta("sync.lastPush", fingerprint)
 	info.pushed = true
-	// 墓碑裁剪放到上传成功之后：放在组包阶段会改变下一轮指纹，
-	// 于是每次空闲 tick 都白推一个整包（见 buildOwnPackage 的说明）。
-	s.store.PruneTombstones(time.Now().AddDate(0, 0, -tombstoneRetentionDays))
 	Logf(s.store.Dir(), "sync: pushed %s (%d KiB)", target, len(payload)/1024)
 	return info, nil
 }
@@ -400,6 +427,23 @@ func (r *syncRun) report(info syncPushInfo, settingsPulled, settingsPushed bool)
 		// 只有本机一个包时，"拉取 0 条"看起来像"一切正常"，其实是**没有对方可拉**。
 		// 这句是给"另一台机器怎么没同步过来"直接给答案的。
 		result += "（远端只有本机一个包：其他设备还没上传过）"
+	}
+	// 以下是"看起来成功、其实没同步到"的三种具体线索，必须出现在结果行里，
+	// 否则用户只看到一句 sync ok。
+	if len(r.peerFails) > 0 {
+		result += fmt.Sprintf("，%d 个对端包读取失败已跳过（%s）", len(r.peerFails), strings.Join(r.peerFails, "；"))
+	}
+	if len(r.ignoredRemote) > 0 {
+		result += fmt.Sprintf("，远端有 %d 个无法识别的文件（%s）", len(r.ignoredRemote), strings.Join(r.ignoredRemote, "、"))
+	}
+	if r.blobsMissing > 0 {
+		result += fmt.Sprintf("，%d 个附件本机已丢失（对端也拿不到，建议重新采集）", r.blobsMissing)
+	}
+	if r.blobsCap > 0 {
+		result += fmt.Sprintf("，%d 个附件超出本轮预算未上传（下轮继续）", r.blobsCap)
+	}
+	if r.siblingHint != "" {
+		result += "；" + r.siblingHint
 	}
 
 	s.syncMu.Lock()

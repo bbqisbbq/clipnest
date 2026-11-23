@@ -419,7 +419,7 @@ func racePush(t *testing.T, svc *ClipService) {
 	if err := cfg.mkcol(syncDevicesDir); err != nil {
 		t.Fatalf("mkcol: %v", err)
 	}
-	payload, _, err := svc.buildOwnPackage(nil, nil, svc.store.Settings())
+	payload, _, _, err := svc.buildOwnPackage(nil, nil, svc.store.Settings())
 	if err != nil {
 		t.Fatalf("buildOwnPackage: %v", err)
 	}

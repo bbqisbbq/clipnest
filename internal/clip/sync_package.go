@@ -186,13 +186,24 @@ func parsePackage(data []byte) (*syncPackage, error) {
 	return pkg, nil
 }
 
+// blobStats 是组包时附件的去向：发了几个、因预算没发几个、本机已经没有的几个。
+//
+// "本机已经没有"必须和"超预算"分开算：老实现把两者都折进 Truncated，等于把
+// **数据已经丢了**说成"下轮再传"——那张图就再也不会有人发现它回不来了。
+type blobStats struct {
+	sent    int
+	capped  int
+	missing int
+}
+
 // buildOwnPackage renders what this machine knows: the newest syncMaxEntries
 // records, the blobs no peer has yet, our tombstones and (when newest) our settings.
 //
 // 注意这是"最近 N 条"而不是整份历史：条目再多也不会无限膨胀成一个几百 MB 的包。
 // `Tail: true` 不能漏——漏了拿到的是**最旧**的 N 条，最近复制的东西永远同步不出去。
 // 满额时记一行日志，免得用户看到"同步成功"却找不到三年前的条目。
-func (s *ClipService) buildOwnPackage(peerHasBlob map[string]bool, peerTombstones []Tombstone, st Settings) ([]byte, string, error) {
+func (s *ClipService) buildOwnPackage(peerHasBlob map[string]bool, peerTombstones []Tombstone, st Settings) ([]byte, string, blobStats, error) {
+	var stats blobStats
 	entries := s.store.ListEntries(EntryQuery{Limit: syncMaxEntries, Tail: true})
 	if len(entries) == syncMaxEntries {
 		if total := s.store.CountEntries(); total > len(entries) {
@@ -231,27 +242,36 @@ func (s *ClipService) buildOwnPackage(peerHasBlob map[string]bool, peerTombstone
 		})
 		records = append(records, entryRecord{Version: syncPackageVersion, Entry: e})
 
+		// peerHasBlob 来自"对端包的索引里写了这条带附件"，协议上就当它已经有了；
+		// 代价是对端自己丢了字节时这条附件不会再传（见 sync_run.go 的统计出口）。
 		if key == "" || ext == "" || peerHasBlob["entry-"+e.Hash+ext] {
 			continue // no payload, or a peer already carries it
 		}
 		if budget <= 0 {
+			stats.capped++
 			idx.Truncated = true
 			continue
 		}
 		payload, _, err := s.store.LoadEntryBlob(key)
-		if err != nil || len(payload) == 0 || len(payload) > budget {
+		if err != nil || len(payload) == 0 {
+			stats.missing++
+			Logf(s.store.Dir(), "sync: blob for entry %s is gone locally (%v) — no peer can get it", e.Hash, err)
+			continue
+		}
+		if len(payload) > budget {
+			stats.capped++
 			idx.Truncated = true
 			continue
 		}
 		blobs["entry-"+e.Hash+ext] = payload
+		stats.sent++
 		budget -= len(payload)
 	}
 
 	horizon := time.Now().AddDate(0, 0, -tombstoneRetentionDays)
 
 	idx.Deleted = mergeTombstones(peerTombstones, s.store.TombstonesScoped("entry", horizon, maxTombstones))
-	// 墓碑裁剪不在这里做：即使本轮因指纹相同跳过上传，裁剪也会改变下一轮指纹，
-	// 于是每次空闲 tick 都白推一个整包。裁剪放到 push 成功之后（见 sync_run.go）。
+	// 墓碑裁剪在 push 里、组包之前做：见 sync_run.go 的说明（放在这里会让指纹抖动）。
 
 	if st.SyncSettings {
 		idx.Settings = &settingsPayload{
@@ -267,9 +287,9 @@ func (s *ClipService) buildOwnPackage(peerHasBlob map[string]bool, peerTombstone
 	}
 	payload, err := buildPackage(idx, records, blobs)
 	if err != nil {
-		return nil, "", err
+		return nil, "", stats, err
 	}
-	return payload, packageFingerprint(idx, blobNames), nil
+	return payload, packageFingerprint(idx, blobNames), stats, nil
 }
 
 // packageFingerprint digests what actually goes over the wire: entry hashes,

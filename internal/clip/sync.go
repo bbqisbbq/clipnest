@@ -89,27 +89,50 @@ func (s *ClipService) TestSync() (string, error) {
 	if err := cfg.mkcol(syncDevicesDir); err != nil {
 		return "", err
 	}
-	entries, err := cfg.listPackages(syncDevicesDir)
+	entries, ignored, err := cfg.listPackages(syncDevicesDir)
 	if err != nil {
 		return "", err
 	}
 	if len(entries) == 0 {
-		return "连接成功，远端还没有任何设备的同步包（首次同步会创建）", nil
+		msg := "连接成功，远端还没有任何设备的同步包（首次同步会创建）"
+		if len(ignored) > 0 {
+			msg += fmt.Sprintf("；不过目录里有 %d 个无法识别的文件：%s（可能是旧版本留下的布局）",
+				len(ignored), strings.Join(ignored, "、"))
+		}
+		if hint := cfg.siblingHint(); hint != "" {
+			msg += "；" + hint
+		}
+		return msg, nil
 	}
 	names := make([]string, 0, len(entries))
 	others := 0
 	for _, e := range entries {
-		names = append(names, fmt.Sprintf("%s（%s）", e.Name, humanBytes(int(e.Bytes))))
+		names = append(names, fmt.Sprintf("%s（%s，%s）", e.Name, humanBytes(int(e.Bytes)), describeStamp(e.Modified)))
 		if e.Name != cfg.packageName() {
 			others++
 		}
 	}
 	if others == 0 {
 		// 只有自己的包：连得上、但"另一台机器"从没往这里写过。
-		return fmt.Sprintf("连接成功，但远端只有本机这一个包（%s）：其他设备还没上传过。"+
-			"请在另一台机器上打开 设置 → 云同步，填同一个目录、点「立即同步」。", names[0]), nil
+		msg := fmt.Sprintf("连接成功，但远端只有本机这一个包（%s）：其他设备还没上传过。"+
+			"请在另一台机器上打开 设置 → 云同步，填同一个目录、点「立即同步」。", names[0])
+		if len(ignored) > 0 {
+			msg += fmt.Sprintf("另外这个目录里还有 %d 个无法识别的文件：%s。", len(ignored), strings.Join(ignored, "、"))
+		}
+		if hint := cfg.siblingHint(); hint != "" {
+			msg += hint
+		}
+		return msg, nil
 	}
 	return fmt.Sprintf("连接成功，远端有 %d 个设备的同步包：%s", len(entries), strings.Join(names, "、")), nil
+}
+
+// describeStamp renders a server-reported modification time for the status line.
+func describeStamp(t time.Time) string {
+	if t.IsZero() {
+		return "服务器未提供时间"
+	}
+	return t.Local().Format("2006-01-02 15:04")
 }
 
 // SyncNow performs a full two-way merge.
@@ -132,6 +155,12 @@ func (s *ClipService) deviceName() string {
 
 // syncLoop runs the periodic sync; it is restarted after a settings change so a
 // new interval takes effect immediately.
+//
+// 节奏：启动后 5 秒先跑一轮（新机器要赶紧把历史拉下来），成功之后按 interval
+// 定时；**失败就退避重试**（1 → 3 → 10 分钟，之后落回 interval），成功即清零。
+//
+// 以前失败后只等下一个 interval：开机那一枪撞上网络还没连上（机器日志里就有
+// `Mkcol … EOF`）就等于白等 30 分钟，用户看到的是"两天一次都没成功"。
 func (s *ClipService) syncLoop() {
 	s.syncRestart.Lock()
 	if s.syncCancel != nil {
@@ -150,22 +179,71 @@ func (s *ClipService) syncLoop() {
 	s.syncRestart.Unlock()
 
 	go func() {
-		// First pass shortly after startup so a fresh machine pulls the history.
-		select {
-		case <-ctx.Done():
+		// 刚同步过（<60 秒）就不再跑第一枪：设置页是自动保存的，以前改几个字段
+		// 就会连着重启循环、连着跑整轮同步（日志里 10:04:17/29/30 三连就是它）。
+		if !sleepCtx(ctx, firstPassDelay(s.GetSyncStatus().LastSync)) {
 			return
-		case <-time.After(5 * time.Second):
-			_, _ = s.syncOnce(true)
 		}
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
+		failures := 0
+		if _, err := s.syncOnce(true); err != nil {
+			failures = 1
+		}
 		for {
-			select {
-			case <-ctx.Done():
+			if !sleepCtx(ctx, nextDelay(interval, failures)) {
 				return
-			case <-ticker.C:
-				_, _ = s.syncOnce(true)
+			}
+			if _, err := s.syncOnce(true); err != nil {
+				failures++
+			} else {
+				failures = 0
 			}
 		}
 	}()
+}
+
+// firstPassDelay is how long to wait before the loop's first round: 5 seconds
+// after startup, but never sooner than 60 seconds after the last successful run.
+func firstPassDelay(lastSync string) time.Duration {
+	const grace = 5 * time.Second
+	last, err := time.Parse(time.RFC3339, lastSync)
+	if err != nil {
+		return grace
+	}
+	since := time.Since(last)
+	if since >= time.Minute {
+		return grace
+	}
+	return time.Minute - since
+}
+
+// nextDelay is the wait before the next round: the normal interval after a good
+// round, a short backoff after failures (capped by the interval).
+func nextDelay(interval time.Duration, failures int) time.Duration {
+	if failures <= 0 {
+		return interval
+	}
+	backoff := []time.Duration{time.Minute, 3 * time.Minute, 10 * time.Minute}
+	idx := failures - 1
+	if idx >= len(backoff) {
+		return interval
+	}
+	if d := backoff[idx]; d < interval {
+		return d
+	}
+	return interval
+}
+
+// sleepCtx waits for d, returning false when the loop was cancelled.
+func sleepCtx(ctx context.Context, d time.Duration) bool {
+	if d <= 0 {
+		return ctx.Err() == nil
+	}
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
 }

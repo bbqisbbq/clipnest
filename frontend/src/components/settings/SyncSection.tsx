@@ -142,6 +142,10 @@ export default function SyncSection({
       </div>
       {testResult ? <p className="test-result">{testResult}</p> : null}
 
+      {/* panel.message 以前只写进状态、从来没人渲染：列目录失败、目录里有认不出的
+          文件、"隔壁目录里也有 clipnest_data（地址填错一层）"全都被吞掉了。 */}
+      {panel?.message ? <p className="sync-hint">{panel.message}</p> : null}
+
       {panel && (panel.devices ?? []).length > 0 ? (
         <div className="device-list">
           <div className="device-row is-head">

@@ -75,7 +75,7 @@ func TestSyncPackageCarriesNewestEntries(t *testing.T) {
 		}
 	}
 
-	pkg, _, err := svc.buildOwnPackage(map[string]bool{}, nil, svc.store.Settings())
+	pkg, _, _, err := svc.buildOwnPackage(map[string]bool{}, nil, svc.store.Settings())
 	if err != nil {
 		t.Fatalf("buildOwnPackage: %v", err)
 	}

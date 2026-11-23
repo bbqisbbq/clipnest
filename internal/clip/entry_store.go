@@ -321,7 +321,12 @@ func (s *Store) DeleteEntry(id string) bool {
 		return false
 	}
 	if e.Hash != "" {
-		addTombstoneScope(tx, "entry", e.Hash, nowUTC(), hostName())
+		// 墓碑写不进去就整条回滚：删掉却没有墓碑，等于告诉所有对端"这条还在"，
+		// 下一轮同步就会把它从对方包里"复活"回来（见 migrateTombstoneSchema）。
+		if err := addTombstoneScope(tx, "entry", e.Hash, nowUTC(), hostName()); err != nil {
+			Logf(s.dir, "delete entry %s: tombstone failed, rolled back: %v", id, err)
+			return false
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return false

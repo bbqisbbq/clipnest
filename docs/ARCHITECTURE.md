@@ -243,6 +243,7 @@ pwsh -STA -File scratch\check-sidebar-active.ps1 # 侧栏高亮：待办 ⇄ 内
 pwsh -STA -File scratch\shot-tray-menu.ps1      # 托盘菜单截图 + 点「打开设置」验证跳转
 pwsh -STA -File scratch\e2e-live-and-draft.ps1  # 复制后不切页面就能看到新条目 + 草稿跨重启
 pwsh -STA -File scratch\e2e-draft-robust.ps1    # 敲完立刻收起窗口（点 ×）再强杀，草稿不丢
+pwsh -STA -File scratch\e2e-global-composer.ps1 # 常驻「记一条」：草稿跨视图/跨重启 + 设置自动保存（真鼠标）
 pwsh -STA -File scratch\e2e-theme-shots.ps1     # 4 个主题预设各截一张整窗
 pwsh -STA -File scratch\smoke-2.8.3.ps1        # 冒烟：沙箱 APPDATA 起一次、截图、扫日志里的 error/warn
 node scratch\theme-audit.mjs                    # 主题对比度体检（5 预设 × 4 底色 × 7 文字）

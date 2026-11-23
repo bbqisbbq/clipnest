@@ -2,6 +2,7 @@ package clip
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 )
@@ -97,14 +98,32 @@ func (s *ClipService) GetSyncPanel() SyncPanel {
 	}
 	panel.Configured = true
 
-	entries, err := cfg.listPackages(syncDevicesDir)
+	entries, ignored, err := cfg.listPackages(syncDevicesDir)
 	if err != nil {
 		panel.Message = err.Error()
 		return panel
 	}
 	if len(entries) == 0 {
 		panel.Devices = []SyncDeviceInfo{{Name: cfg.packageName(), Device: hostName(), Self: true}}
+		if len(ignored) > 0 {
+			panel.Message = fmt.Sprintf("同步目录里有 %d 个无法识别的文件：%s（可能是旧版本留下的布局）",
+				len(ignored), strings.Join(ignored, "、"))
+		}
 		return panel
+	}
+
+	// 没有别的设备时才做体检：隔壁目录里也有 clipnest_data 的话，就是"两边地址不同"。
+	peers := 0
+	for _, e := range entries {
+		if e.Name != cfg.packageName() {
+			peers++
+		}
+	}
+	if peers == 0 {
+		panel.Message = cfg.siblingHint()
+	}
+	if len(ignored) > 0 && panel.Message == "" {
+		panel.Message = fmt.Sprintf("同步目录里有 %d 个无法识别的文件：%s", len(ignored), strings.Join(ignored, "、"))
 	}
 
 	// Fresh sizes/times from the server; per-run counters survive from the cache.

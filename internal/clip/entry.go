@@ -355,8 +355,13 @@ func (s *Store) DeleteAllUnpinned() int {
 
 	now, host := nowUTC(), hostName()
 	for _, t := range list {
-		if t.hash != "" {
-			addTombstoneScope(tx, "entry", t.hash, now, host)
+		if t.hash == "" {
+			continue
+		}
+		// 和 DeleteEntry 同一口径：墓碑写不进去就整批回滚，绝不"删了不留痕"。
+		if err := addTombstoneScope(tx, "entry", t.hash, now, host); err != nil {
+			Logf(s.dir, "clear history: tombstone for %s failed, rolled back: %v", t.hash, err)
+			return 0
 		}
 	}
 	res, err := tx.Exec(`DELETE FROM entries WHERE pinned = 0`)

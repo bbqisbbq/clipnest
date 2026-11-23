@@ -122,6 +122,8 @@ func Open(dir string) (*Store, error) {
 	// 顺序反了会让迁移失败的记录写进空目录，等于一条日志都留不下。
 	logDirValue.Store(dir)
 
+	migrateTombstoneSchema(db)
+
 	dropLegacyTables(db)
 
 	s := &Store{
@@ -350,20 +352,26 @@ func (s *Store) SetMeta(k, v string) error {
 
 // AddTombstoneScoped records a deletion under a scope ("entry").
 func (s *Store) AddTombstoneScoped(scope, hash string, at time.Time, device string) {
-	addTombstoneScope(s.db, scope, hash, at, device)
+	if err := addTombstoneScope(s.db, scope, hash, at, device); err != nil {
+		Logf(s.dir, "add tombstone %s/%s failed: %v", scope, hash, err)
+	}
 }
 
 // addTombstoneScope is the transaction-aware form: deleting an entry writes its
 // tombstone inside the same tx (see Store.DeleteEntry).
-func addTombstoneScope(db execer, scope, hash string, at time.Time, device string) {
+//
+// 返回 error 而不再一丢了之：这条语句在墓碑表的旧主键上会**整条失败**，吞掉错误
+// 就等于"删了但不留痕"，对端永远不会知道这条被删过（见 migrateTombstoneSchema）。
+func addTombstoneScope(db execer, scope, hash string, at time.Time, device string) error {
 	if hash == "" {
-		return
+		return nil
 	}
-	_, _ = db.Exec(`
+	_, err := db.Exec(`
 		INSERT INTO tombstones (hash, deleted_at, device, scope) VALUES (?,?,?,?)
 		ON CONFLICT(hash, scope) DO UPDATE SET
 			deleted_at = excluded.deleted_at, device = excluded.device`,
 		hash, encodeTime(at), device, scope)
+	return err
 }
 
 // TombstonesScoped lists deletions of one scope newer than since.
@@ -491,6 +499,78 @@ func TrimLog(dir string, limit int64) {
 	}
 	keep := data[len(data)/2:]
 	_ = os.WriteFile(p, keep, 0o644)
+}
+
+// migrateTombstoneSchema rebuilds the tombstones table when it still carries the
+// old primary key (hash alone).
+//
+// 为什么必须迁：写墓碑用的是 `ON CONFLICT(hash, scope)` 的 upsert。老库里主键只有
+// `hash`，SQLite 会直接拒绝整条语句（"ON CONFLICT clause does not match any PRIMARY
+// KEY or UNIQUE constraint"），而当时错误被 `_, _ =` 吞掉了 —— 于是**删除永远不产生
+// 墓碑**：本机删掉的东西不会被对端跟着删，对端旧包里的同一份内容还会被当成"新增"
+// 传回来。2026-11-23 在一台真机上就是这么丢的：界面上删了 17 条，`tombstones` 一条
+// 都没多，远端包里也没有对应的 deleted 项。
+//
+// `CREATE TABLE IF NOT EXISTS` 不会改已有表，所以只能显式重建一次；老行的
+// `scope = 'item'`（统一模型之前的作用域名）一并改成 `entry`，否则同步侧按
+// `scope='entry'` 查不到它们，等于白存。
+func migrateTombstoneSchema(db *sql.DB) {
+	var ddl string
+	if err := db.QueryRow(
+		`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'tombstones'`).Scan(&ddl); err != nil {
+		return // 还没有这张表：coreSchema 会按新定义建出来
+	}
+	flat := strings.ToLower(strings.Join(strings.Fields(ddl), " "))
+	if strings.Contains(flat, "primary key (hash, scope") || strings.Contains(flat, "primary key(hash, scope") ||
+		strings.Contains(flat, "unique (hash, scope") {
+		return
+	}
+
+	steps := []string{
+		`ALTER TABLE tombstones RENAME TO tombstones_legacy`,
+		`CREATE TABLE tombstones (
+			hash       TEXT NOT NULL,
+			deleted_at TEXT NOT NULL,
+			device     TEXT NOT NULL DEFAULT '',
+			scope      TEXT NOT NULL DEFAULT 'entry',
+			PRIMARY KEY (hash, scope)
+		)`,
+		`INSERT OR REPLACE INTO tombstones (hash, deleted_at, device, scope)
+		 SELECT hash, deleted_at, device,
+		        CASE WHEN scope IS NULL OR scope = '' OR scope = 'item' THEN 'entry' ELSE scope END
+		 FROM tombstones_legacy`,
+		`DROP TABLE tombstones_legacy`,
+		// 索引跟着被 RENAME 走的旧表一起没了，这里补回来（coreSchema 的
+		// CREATE INDEX IF NOT EXISTS 此时已经跑过了）。
+		`CREATE INDEX IF NOT EXISTS idx_tombstones_scope ON tombstones(scope, deleted_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_tomb_deleted ON tombstones(deleted_at)`,
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		Logf("", "tombstone schema migration: begin failed: %v", err)
+		return
+	}
+	defer func() { _ = tx.Rollback() }()
+	for _, q := range steps {
+		if _, err := tx.Exec(q); err != nil {
+			Logf("", "tombstone schema migration failed (%s): %v", firstSQL(q), err)
+			return
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		Logf("", "tombstone schema migration: commit failed: %v", err)
+		return
+	}
+	Logf("", "tombstone schema migrated: PRIMARY KEY (hash) -> (hash, scope), scope 'item' -> 'entry'")
+}
+
+// firstSQL is for migration error messages only.
+func firstSQL(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		return strings.TrimSpace(s[:i])
+	}
+	return strings.TrimSpace(s)
 }
 
 // dropLegacyTables removes the tables the unified model replaced. They are dead

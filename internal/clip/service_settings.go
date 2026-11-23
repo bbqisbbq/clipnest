@@ -48,15 +48,24 @@ func (s *ClipService) SaveSettings(st Settings) (Settings, error) {
 	if err := s.store.SaveSettings(st); err != nil {
 		return prev, err
 	}
-	// 两个后台循环都是"重启式"：syncLoop 内部取消上一轮，更新检查走 restartUpdateCheck。
-	// 之前这里是 `go s.updateCheckLoop()`，保存几次就多几个待执行的检查。
-	go s.syncLoop()
+	// 同步循环只在**跟同步有关**的字段变化时重启。设置页是自动保存的，以前无条件
+	// `go s.syncLoop()`，于是改个字体、点个开关都会取消当前循环、5 秒后再跑一整轮
+	// 同步（日志里 10:04:17/29/30 三连就是这么来的）。更新检查依然是重启式。
+	if syncLoopKey(st) != syncLoopKey(prev) {
+		go s.syncLoop()
+	}
 	s.restartUpdateCheck()
 	s.refreshTriggers()
 	s.applyExpander(s.store.Settings())
 	s.emit("settings:changed", st)
 	s.emit("clip:stats", s.store.Stats())
 	return s.store.Settings(), nil
+}
+
+// syncLoopKey is the part of the settings the periodic sync loop depends on.
+// 只有这些字段变了才值得取消重建循环（见 SaveSettings）。
+func syncLoopKey(st Settings) string {
+	return fmt.Sprintf("%t|%s|%s|%s|%d", st.SyncEnabled, st.SyncURL, st.SyncUser, st.SyncPass, st.SyncIntervalMin)
 }
 
 // applyExpander pushes trigger settings into the expansion engine.
