@@ -194,6 +194,16 @@
   现象是包里连 `ocr-assets-v1` 都搜不到，只有 mutex 那句"已经在下载了"还在。
   **发布打包必须 `$env:CGO_ENABLED=1`**；自查办法：在 `bin\clipnest.exe` 里搜
   `releases/download/ocr-assets-v1`。
+- **加列只改建表语句 = 老库必炸**：2.9.5 给 `entries` 加了 `ocr_text` / `ocr_state`，
+  我改了 `CREATE TABLE`、`entryColumns`、`scanEntry`、`upsertEntry`，**唯独漏了
+  `ensureColumn` 迁移**。新库没事（建表就带这两列），老库立刻 `no such column: ocr_text`：
+  时间线空白、采集写不进、同步包变 2KB。所有单测用的都是新库，所以全绿。
+  现在 `store_migrate_test.go` 专门模拟"老库"（建库后 `ALTER TABLE ... DROP COLUMN` 再打开），
+  **撤掉修复它会失败** —— 这类迁移必须有这种测试，光有建表语句的测试等于没测。
+- **磁盘上的老库出问题时，先看日志里的 SQL 错误再动代码**：`%APPDATA%\ClipNest\clipnest.log`
+  里一行 `no such column` 就能定位；`scratch/dbcheck <数据目录>` 可以对着真实库跑一次
+  （顺带把所有迁移补齐），比让用户重装/重建库安全得多。**动真实库前先备份
+  `clipnest.db` + `-wal` + `-shm` 三个文件。**
 - **onnxruntime 的环境是进程级单例**：`InitializeEnvironment()` 只能成功一次，再调就报
   `The onnxruntime has already been initialized`。踩法很阴：设置页做"引擎可用吗"的状态检查时
   先初始化了环境，真正识别时第二次初始化失败 —— 而代码里是"PP-OCR 失败就退回系统引擎"，

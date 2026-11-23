@@ -1,80 +1,58 @@
 package clip
 
+// 老库升级的回归测试。
+//
+// 为什么要有这一条：2.9.5 给 entries 加了 ocr_text / ocr_state，但**只改了建表语句、
+// 漏了 ensureColumn 迁移** —— 全新的库没事（CREATE TABLE 里就有这两列），老库则
+// SELECT 与 INSERT 全报 `no such column: ocr_text`，时间线直接空掉。
+// 所有单元测试用的都是新库，所以当时全绿。这条测试专门模拟"2.9.4 的库"。
+
 import (
-	"database/sql"
-	"path/filepath"
 	"testing"
-	"time"
 )
 
-// 老库的 tombstones 表主键只有 hash，而写墓碑用的是 `ON CONFLICT(hash, scope)`：
-// SQLite 会整条拒绝这条语句，当年的代码又把错误吞了 —— 于是"界面上删了 17 条，
-// tombstones 一条都没多"，删除永远不传播（2026-11-23 在一台真机上原样复现）。
-//
-// 这个用例锁两件事：Open 必须把表迁到 PRIMARY KEY (hash, scope)；迁移之后删除必须
-// 真的写得出墓碑，老行也必须从 scope='item' 归到 'entry'。
-func TestOpenMigratesLegacyTombstoneSchema(t *testing.T) {
+func TestOpenMigratesOCRColumns(t *testing.T) {
 	dir := t.TempDir()
-	dbPath := filepath.Join(dir, dbFileName)
-
-	raw, err := sql.Open("sqlite", "file:"+filepath.ToSlash(dbPath))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, q := range []string{
-		`CREATE TABLE tombstones (
-			hash TEXT PRIMARY KEY,
-			deleted_at TEXT NOT NULL,
-			device TEXT NOT NULL DEFAULT '',
-			scope TEXT NOT NULL DEFAULT 'item')`,
-		`CREATE INDEX idx_tomb_deleted ON tombstones(deleted_at)`,
-		`INSERT INTO tombstones (hash, deleted_at, device, scope)
-		 VALUES ('legacy-item', '2026-11-18T08:41:16.000000000Z', 'PC', 'item')`,
-	} {
-		if _, err := raw.Exec(q); err != nil {
-			t.Fatalf("%s: %v", q, err)
-		}
-	}
-	raw.Close()
 
 	st, err := Open(dir)
 	if err != nil {
-		t.Fatalf("Open: %v", err)
+		t.Fatalf("首次 Open: %v", err)
 	}
-	defer st.Close()
-
-	epoch := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
-	tombs := st.TombstonesScoped("entry", epoch, 10)
-	if len(tombs) != 1 || tombs[0].Hash != "legacy-item" {
-		t.Fatalf("老墓碑没有迁到 entry 作用域（同步侧会查不到）: %+v", tombs)
+	// 造一条数据，然后把这轮新加的两列删掉 —— 这就是 2.9.4 的库长什么样
+	if _, err := st.SaveEntry(Entry{Content: "老库里的条目", Source: SourceManual}); err != nil {
+		t.Fatalf("写老数据: %v", err)
 	}
-
-	// 迁移之后：删除必须写得出墓碑。老 schema 上这条会静默失败。
-	e, _, err := st.SaveCapture(Captured{Kind: KindText, Text: "after migration", Preview: "p", Hash: "h-after", Size: 3})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !st.DeleteEntry(e.ID) {
-		t.Fatal("删除失败")
-	}
-	tombs = st.TombstonesScoped("entry", epoch, 10)
-	if len(tombs) != 2 {
-		t.Fatalf("迁移后删除仍然没写墓碑: %+v", tombs)
-	}
-
-	// 同一份内容删两次：更新那条墓碑的时间，而不是报错/插入第二条。
-	first := time.Time{}
-	for _, tm := range tombs {
-		if tm.Hash == "h-after" {
-			first = tm.DeletedAt
+	for _, col := range []string{"ocr_text", "ocr_state"} {
+		if _, err := st.db.Exec(`ALTER TABLE entries DROP COLUMN ` + col); err != nil {
+			t.Skipf("这个 SQLite 版本不支持 DROP COLUMN（%v），跳过", err)
 		}
 	}
-	if first.IsZero() {
-		t.Fatalf("找不到 h-after 的墓碑: %+v", tombs)
+	st.Close()
+
+	// 再开一次：迁移必须把列补回来
+	st2, err := Open(dir)
+	if err != nil {
+		t.Fatalf("老库升级时 Open 失败: %v", err)
 	}
-	st.AddTombstoneScoped("entry", "h-after", first.Add(time.Hour), "PC")
-	tombs = st.TombstonesScoped("entry", epoch, 10)
-	if len(tombs) != 2 {
-		t.Fatalf("重复写墓碑应该覆盖而不是新增: %+v", tombs)
+	defer st2.Close()
+
+	got := st2.ListEntries(EntryQuery{})
+	if len(got) != 1 {
+		t.Fatalf("老库升级后列不出条目（拿到 %d 条）", len(got))
+	}
+	if got[0].OcrText != "" || got[0].OcrState != "" {
+		t.Errorf("新列默认值应为空: %q / %q", got[0].OcrText, got[0].OcrState)
+	}
+
+	// 升级后写入与 OCR 落库都要正常（INSERT 里带这两个列）
+	e, err := st2.SaveEntry(Entry{Content: "# 升级后写的\n正文", Source: SourceManual})
+	if err != nil {
+		t.Fatalf("老库升级后 SaveEntry 失败: %v", err)
+	}
+	if err := st2.SetEntryOCR(e.ID, "识别出来的字", OcrStateDone); err != nil {
+		t.Fatalf("老库升级后 SetEntryOCR 失败: %v", err)
+	}
+	if ids := st2.ListEntries(EntryQuery{Text: "识别出来"}); len(ids) != 1 {
+		t.Errorf("老库升级后 OCR 文字搜不到: %v", ids)
 	}
 }

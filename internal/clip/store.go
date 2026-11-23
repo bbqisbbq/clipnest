@@ -116,6 +116,10 @@ func Open(dir string) (*Store, error) {
 		// 片段的执行类型（2.8.3）：以前直接写进 entries.kind，把 password/app/command
 		// 混进了"正文类型"枚举里。
 		{"snippet_kind", "TEXT NOT NULL DEFAULT ''"},
+		// 图片 OCR（2.9.5）：识别文字与状态。老库必须补上 —— 少了这两列，
+		// SELECT 与 INSERT 都会报 `no such column: ocr_text`，整个时间线直接空掉。
+		{"ocr_text", "TEXT NOT NULL DEFAULT ''"},
+		{"ocr_state", "TEXT NOT NULL DEFAULT ''"},
 	} {
 		if err := ensureColumn(db, "entries", col.name, col.decl); err != nil {
 			Logf(dir, "schema upgrade (entries.%s) failed: %v", col.name, err)
