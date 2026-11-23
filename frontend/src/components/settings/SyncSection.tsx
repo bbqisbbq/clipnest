@@ -92,12 +92,16 @@ export default function SyncSection({
         </Row>
       </div>
 
-      <Row label="自动同步间隔" tip="分钟，默认 30；0 表示只在手动点击时同步。每次同步会读取其他设备的同步包，本机包没有变化时不会重复上传。">
+      <Row
+        label="自动同步间隔"
+        tip="分钟，默认 120；0 = 只在手动点击时同步，最多 1440（一天）。同步包现在是全量的（库里所有条目），所以间隔不必太密：本机内容没变化时不会重复上传。"
+      >
         <input
           className="input is-num"
           type="number"
           min={0}
-          step={5}
+          max={1440}
+          step={30}
           value={draft.syncIntervalMin}
           onChange={(e) => patch({ syncIntervalMin: Number(e.target.value) || 0 })}
         />
