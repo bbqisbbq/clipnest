@@ -42,6 +42,7 @@ internal/clip/           业务层：条目、捕获、片段、同步、绑定 
 | `service_settings.go` | 设置保存与副作用（自启、展开器、两个后台循环） |
 | `draft.go` | 快捷输入框的未保存草稿（meta 键 `composer.draft`，跟着 clipnest.db 走）。**写库防抖在 Go 侧**（前端每键送一次，内存立即更新 + 400ms 合并写），`FlushComposerDraft`（前端在收起窗口/退出前调）与 `Shutdown` 兜底 |
 | `entry_api.go` | 绑定给前端的条目 API + 筛选器 CRUD |
+| `entry_title.go` | 标题：从正文第一个 `# 一级标题` 派生 + `normalizeTitle`（手写锁定 / 自动跟随 / 清空退回）。规则都在这里，别在 UI 里重算 |
 | `syncpanel.go` | 设置页「设备包」面板的数据形状 |
 
 ### 同步（WebDAV 打包）

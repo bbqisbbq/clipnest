@@ -48,6 +48,8 @@ export default function EntryDetailView(props: Props) {
   const [draft, setDraft] = useState(entry.content);
   const [actions, setActions] = useState<string[]>(entry.actions ?? []);
   const [trigger, setTrigger] = useState(entry.triggerKey ?? "");
+  // 标题：后台从正文的 `# 一级标题` 自动派生；这里只负责"手写覆盖"或"清空退回自动"
+  const [title, setTitle] = useState(entry.title ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [savedAt, setSavedAt] = useState<string>("");
@@ -59,15 +61,21 @@ export default function EntryDetailView(props: Props) {
     setDraft(entry.content);
     setActions(entry.actions ?? []);
     setTrigger(entry.triggerKey ?? "");
+    setTitle(entry.title ?? "");
     setError("");
     setSavedAt("");
-  }, [entry.id, entry.content, entry.actions, entry.triggerKey]);
+  }, [entry.id, entry.content, entry.actions, entry.triggerKey, entry.title]);
 
   const dirty = useMemo(() => {
     const sameActions =
       JSON.stringify([...actions].sort()) === JSON.stringify([...(entry.actions ?? [])].sort());
-    return draft !== entry.content || trigger !== (entry.triggerKey ?? "") || !sameActions;
-  }, [draft, actions, trigger, entry]);
+    return (
+      draft !== entry.content ||
+      trigger !== (entry.triggerKey ?? "") ||
+      title !== (entry.title ?? "") ||
+      !sameActions
+    );
+  }, [draft, actions, trigger, title, entry]);
 
   // 脏标记回调放进 ref：props 是每次父组件渲染新建的对象，直接进依赖会每帧都调一次
   const dirtyCb = useRef(props.onDirtyChange);
@@ -88,15 +96,22 @@ export default function EntryDetailView(props: Props) {
       // 先取一份库里的最新值再覆盖：这份 entry 是打开详情时的快照，
       // 期间可能有同步把对端的修改拉了进来，整行回写会把它们抹掉。
       const fresh = await ClipService.GetEntry(entry.id);
+      // 标题：改过就是手写（清空 = 退回自动）；没动过就原样传回去，
+      // 让后端继续按正文的 `# 一级标题` 维护它（titleSource 见 entry_title.go）。
+      const titleChanged = title !== (entry.title ?? "");
+      const nextTitle = title.trim();
       const saved = await ClipService.SaveEntry({
         ...fresh,
         content,
         actions,
         triggerKey: trigger.trim(),
+        title: nextTitle,
+        titleSource: titleChanged ? (nextTitle ? "user" : "") : (fresh.titleSource ?? ""),
       } as never);
       setDraft(saved.content);
       setActions(saved.actions ?? []);
       setTrigger(saved.triggerKey ?? "");
+      setTitle(saved.title ?? "");
       setSavedAt(timeLabel(saved.updatedAt));
       props.onSaved(saved);
       // IR 模式会把正文按 Markdown 规范重排一遍（设计文档 3.2.2）。第一次保存时
@@ -107,7 +122,7 @@ export default function EntryDetailView(props: Props) {
     } finally {
       setBusy(false);
     }
-  }, [actions, draft, entry, props, trigger]);
+  }, [actions, draft, entry, props, title, trigger]);
 
   // 片段设置保存后重新读一条：以前回调里传的是编辑前的 entry，
   // 会把用户刚配好的字段又写回旧值。
@@ -246,6 +261,24 @@ export default function EntryDetailView(props: Props) {
         </div>
 
         <aside className="detail-side">
+          <section className="detail-block">
+            <h4>标题</h4>
+            <input
+              className="input"
+              value={title}
+              maxLength={60}
+              placeholder="留空则自动取正文的第一个 # 标题"
+              onChange={(e) => setTitle(e.target.value)}
+            />
+            <p className="detail-hint">
+              {entry.titleSource === "auto"
+                ? "自动：来自正文的第一个一级标题（正文改了会跟着变）"
+                : title.trim()
+                  ? "手写：正文再改也不会覆盖"
+                  : "当前没有标题"}
+            </p>
+          </section>
+
           <section className="detail-block">
             <h4>能力</h4>
             <label className="sf-check">

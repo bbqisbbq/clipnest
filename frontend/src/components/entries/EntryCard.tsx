@@ -43,10 +43,15 @@ function EntryCard(props: EntryCardProps) {
   const { entry: e, expanded, imgCache } = props;
   const collected = e.source === "clipboard";
   const inClipboard = (e.actions ?? []).includes("clipboard");
-  const html = useMemo(
-    () => resolveImages(marked.parse(e.content, { async: false }) as string, imgCache),
-    [e.content, imgCache],
-  );
+  const html = useMemo(() => {
+    const raw = marked.parse(e.content, { async: false }) as string;
+    // 卡片顶部已经有一行标题了：自动派生的情况下，正文里那个 H1 就是同一句话，
+    // 再渲染一遍等于标题显示两次（截图里一眼就能看出）。只在"标题是自动来的"
+    // 时摘掉第一个 H1 —— 手写标题跟正文内容无关，正文该怎么显示就怎么显示。
+    const deduped =
+      e.titleSource === "auto" && e.title ? raw.replace(/<h1[^>]*>[\s\S]*?<\/h1>\s*/, "") : raw;
+    return resolveImages(deduped, imgCache);
+  }, [e.content, e.title, e.titleSource, imgCache]);
   // 文件引用：原文件被移动/删除后，后端会把 exists 置 false（每 3 分钟扫一次）。
   // 以前这个状态在前端从来没被渲染过，用户以为历史里那些文件都还在。
   const missingFiles = (e.files ?? []).filter((f) => !f.exists);

@@ -44,14 +44,16 @@ const (
 // Entry is the single content type of the app.
 type Entry struct {
 	ID string `json:"id"`
-	// Title 是给条目起的名字，现在**只有片段在写**（`Snippet.Title`：用户给缩写起的名）。
-	// 普通条目留空，卡片就不多一行标题。
-	Title   string   `json:"title,omitempty"`
-	Content string   `json:"content"`
-	Kind    Kind     `json:"kind"`
-	Source  Source   `json:"source"`
-	Tags    []string `json:"tags"`    // 从正文 #tag 派生
-	Actions []string `json:"actions"` // clipboard / snippet
+	// Title 是条目的标题：正文里第一个 `# 一级标题` 自动派生，也可以手写覆盖。
+	// TitleSource 说明它是哪来的（"auto" / "user"，见 entry_title.go）：
+	// auto 的跟着正文变，user 的正文再改也不动。
+	Title       string   `json:"title,omitempty"`
+	TitleSource string   `json:"titleSource,omitempty"`
+	Content     string   `json:"content"`
+	Kind        Kind     `json:"kind"`
+	Source      Source   `json:"source"`
+	Tags        []string `json:"tags"`    // 从正文 #tag 派生
+	Actions     []string `json:"actions"` // clipboard / snippet
 
 	Pinned   bool `json:"pinned"`
 	Archived bool `json:"archived"`

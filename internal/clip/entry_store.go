@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS entries (
   kind         TEXT NOT NULL DEFAULT 'text',
   source       TEXT NOT NULL DEFAULT 'manual',
   title        TEXT NOT NULL DEFAULT '',
+  title_source TEXT NOT NULL DEFAULT '',
   tags         TEXT NOT NULL DEFAULT '',
   actions      TEXT NOT NULL DEFAULT '',
   auto_tags    TEXT NOT NULL DEFAULT '',
@@ -96,19 +97,20 @@ CREATE TABLE IF NOT EXISTS entry_filters (
 );
 `
 
-const entryColumns = `id, content, kind, source, title, tags, actions, pinned, archived,
+const entryColumns = `id, content, kind, source, title, title_source, tags, actions, pinned, archived,
 	hash, seen_count, copy_count, source_app, width, height, html, rtf, format_name, format_id, files,
 	trigger_key, case_sensitive, keep_trigger, apps, exclude_apps, group_name, use_count, snippet_kind,
 	expires_at, created_at, updated_at, todo_state, todo_done_at`
 
 // entryPlaceholders must stay in sync with entryColumns (INSERT 的 ? 个数)。
-const entryPlaceholders = `?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?`
+const entryPlaceholders = `?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?`
 
 func scanEntry(sc scannable) (Entry, error) {
 	var (
 		e                          Entry
 		kind, source               string
 		tags, actionsSpec          string
+		titleSource                string
 		pinned, archived           int
 		formatID                   uint32
 		files                      string
@@ -118,7 +120,7 @@ func scanEntry(sc scannable) (Entry, error) {
 		createdAt, updatedAt       string
 		todoState, todoDoneAt      string
 	)
-	err := sc.Scan(&e.ID, &e.Content, &kind, &source, &e.Title, &tags, &actionsSpec, &pinned, &archived,
+	err := sc.Scan(&e.ID, &e.Content, &kind, &source, &e.Title, &titleSource, &tags, &actionsSpec, &pinned, &archived,
 		&e.Hash, &e.SeenCount, &e.CopyCount, &e.SourceApp, &e.Width, &e.Height,
 		&e.HTML, &e.RTF, &e.FormatName, &formatID, &files,
 		&e.TriggerKey, &caseSensitive, &keepTrigger, &apps, &excludeApps, &e.GroupName, &e.UseCount,
@@ -131,6 +133,7 @@ func scanEntry(sc scannable) (Entry, error) {
 	e.Source = Source(source)
 	e.Tags = splitTagSpec(tags)
 	e.Actions = splitActionSpec(actionsSpec)
+	e.TitleSource = titleSource
 	e.Pinned = pinned != 0
 	e.Archived = archived != 0
 	e.FormatID = formatID
@@ -172,7 +175,8 @@ func decodeFiles(raw string) []FileRef {
 // FTS index.
 func (s *Store) SaveEntry(in Entry) (Entry, error) {
 	in.Content = strings.TrimSpace(in.Content)
-	in.Title = truncateRunes(strings.TrimSpace(in.Title), 60)
+	// 标题：正文一级标题派生 / 手写锁定，规则见 entry_title.go
+	normalizeTitle(&in)
 	if in.Source == "" {
 		in.Source = SourceManual
 	}
@@ -227,7 +231,7 @@ func upsertEntry(db execer, e Entry) error {
 		VALUES (`+entryPlaceholders+`)
 		ON CONFLICT(id) DO UPDATE SET
 			content=excluded.content, kind=excluded.kind, source=excluded.source,
-			title=excluded.title,
+			title=excluded.title, title_source=excluded.title_source,
 			tags=excluded.tags, actions=excluded.actions,
 			pinned=excluded.pinned, archived=excluded.archived,
 			hash=excluded.hash, source_app=excluded.source_app,
@@ -240,7 +244,7 @@ func upsertEntry(db execer, e Entry) error {
 			exclude_apps=excluded.exclude_apps, group_name=excluded.group_name,
 			expires_at=excluded.expires_at, updated_at=excluded.updated_at,
 			todo_state=excluded.todo_state, todo_done_at=excluded.todo_done_at`,
-		e.ID, e.Content, string(e.Kind), string(e.Source), e.Title,
+		e.ID, e.Content, string(e.Kind), string(e.Source), e.Title, e.TitleSource,
 		TagSpec(e.Tags), actionSpec(e.Actions), boolInt(e.Pinned), boolInt(e.Archived),
 		e.Hash, e.SeenCount, e.CopyCount, e.SourceApp, e.Width, e.Height,
 		e.HTML, e.RTF, e.FormatName, e.FormatID, encodeFiles(e.Files),
@@ -265,7 +269,7 @@ func indexEntryTx(db execer, e Entry) error {
 	if _, err := db.Exec(`DELETE FROM entries_fts WHERE id = ?`, e.ID); err != nil {
 		return err
 	}
-	// 标题也进索引：`@随记@` 这类目标条目要靠名字搜得到。
+	// 标题也进索引：片段是用户自己起的名字，正文里不一定出现，只能靠标题搜到。
 	fields := strings.Join(e.AllTags(), " ")
 	if t := strings.TrimSpace(e.Title); t != "" {
 		fields = strings.TrimSpace(fields + " " + t)

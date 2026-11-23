@@ -180,6 +180,13 @@
   flex: 1;
   min-width: 0;
 }
+/* 标题输入框下面那行说明：自动/手写/空，三种状态一句话 */
+.detail-hint {
+  margin: 6px 0 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-3);
+}
 .detail-meta {
   display: grid;
   grid-template-columns: 44px minmax(0, 1fr);

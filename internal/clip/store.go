@@ -104,6 +104,10 @@ func Open(dir string) (*Store, error) {
 	if err := ensureColumn(db, "entries", "title", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		Logf(dir, "schema upgrade (entries.title) failed: %v", err)
 	}
+	// 标题来源（2.9.5）：空 = 老数据/未判定，SaveEntry 时按正文一级标题补判。
+	if err := ensureColumn(db, "entries", "title_source", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		Logf(dir, "schema upgrade (entries.title_source) failed: %v", err)
+	}
 	// 待办派生列（1.0.x → 2.5 的迁移）：老库补两列，索引不回填也安全——
 	// todo_state 由 SaveEntry 维护，老条目在被编辑前就是 ''（= 没有待办）。
 	for _, col := range []struct{ name, decl string }{
