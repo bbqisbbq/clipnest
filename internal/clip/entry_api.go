@@ -62,7 +62,10 @@ func (s *ClipService) GetEntry(id string) (Entry, error) {
 // GetEntryStats reports the counts shown next to each filter.
 func (s *ClipService) GetEntryStats() EntryStats { return s.store.EntryStats() }
 
-// GetEntryTags lists tags in use (content tags + system tags).
+// GetEntryTags lists the tags in use (content tags + system tags), most used
+// first. 输入框里打 `#` 时的联想列表就是它 —— 这里以前**只剩一行注释**：函数在
+// 某次重构里被删掉了，绑定也跟着消失，于是前端根本拿不到标签清单。
+func (s *ClipService) GetEntryTags() []string { return s.store.EntryTags() }
 
 // SaveEntry creates or updates an entry. Empty content is allowed when only
 // flags change — the stored content is reused.

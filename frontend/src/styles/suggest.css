@@ -1,0 +1,55 @@
+/* 标签联想弹窗（打 # 时的候选列表）。
+   挂在 body 上、position: fixed —— 编辑区在可滚动容器里，就地渲染会被裁掉。 */
+
+.tag-suggest {
+  position: fixed;
+  z-index: 900;
+  width: 224px;
+  max-height: 208px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md, 10px);
+  background: var(--surface-1);
+  box-shadow: var(--elev-card, 0 8px 24px rgb(0 0 0 / 18%));
+  font-size: 13px;
+}
+
+.tag-suggest-item {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  padding: 5px 8px;
+  border-radius: var(--r-sm, 7px);
+  color: var(--text-1);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tag-suggest-item.is-active {
+  background: var(--accent-soft, color-mix(in oklab, var(--accent) 18%, transparent));
+  color: var(--text-0, var(--text-1));
+}
+
+.tag-suggest-hash {
+  color: var(--text-3);
+}
+
+.tag-suggest-item.is-active .tag-suggest-hash {
+  color: var(--accent);
+}
+
+.tag-suggest-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tag-suggest-foot {
+  margin: 4px 2px 0;
+  padding: 4px 6px 2px;
+  border-top: 1px dashed var(--line);
+  color: var(--text-3);
+  font-size: 11px;
+}

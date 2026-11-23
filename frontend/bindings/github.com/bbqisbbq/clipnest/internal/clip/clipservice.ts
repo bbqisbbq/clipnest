@@ -192,6 +192,15 @@ export function GetEntryStats(): $CancellablePromise<$models.EntryStats> {
 }
 
 /**
+ * GetEntryTags lists the tags in use (content tags + system tags), most used
+ * first. 输入框里打 `#` 时的联想列表就是它 —— 这里以前**只剩一行注释**：函数在
+ * 某次重构里被删掉了，绑定也跟着消失，于是前端根本拿不到标签清单。
+ */
+export function GetEntryTags(): $CancellablePromise<string[] | null> {
+    return $Call.ByID(418288868);
+}
+
+/**
  * GetFilterFields tells the frontend which fields/operators the rule engine
  * accepts. 只此一份白名单，UI 不自己硬编码。
  */

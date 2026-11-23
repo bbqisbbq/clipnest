@@ -12,11 +12,13 @@ type Props = {
   selectedDay: string; // "" = 不按天筛
   onPickDay: (day: string) => void;
   query: EntryQuery; // 当前侧栏筛选器的查询
+  /** 内容是"活的"：采集/保存/删除/同步之后这个数会变，热度点要跟着重算 */
+  liveSignal?: number;
 };
 
 const WEEKDAYS = ["一", "二", "三", "四", "五", "六", "日"];
 
-export default function Calendar({ selectedDay, onPickDay, query }: Props) {
+export default function Calendar({ selectedDay, onPickDay, query, liveSignal = 0 }: Props) {
   const [cursor, setCursor] = useState(() => new Date());
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(false);
@@ -41,7 +43,10 @@ export default function Calendar({ selectedDay, onPickDay, query }: Props) {
 
   useEffect(() => {
     void load(month);
-  }, [month, load]);
+    // liveSignal：内容变了（采集/保存/删除/同步拉到别人的）就重算本月热度点。
+    // 以前只依赖 [month, load]，于是"今天复制了一条"日历上那个点不会变 ——
+    // 侧栏的角标、列表、待办都刷新了，只有日历停在打开那一刻。
+  }, [month, load, liveSignal]);
 
   // 网格：周一开头，补齐前后空位
   const cells = useMemo(() => {

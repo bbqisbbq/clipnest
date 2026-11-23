@@ -342,6 +342,7 @@ export default function App() {
           view={view === "settings" ? "settings" : view === "todo" ? "todo" : "entries"}
           capturing={capturing}
           syncActive={settings?.syncEnabled ?? false}
+          liveSignal={liveTick}
           filterProps={{
             filters,
             activeFilterId,

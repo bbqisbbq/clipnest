@@ -1,8 +1,10 @@
-import { useEffect, useImperativeHandle, useRef, useState, useSyncExternalStore, forwardRef } from "react";
+import { useCallback, useEffect, useImperativeHandle, useRef, useState, useSyncExternalStore, forwardRef } from "react";
 import type Vditor from "vditor";
 import { ClipService } from "../lib/api";
 import { MEMO_IMG_RE } from "../lib/images";
 import { subscribeToolbarSettings, toolbarFor, toolbarVersion } from "../lib/editorToolbar";
+import { applyTag, findTagToken, pickTags, type TagToken } from "../lib/tagSuggest";
+import TagSuggest from "./TagSuggest";
 
 // 全应用唯一的 Markdown 编辑器：Vditor（IR 即时渲染）。
 //
@@ -153,6 +155,91 @@ const MarkdownSurface = forwardRef<MarkdownSurfaceHandle, Props>(function Markdo
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState("");
 
+  // ---- 标签联想（打 `#` 时候选已有标签）----------------------------------
+  //
+  // 只在打字/移动光标时算一次"光标是不是停在一个 #后面"，命中就弹候选。
+  // 候选来源是后端 GetEntryTags()（按使用次数排序），15 秒缓存一次：
+  // 每敲一个字都问一次数据库没必要，而刚存下的标签 15 秒内也会进来。
+  const [suggest, setSuggest] = useState<{
+    items: string[];
+    active: number;
+    left: number;
+    top: number;
+  } | null>(null);
+  const suggestRef = useRef<typeof suggest>(null);
+  suggestRef.current = suggest;
+  const tokenRef = useRef<TagToken | null>(null);
+  const tagsCache = useRef<{ at: number; list: string[] }>({ at: 0, list: [] });
+  const tagsInflight = useRef(false);
+
+  // 排查用开关：localStorage["clipnest.debugTagSuggest"] = "1" 时把选区状态写进
+  // clipnest.log（不默认开：每次输入都过一次桥太吵）。
+  const debugSuggest = useCallback((msg: string) => {
+    try {
+      if (localStorage.getItem("clipnest.debugTagSuggest") === "1") void ClipService.LogClient(`tag-suggest: ${msg}`);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const refreshSuggest = useCallback(() => {
+    const token = findTagToken();
+    tokenRef.current = token;
+    if (!token || !token.rect) {
+      setSuggest(null);
+      return;
+    }
+    // 第一次（或缓存过期）先拉一次标签清单，**回来之后重新算一遍**。
+    // 不能在异步回调里比 `tokenRef.current !== token`：每敲一个键都会生成新的
+    // token 对象，于是异步结果永远被判成"过期"，弹窗一次都不会出现。
+    if (!tagsInflight.current && Date.now() - tagsCache.current.at > 5000) {
+      tagsInflight.current = true;
+      tagsCache.current = { at: Date.now(), list: tagsCache.current.list };
+      void ClipService.GetEntryTags()
+        .then((list) => {
+          tagsCache.current = { at: Date.now(), list: list ?? [] };
+          debugSuggest(`tags=${(list ?? []).length}`);
+          refreshSuggestRef.current();
+        })
+        .catch((err) => {
+          debugSuggest(`GetEntryTags failed: ${String(err)}`);
+        })
+        .finally(() => {
+          tagsInflight.current = false;
+        });
+    }
+
+    const items = pickTags(tagsCache.current.list, token.prefix);
+    debugSuggest(`prefix=${JSON.stringify(token.prefix)} candidates=${items.length}`);
+    // 只剩"已经打完整"的那一个时不再挡着输入
+    if (items.length === 0) {
+      setSuggest(null);
+      return;
+    }
+    if (items.length === 1 && items[0].toLowerCase() === token.prefix.toLowerCase()) {
+      setSuggest(null);
+      return;
+    }
+    const rect = token.rect;
+    const width = 224;
+    const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
+    const top = Math.min(rect.bottom + 6, window.innerHeight - 216);
+    setSuggest({ items, active: 0, left, top });
+  }, [debugSuggest]);
+  const refreshSuggestRef = useRef(refreshSuggest);
+  refreshSuggestRef.current = refreshSuggest;
+
+  const acceptTag = useCallback((tag: string) => {
+    const token = tokenRef.current;
+    tokenRef.current = null;
+    setSuggest(null);
+    if (!token) return;
+    // 走编辑器自己的插入入口（Vditor.insertValue），别直接改 DOM 文本节点：
+    // 那条路工具条也在用，插入后 IR 会按模型重排，getValue() 立刻能取到。
+    applyTag(token, tag, (text) => vditorRef.current?.insertValue(text));
+    refreshSuggestRef.current();
+  }, []);
+
   // 回调放进 ref：Vditor 的选项只在初始化时读一次，不能让它们成为重渲染依赖
   const onChangeRef = useRef(props.onChange);
   const onSaveRef = useRef(props.onSave);
@@ -263,6 +350,8 @@ const MarkdownSurface = forwardRef<MarkdownSurfaceHandle, Props>(function Markdo
           } catch {
             /* 实例正在销毁：取不到内容就跳过，下一次输入会再来 */
           }
+          // 每一次真实输入之后看一眼：光标是不是刚停在一个 `#后面
+          refreshSuggestRef.current();
         };
         host.addEventListener("input", onDomInput, true);
         host.addEventListener("blur", onDomInput, true);
@@ -299,7 +388,69 @@ const MarkdownSurface = forwardRef<MarkdownSurfaceHandle, Props>(function Markdo
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [toolbarRev]);
 
-  // 外部换内容（点了另一条条目）→ 覆盖文档，别打断用户输入
+  // 候选列表的键盘操作。必须**捕获阶段**挂在宿主上：Vditor 自己在内容区
+  // 绑了 keydown（Enter 换行、Esc 退回、Ctrl+Enter 保存），冒泡阶段再拦就晚了。
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    const onKeyDown = (ev: KeyboardEvent) => {
+      const cur = suggestRef.current;
+      if (!cur || cur.items.length === 0) return;
+      const move = (delta: number) => {
+        const next = (cur.active + delta + cur.items.length) % cur.items.length;
+        setSuggest({ ...cur, active: next });
+      };
+      switch (ev.key) {
+        case "ArrowDown":
+          ev.preventDefault();
+          ev.stopPropagation();
+          move(1);
+          break;
+        case "ArrowUp":
+          ev.preventDefault();
+          ev.stopPropagation();
+          move(-1);
+          break;
+        case "Enter":
+        case "Tab": {
+          ev.preventDefault();
+          ev.stopPropagation();
+          const tag = cur.items[cur.active];
+          if (tag) acceptTag(tag);
+          break;
+        }
+        case "Escape":
+          ev.preventDefault();
+          ev.stopPropagation();
+          tokenRef.current = null;
+          setSuggest(null);
+          break;
+        default:
+          break;
+      }
+    };
+    host.addEventListener("keydown", onKeyDown, true);
+    return () => host.removeEventListener("keydown", onKeyDown, true);
+  }, [acceptTag]);
+
+  // 用鼠标点到别处、或方向键移动光标时也要跟着走：只看 input 事件的话，
+  // 弹窗会停在原地直到下一次打字。
+  useEffect(() => {
+    const onSelection = () => {
+      if (!suggestRef.current) return;
+      const host = hostRef.current;
+      const sel = window.getSelection();
+      if (!host || !sel?.anchorNode || !host.contains(sel.anchorNode)) {
+        setSuggest(null);
+        return;
+      }
+      refreshSuggest();
+    };
+    document.addEventListener("selectionchange", onSelection);
+    return () => document.removeEventListener("selectionchange", onSelection);
+  }, [refreshSuggest]);
+
+
   useEffect(() => {
     const v = vditorRef.current;
     if (!v || !ready) return;
@@ -364,6 +515,15 @@ const MarkdownSurface = forwardRef<MarkdownSurfaceHandle, Props>(function Markdo
   return (
     <div className={`md-surface md-surface--${preset}`}>
       <div className="md-surface-host" ref={hostRef} />
+      {suggest ? (
+        <TagSuggest
+          items={suggest.items}
+          active={suggest.active}
+          anchor={{ left: suggest.left, top: suggest.top }}
+          onPick={acceptTag}
+          onActive={(i) => setSuggest((cur) => (cur ? { ...cur, active: i } : cur))}
+        />
+      ) : null}
       {!ready && !failed ? <div className="md-surface-skeleton">编辑器加载中…</div> : null}
       {failed ? (
         <div className="md-surface-error">

@@ -30,6 +30,8 @@ import "./styles/vditor-theme.css";
 import "./styles/detail.css";
 import "./styles/todo.css";
 import "./styles/filter.css";
+// 标签联想弹窗：自己一套命名空间（.tag-suggest*），放在最后只为不再被别的规则碰到
+import "./styles/suggest.css";
 import "./theme-light.css";
 import { applyTheme, storedTheme } from "./lib/themes";
 import { warmUpMarkdown } from "./components/MarkdownSurface";

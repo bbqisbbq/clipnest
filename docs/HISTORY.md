@@ -77,6 +77,14 @@
   验证脚本 `scratch/e2e-capture-transparency.ps1` 是按像素量的，不靠截图印象。
 - **Vditor 的 `options.input` 在 IR 模式手打时不回调**（只有 `setValue` 类路径才响）。内容更新要听宿主元素的
   DOM `input` 冒泡事件 —— 草稿、脏标记全依赖这条。2.8.0 就是因为这个发布十分钟被撤下。
+- **在异步回调里比"token 对象引用"会永远判过期**：标签联想的候选清单是异步拉的，
+  早期写法在 `.then` 里比较 `tokenRef.current !== token`，可每敲一个键都会生成新的 token
+  对象，于是结果永远被当成过期丢掉 —— 弹窗一次都不出现。正确做法是**缓存下来后重新算一遍**
+  （`refreshSuggestRef.current()`），让"当前光标"重新参与判断。
+- **离线调 GUI 别指望 SetCursorPos/SetForegroundWindow 或注入全局热键**：这台机器上实测
+  `SendKeys('^+n')` 不会触发应用注册的全局热键，点击也不改焦点（六张截图字节数完全一样 =
+  输入压根没进窗口），键还会落到前台窗口（那次是浏览器）。纯逻辑就写成可直接跑的脚本
+  （`scratch/tag-suggest-check.mjs`），只能在真实交互里验的部分，明确交给用户点一下。
 - **两处都监听 window `keydown` 时 `stopPropagation` 没用**，同一节点上的其他监听照样执行；
   要么 `stopImmediatePropagation`，要么像 `Dialog` 那样导出一个 `isDialogOpen()` 让下层自己让位。
 - **`memo()` 比 props 时别把箭头函数算进去**：上层每次渲染都新建闭包，比进去等于白 memo；

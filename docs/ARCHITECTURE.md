@@ -235,6 +235,7 @@ meta           键值对（设备 id、一次性标记、filters.hidden、compos
 go build -o bin\clipnest-dev.exe .        # 后端 + 内嵌前端产物
 go test ./internal/...                    # 存储/查询/待办/筛选规则/同步/展开引擎/附件回收（audit_fix_test.go）
 cd frontend; npx tsc --noEmit; npx vite build --mode production
+node --experimental-strip-types scratch/tag-suggest-check.mjs   # 标签联想：`#` 识别 / 候选过滤（纯逻辑，不需要浏览器）
 pwsh -File scripts\visual-check\check-css.ps1   # 样式回归截图（改 CSS 后跑）
 pwsh -STA -File scratch\e2e-capture-resize.ps1  # 记一笔浮层：拖动/拉伸/尺寸记忆（真鼠标事件）
 pwsh -File scratch\e2e-capture-transparency.ps1 # 记一笔浮层：圆角真透明 + 卡片半透明（按像素量；浅色主题要加 -Preset default-light -Backdrop '#1e6fd9'）

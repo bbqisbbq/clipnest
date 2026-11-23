@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type UIEvent } from "react";
 import { ClipService, type Entry, type EntryQuery } from "../lib/api";
+import { useMinuteTick } from "./useClock";
 
 // 条目列表的数据层：加载最新一页、上滑加载更早、按天分组、以及"是否贴住底部"的滚动状态。
 // 视图只管渲染；这里不碰搜索框、写新条目和卡片操作——
@@ -47,6 +48,8 @@ function mergePages(prev: Entry[], page: Entry[]): Entry[] {
 }
 
 export function useEntries(baseQuery: EntryQuery, onError?: (msg: string) => void) {
+  // 相对日期标签（今天/昨天）要能自己改口，见下面 grouped 的说明
+  const clockTick = useMinuteTick();
   const [entries, setEntries] = useState<Entry[]>([]);
   const [hasMore, setHasMore] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
@@ -140,7 +143,9 @@ export function useEntries(baseQuery: EntryQuery, onError?: (msg: string) => voi
       else out.push({ day: dayLabel(e.createdAt), key, items: [e] });
     }
     return out;
-  }, [entries]);
+    // clockTick 只为了让"今天/昨天"跨零点能改口：分组键（key）不变，只有标题要重算。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entries, clockTick]);
 
   useEffect(() => {
     if (!stickToBottom.current) return;

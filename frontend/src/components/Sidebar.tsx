@@ -41,6 +41,8 @@ type Props = {
   view: "settings" | "entries" | "todo";
   capturing: boolean;
   syncActive: boolean;
+  /** 内容变更信号（App 的 liveTick）：透给日历，让热度点跟着重算 */
+  liveSignal: number;
   filterProps: FilterProps;
   /** 点「设置」：在设置页时是"关掉回原处"，否则是"打开设置"（由 App 判断） */
   onOpenSettings: () => void;
@@ -228,6 +230,7 @@ export default function Sidebar(props: Props) {
           selectedDay={props.filterProps.selectedDay}
           onPickDay={props.filterProps.onPickDay}
           query={activeQuery}
+          liveSignal={props.liveSignal}
         />
 
       </div>
