@@ -166,6 +166,71 @@ func TestDefaultSyncIntervalIsRelaxed(t *testing.T) {
 	}
 }
 
+// TestPackageSizeProbe 不是回归用例，是一把"量尺"：给真实库的快照算一遍全量包多大，
+// 好回答"全量之后我的包会不会大到传不动"。
+//
+// 默认跳过。用法：
+//
+//	$env:CLIPNEST_PKGSIZE_DIR = "C:\temp\snapshot"   # 里面放 VACUUM INTO 出来的 clipnest.db
+//	go test ./internal/clip -run TestPackageSizeProbe -v
+//
+// 快照要用 VACUUM INTO 生成，且把 entry_files\ 一起拷过去（storage='file' 的附件要靠它）。
+func TestPackageSizeProbe(t *testing.T) {
+	dir := os.Getenv("CLIPNEST_PKGSIZE_DIR")
+	if dir == "" {
+		t.Skip("未设置 CLIPNEST_PKGSIZE_DIR（这是一把量尺，不是回归用例）")
+	}
+	svc := newTestService(t, dir)
+	total := svc.store.CountAllEntries()
+	active := svc.store.CountEntries()
+	pkg, _, _, err := svc.buildOwnPackage(map[string]bool{}, nil, svc.store.Settings())
+	if err != nil {
+		t.Fatalf("buildOwnPackage: %v", err)
+	}
+	parsed, err := parsePackage(pkg)
+	if err != nil {
+		t.Fatalf("parsePackage: %v", err)
+	}
+	t.Logf("库里 %d 条（其中可见 %d、归档 %d）→ 包内 %d 条 / %d 个附件 / %.2f MiB",
+		total, active, total-active, len(parsed.entries), len(parsed.blobs), float64(len(pkg))/(1<<20))
+	if total > 0 && len(parsed.entries) != total {
+		t.Fatalf("包内条目 %d ≠ 库里 %d（全量没生效）", len(parsed.entries), total)
+	}
+}
+
+// TestSyncCarriesArchivedEntries：归档条目以前**根本进不了包**。
+//
+// 老实现用 `ListEntries` 组包，而它的 where() 永远带一句 `archived = 0`：所以"归档"
+// 在一台机器上是私事，另一台永远看不到（对方那台还能搜到、还能出现在快速粘贴窗）。
+// 全量之后归档条目也跟着走，带的是 archived=1 这个标记本身。
+func TestSyncCarriesArchivedEntries(t *testing.T) {
+	base, _, _ := newTestDAV(t)
+	a := syncedService(t, base)
+
+	e, err := a.store.SaveEntry(Entry{Content: "归档过的备忘", Source: SourceManual})
+	if err != nil {
+		t.Fatalf("SaveEntry: %v", err)
+	}
+	if _, err := a.SetEntryArchived(e.ID, true); err != nil {
+		t.Fatalf("SetEntryArchived: %v", err)
+	}
+	if _, err := a.SyncNow(); err != nil {
+		t.Fatalf("A sync: %v", err)
+	}
+
+	b := syncedService(t, base)
+	if _, err := b.SyncNow(); err != nil {
+		t.Fatalf("B sync: %v", err)
+	}
+	archived := b.store.ListEntries(EntryQuery{Archived: true})
+	if len(archived) != 1 || archived[0].Content != "归档过的备忘" {
+		t.Fatalf("对端没拿到归档条目：%+v", archived)
+	}
+	if visible := b.store.CountEntries(); visible != 0 {
+		t.Errorf("归档条目不该出现在可见列表里，CountEntries = %d", visible)
+	}
+}
+
 func writeSettingsFile(dir string, st Settings) error {
 	blob, err := json.Marshal(st)
 	if err != nil {

@@ -359,7 +359,8 @@ func (r *syncRun) push(upload bool) (syncPushInfo, error) {
 	s := r.svc
 	var info syncPushInfo
 
-	if upload && s.store.CountEntries() == 0 && r.peerItems > 0 {
+	// 判定"本地为空"要用全量：归档条目也要同步，否则"全都归档了"会被当成空库。
+	if upload && s.store.CountAllEntries() == 0 && r.peerItems > 0 {
 		// Our pull clearly did not work; publishing an empty package would make
 		// this device look authoritative about having no history.
 		Logf(s.store.Dir(), "sync: skip push, local history is empty but peers hold %d records", r.peerItems)

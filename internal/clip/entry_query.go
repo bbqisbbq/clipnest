@@ -383,3 +383,14 @@ func (s *Store) CountEntries() int {
 	_ = s.db.QueryRow(`SELECT COUNT(*) FROM entries WHERE archived = 0`).Scan(&n)
 	return n
 }
+
+// CountAllEntries counts every row, archived included.
+//
+// 和 CountEntries 的区别要紧：那个是"界面上看得到的条数"（不含归档），而同步包带
+// **全量**（归档条目也要同步出去，它只是被收起来，不是被删）。两处用混就会出现
+// "全都归档了 ⇒ 判定本地为空 ⇒ 拒绝上传"。
+func (s *Store) CountAllEntries() int {
+	var n int
+	_ = s.db.QueryRow(`SELECT COUNT(*) FROM entries`).Scan(&n)
+	return n
+}
