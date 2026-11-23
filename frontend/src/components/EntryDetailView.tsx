@@ -124,6 +124,7 @@ export default function EntryDetailView(props: Props) {
     }
   }, [actions, draft, entry, props, title, trigger]);
 
+
   // 片段设置保存后重新读一条：以前回调里传的是编辑前的 entry，
   // 会把用户刚配好的字段又写回旧值。
   const reloadEntry = useCallback(async () => {
@@ -134,6 +135,34 @@ export default function EntryDetailView(props: Props) {
     }
   }, [entry.id, props]);
 
+  // OCR：复制识别文字 / 手动跑一次（图片条目才有这块）
+  const copyOcr = useCallback(
+    async (text: string) => {
+      try {
+        await ClipService.CopyPlainText(text);
+        props.onNotify("识别文字已复制");
+      } catch (err) {
+        props.onNotify(`复制失败：${String(err)}`);
+      }
+    },
+    [props],
+  );
+
+  const runOcr = useCallback(
+    async (id: string) => {
+      setBusy(true);
+      try {
+        const text = await ClipService.OcrEntry(id, true);
+        props.onNotify(text ? `识别完成：${text.length} 个字` : "这张图里没识别出文字");
+        await reloadEntry();
+      } catch (err) {
+        props.onNotify(`识别失败：${String(err)}`);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [props, reloadEntry],
+  );
   const remove = useCallback(async () => {
     try {
       await ClipService.DeleteEntry(entry.id);
@@ -278,6 +307,34 @@ export default function EntryDetailView(props: Props) {
                   : "当前没有标题"}
             </p>
           </section>
+
+          {entry.kind === "image" ? (
+            <section className="detail-block">
+              <h4>图里的文字（OCR）</h4>
+              {entry.ocrState === "done" ? (
+                entry.ocrText ? (
+                  <>
+                    <p className="detail-ocr">{entry.ocrText}</p>
+                    <button className="link-btn" onClick={() => void copyOcr(entry.ocrText ?? "")}>
+                      复制识别文字
+                    </button>
+                  </>
+                ) : (
+                  <p className="detail-hint">这张图里没识别出文字。</p>
+                )
+              ) : entry.ocrState === "pending" ? (
+                <p className="detail-hint">正在识别…</p>
+              ) : entry.ocrState === "unsupported" ? (
+                <p className="detail-hint">
+                  这台机器没有可用的 OCR 引擎（缺语言包，或 PowerShell 被执行策略禁用）。
+                </p>
+              ) : (
+                <button className="link-btn" onClick={() => void runOcr(entry.id)}>
+                  {entry.ocrState === "failed" ? "上次识别失败，再试一次" : "识别这张图里的文字"}
+                </button>
+              )}
+            </section>
+          ) : null}
 
           <section className="detail-block">
             <h4>能力</h4>

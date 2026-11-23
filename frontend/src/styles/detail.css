@@ -187,6 +187,22 @@
   line-height: 1.5;
   color: var(--text-3);
 }
+
+/* 图片 OCR 出来的文字：只读、可选中复制；太长时自己滚 */
+.detail-ocr {
+  margin: 0 0 8px;
+  max-height: 200px;
+  overflow: auto;
+  padding: 8px 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 .detail-meta {
   display: grid;
   grid-template-columns: 44px minmax(0, 1fr);
