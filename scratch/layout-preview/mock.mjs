@@ -375,6 +375,32 @@ ${dock}
 </body></html>`;
 }
 
+// ---------------------------------------------------------------- 右键菜单
+//
+// 与 components/ContextMenu.tsx 的 DOM 一一对应：.ctx-menu > .ctx-item(.ctx-label +
+// .ctx-hint) / .ctx-sep，危险项 .is-danger，键盘高亮 .is-active。
+// 这里故意把"图片条目"的菜单画出来（复制内容 / 识别图里的文字 / 复制识别文字 …），
+// 因为那才是这次要验的样子。
+function ctxMenu() {
+  const item = (label, hint = "", extra = "") =>
+    `<button type="button" class="ctx-item ${extra}">
+       <span class="ctx-label">${label}</span>${hint ? `<span class="ctx-hint">${hint}</span>` : ""}
+     </button>`;
+  return `<div class="ctx-menu" role="menu" style="left: 372px; top: 236px">
+    ${item("复制内容")}
+    ${item("识别图里的文字", "", "is-active")}
+    ${item("复制识别文字", "169 字")}
+    <div class="ctx-sep" role="separator"></div>
+    ${item("打开详情")}
+    ${item("置顶")}
+    ${item("加入粘贴列表")}
+    ${item("设为片段", "addr-")}
+    <div class="ctx-sep" role="separator"></div>
+    ${item("归档")}
+    ${item("删除", "", "is-danger")}
+  </div>`;
+}
+
 // ---------------------------------------------------------------- 独立窗口
 
 function pickerWindow() {
@@ -443,6 +469,7 @@ function standalone(bodyClass, inner, w, h) {
 
 const PAGES = [
   { name: "entries", html: page("entries", entriesPane()), w: 1280, h: 860 },
+  { name: "menu", html: page("entries", entriesPane() + ctxMenu()), w: 1280, h: 860 },
   { name: "detail", html: page("detail", entriesPane() + detailPane(), { dock: false }), w: 1280, h: 860 },
   { name: "todo", html: page("todo", todoPane(), { active: "todo" }), w: 1280, h: 860 },
   { name: "settings", html: page("settings", settingsPane(), { active: "settings" }), w: 1280, h: 860 },

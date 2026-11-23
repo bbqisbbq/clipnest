@@ -43,7 +43,9 @@ internal/clip/           业务层：条目、捕获、片段、同步、绑定 
 | `draft.go` | 快捷输入框的未保存草稿（meta 键 `composer.draft`，跟着 clipnest.db 走）。**写库防抖在 Go 侧**（前端每键送一次，内存立即更新 + 400ms 合并写），`FlushComposerDraft`（前端在收起窗口/退出前调）与 `Shutdown` 兜底 |
 | `entry_api.go` | 绑定给前端的条目 API + 筛选器 CRUD |
 | `entry_title.go` | 标题：从正文第一个 `# 一级标题` 派生 + `normalizeTitle`（手写锁定 / 自动跟随 / 清空退回）。规则都在这里，别在 UI 里重算 |
-| `syncpanel.go` | 设置页「设备包」面板的数据形状 |
+| `ocr.go` | 图片 OCR 引擎：Windows 自带 `Windows.Media.Ocr`，经 PowerShell `-EncodedCommand` 调用（脚本纯 ASCII）；外加识别结果的后处理（CJK 空格合并、协议头纠错） |
+| `ocr_worker.go` | OCR 队列与 worker（单个串行）+ 启动补扫 + 手动触发 `OcrEntry`。慢（约 0.5~1.2 秒/张），所以绝不挡采集 |
+| `entry_ocr.go` | OCR 的存储边：`SetEntryOCR`（写结果 + 重建搜索索引，**不动 updated_at**）、`EntryIDsNeedingOCR`、`OCRStats` || `syncpanel.go` | 设置页「设备包」面板的数据形状 |
 
 ### 同步（WebDAV 打包）
 
@@ -124,6 +126,8 @@ src/components/
   SnippetFields         片段的额外编辑项（嵌在详情的属性面板里）
   HotkeyInput / Lightbox / Picker / Capture
   PrivacyToggle          隐私模式的小眼睛开关（详情 / 记一条 / 快速输入窗各一个）
+  ContextMenu            通用右键菜单（自绘，不用系统菜单）：贴边翻转、Esc/点外面关、↑↓ 选
+                        ※ 菜单**条目**不在这里，规则在 lib/entryMenu.ts（纯函数，可独立断言）
 src/styles/vditor-theme.css  Vditor 的 token 映射 + 三条硬编码浅色补丁（深色主题必需）
 src/styles/
   fonts → base → layout → entries → controls → settings → picker → snippets → timeline → editor → vditor-theme → detail → todo → filter
@@ -245,6 +249,9 @@ go test ./internal/...                    # 存储/查询/待办/筛选规则/�
 cd frontend; npx tsc --noEmit; npx vite build --mode production
 node --experimental-strip-types scratch/tag-suggest-check.mjs   # 标签联想：`#` 识别 / 候选过滤（纯逻辑，不需要浏览器）
 node --experimental-strip-types scratch/privacy-mask-check.mjs   # 隐私模式：哪些段落要遮（纯逻辑，不需要浏览器）
+$env:CLIPNEST_OCR_LIVE=1; go test ./internal/clip -run TestSystemOCRLive -v   # 真引擎 OCR 体检（要 Windows + 语言包）
+go run ./scratch/ocrdemo <数据目录> <png>   # OCR 全链路演示：入库 → 识别 → 搜索命中
+node --experimental-strip-types scratch/entry-menu-check.mjs   # 右键菜单条目规则（纯逻辑，9 项断言）
 pwsh -File scripts\visual-check\check-css.ps1   # 样式回归截图（改 CSS 后跑）
 pwsh -STA -File scratch\e2e-capture-resize.ps1  # 记一笔浮层：拖动/拉伸/尺寸记忆（真鼠标事件）
 pwsh -File scratch\e2e-capture-transparency.ps1 # 记一笔浮层：圆角真透明 + 卡片半透明（按像素量；浅色主题要加 -Preset default-light -Backdrop '#1e6fd9'）

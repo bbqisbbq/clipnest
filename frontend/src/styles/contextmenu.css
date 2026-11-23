@@ -1,0 +1,72 @@
+/* 右键菜单（components/ContextMenu.tsx）
+ *
+ * 宽度写死在 208px：组件里要用它算"靠右边时向左翻"。两边必须一起改。
+ * 层级只低于 Dialog（对话框是模态的，必须盖住菜单）。 */
+
+.ctx-menu {
+  position: fixed;
+  z-index: 60;
+  width: 208px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  /* 不透明底色是必须的：菜单浮在卡片正文上，透一点字就糊成一片。
+     注意变量叫 `--surface`（没有 `--surface-1`），写错就等于没写背景。 */
+  background: var(--surface);
+  box-shadow: var(--shadow-pop);
+  outline: none;
+}
+
+.ctx-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-1);
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.6;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ctx-item.is-active:not(:disabled) {
+  background: var(--surface-3);
+}
+
+.ctx-item:disabled {
+  color: var(--text-3);
+  cursor: default;
+}
+
+.ctx-item.is-danger {
+  color: var(--danger);
+}
+
+.ctx-item.is-danger.is-active:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+}
+
+.ctx-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 右侧灰色小字：快捷键、字数、当前状态（"已置顶"这种） */
+.ctx-hint {
+  flex: none;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.ctx-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border-soft);
+}

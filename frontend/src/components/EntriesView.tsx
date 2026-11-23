@@ -5,6 +5,8 @@ import { ClipService, type Entry, type EntryFilter, type EntryQuery } from "../l
 import { useEntries } from "../hooks/useEntries";
 import { usePrompt } from "./Dialog";
 import { useEntryImages } from "../hooks/useEntryImages";
+import { entryClipboardPayload } from "../lib/entryClipboard";
+import { entryMenuItems, type MenuItem } from "../lib/entryMenu";
 
 // 统一内容视图：剪贴板采集、片段、手写备忘都在这里，靠属性区分。
 //
@@ -200,8 +202,6 @@ export default function EntriesView({
     [patchLocal, onChanged, onNotify],
   );
 
-  // 能力开关没有单独的后端接口，所以先取一份最新的条目再改它 ——
-  // 而不是把列表里那份（可能已经过期的）整行写回去。
   const toggleClipboard = useCallback(
     async (e: Entry) => {
       try {
@@ -219,6 +219,83 @@ export default function EntriesView({
     },
     [patchLocal, onChanged, onNotify],
   );
+
+  // ---- 右键菜单 ----------------------------------------------------------
+
+  // 复制整条：图文混排走富文本（HTML+RTF），纯文字走纯文本 —— 和详情页同一个口径。
+  const copyEntry = useCallback(
+    async (e: Entry) => {
+      try {
+        const payload = entryClipboardPayload(e.content);
+        await ClipService.CopyEntry(e.id, payload.html, payload.plain);
+        onNotify("已复制到剪贴板");
+      } catch (err) {
+        onNotify(`复制失败：${String(err)}`);
+      }
+    },
+    [onNotify],
+  );
+
+  // 图片 OCR：右键就能认，不用先开详情页。force=true 是"重新识别"。
+  const ocrEntry = useCallback(
+    async (e: Entry, force: boolean) => {
+      onNotify(force ? "正在重新识别图里的文字…" : "正在识别图里的文字…");
+      try {
+        const text = await ClipService.OcrEntry(e.id, force);
+        patchLocal({ ...e, ocrText: text, ocrState: "done" });
+        onNotify(
+          text ? `识别完成：${text.length} 个字，已经能搜到了` : "这张图里没识别出文字",
+        );
+        onChanged();
+      } catch (err) {
+        onNotify(`识别失败：${String(err)}`);
+      }
+    },
+    [patchLocal, onChanged, onNotify],
+  );
+
+  const copyOcrText = useCallback(
+    async (e: Entry) => {
+      try {
+        await ClipService.CopyPlainText(e.ocrText ?? "");
+        onNotify("识别文字已复制");
+      } catch (err) {
+        onNotify(`复制失败：${String(err)}`);
+      }
+    },
+    [onNotify],
+  );
+
+  // 菜单条目本身是纯函数（lib/entryMenu.ts）：这里只把"这条能做什么"接上回调。
+  const buildMenu = useCallback(
+    (e: Entry): MenuItem[] =>
+      entryMenuItems(e, {
+        copy: () => void copyEntry(e),
+        openDetail: () => onOpenDetail(e),
+        togglePin: () => void togglePin(e),
+        toggleClipboard: () => void toggleClipboard(e),
+        toggleSnippet: () => void (e.triggerKey ? dropSnippet(e) : makeSnippet(e)),
+        toggleArchive: () => void toggleArchive(e),
+        remove: () => void remove(e),
+        ocr: (force) => void ocrEntry(e, force),
+        copyOcr: () => void copyOcrText(e),
+      }),
+    [
+      copyEntry,
+      copyOcrText,
+      dropSnippet,
+      makeSnippet,
+      ocrEntry,
+      onOpenDetail,
+      remove,
+      toggleArchive,
+      toggleClipboard,
+      togglePin,
+    ],
+  );
+
+  // 能力开关没有单独的后端接口，所以先取一份最新的条目再改它 ——
+  // 而不是把列表里那份（可能已经过期的）整行写回去。
 
   const toggleExpand = (id: string) => {
     setExpanded((prev) => {
@@ -284,6 +361,7 @@ export default function EntriesView({
                     onToggleClipboard={() => void toggleClipboard(e)}
                     onSnippet={() => void (e.triggerKey ? dropSnippet(e) : makeSnippet(e))}
                     onDelete={() => void remove(e)}
+                    buildMenu={buildMenu}
                   />
                 ))}
               </section>

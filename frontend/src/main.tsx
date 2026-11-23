@@ -32,6 +32,8 @@ import "./styles/todo.css";
 import "./styles/filter.css";
 // 标签联想弹窗：自己一套命名空间（.tag-suggest*），放在最后只为不再被别的规则碰到
 import "./styles/suggest.css";
+// 右键菜单（组件自带样式，见 components/ContextMenu.tsx）
+import "./styles/contextmenu.css";
 // 隐私模式：::highlight(clipnest-mask) 与开关按钮
 import "./styles/privacy.css";
 import "./theme-light.css";

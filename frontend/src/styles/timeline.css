@@ -296,6 +296,18 @@ body.is-capture { background: transparent; }
   border-radius: var(--r-sm);
   padding: 0 5px;
 }
+
+/* 图片 OCR 结果徽章：这张图里的字已经进了搜索索引 */
+.entry-ocr {
+  font-size: 11px;
+  color: var(--text-3);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-sm);
+  padding: 0 5px;
+}
+.entry-ocr.is-pending {
+  border-style: dashed;
+}
 .entry-image img { display: block; max-width: 100%; border-radius: var(--r-md); }
 
 /* ---------------- 日历 ---------------- */

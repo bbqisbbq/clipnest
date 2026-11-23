@@ -168,6 +168,27 @@
   `title_source === "auto"` 时把正文里第一个 H1 摘掉再渲染；手写标题不动正文（那才是内容）。
 - **`#标签` 和 `# 标题` 只差一个空格**：派生标题必须用 CommonMark 的 `^#\s+`，不能用
   `^#`；否则 `#工作 今天做完` 会被当成标题。同理代码块（围栏 + 缩进 4 空格）里的 `# xxx` 是注释不是标题。
+- **OCR 的引擎选择与三个坑**：目标引擎是 Windows 自带的 `Windows.Media.Ocr`（离线、零依赖）。
+  接入方式比较过三条：Go 直接调 WinRT（`IAsyncOperation` 要手搓 COM vtable，成本远大于收益）、
+  C# sidecar（`.NET Framework 4.8 + WinRT` 需要 Windows SDK 的 UnionMetadata 才能编译，本机只有
+  .NET Core 版 winmd，csc 直接报 `System.Runtime 缺引用`）、**PowerShell 5.1**
+  （Win10/11 自带，最终选的这条）。三个坑：① WinRT 类型投影的**第二个参数必须是契约程序集名**
+  （`OcrEngine` 在 `Windows.Media.Ocr`，写 `Windows.Foundation` 有时能过有时 `TypeNotFound`）；
+  ② 脚本**必须纯 ASCII**（PowerShell 5.1 按 ANSI 读命令行，混一个多字节字符就可能整段解析失败），
+  所以路径走环境变量、脚本用 `-EncodedCommand`；③ 控制台默认代码页会把中文吞成 `?`，
+  要在脚本里把 `[Console]::OutputEncoding` 设成 UTF-8。
+- **中文空格合并别用 `\s`**：系统 OCR 会给每个汉字之间塞空格（`坚 果 云`），要合并；但
+  `\s` 包含换行，会把两行中文粘成一行（测试 `TestNormalizeOCRText` 抓到的）。
+- **CSS 变量名先查再写**：我给右键菜单写了 `background: var(--surface-1)`，而这个主题只有
+  `--surface` / `--surface-2` / `--surface-3` —— 变量不存在不会报错，只会**背景透明**，
+  菜单浮在卡片正文上糊成一片（标本页截图一眼看出来）。凡是新写 `var(--x)`，先在 `base.css` 里确认它存在。
+- **能抽成纯函数的规则就别留在组件里**：右键菜单"哪条内容该有哪些操作"（图片才有 OCR、
+  识别过才显示复制识别文字、删除永远在最后）放在组件里就只能靠手点验证；抽成
+  `lib/entryMenu.ts` 之后 `scratch/entry-menu-check.mjs` 一条条断言，回归时不用动鼠标。
+- **写派生数据不能碰 `updated_at`**：OCR 结果属于派生数据，而 `updated_at` 是"内容变过"的等价物
+  （同步指纹、时间线排序、冲突仲裁都靠它）。改它会让开机后的批量识别看起来像"所有图片刚被编辑"。- **两三个字的检索词要照顾到**：`entries_fts` 是 trigram 分词，**少于 3 个字用不了 MATCH**，
+  `EntryQuery` 因此对短词退回 `LIKE`。加了 `ocr_text` 列之后，那个 LIKE 分支必须把它一起带上，
+  否则"搜图片里的两字词"永远搜不到。
 
 - **时间戳必须定宽**（`2006-01-02T15:04:05.000000000Z`）：所有排序、游标、墓碑比较都基于字符串比较，
   变宽的小数位会让"同一微秒"的行顺序飘。

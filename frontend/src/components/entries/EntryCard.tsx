@@ -3,6 +3,7 @@ import { marked } from "marked";
 import type { Entry } from "../../lib/api";
 import { resolveImages } from "../../lib/images";
 import { IconChevron } from "../Icons";
+import ContextMenu, { type MenuItem } from "../ContextMenu";
 
 // 时间线里的一条内容卡片：正文（Markdown 渲染 + 图片换真 src）、元信息、操作按钮。
 // 折叠遮罩的测量也在这里，因为"有没有溢出"是卡片自己的布局事实。
@@ -37,10 +38,14 @@ export type EntryCardProps = {
   onToggleClipboard: () => void;
   onSnippet: () => void;
   onDelete: () => void;
+  /** 右键菜单的条目：由上层拼（只有它拿得到全部操作与通知） */
+  buildMenu?: (entry: Entry) => MenuItem[];
 };
 
 function EntryCard(props: EntryCardProps) {
   const { entry: e, expanded, imgCache } = props;
+  // 右键菜单的位置（视口坐标）；null = 关着
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const collected = e.source === "clipboard";
   const inClipboard = (e.actions ?? []).includes("clipboard");
   const html = useMemo(() => {
@@ -116,6 +121,12 @@ function EntryCard(props: EntryCardProps) {
       } ${overflows ? "is-collapsible" : ""} ${expanded ? "is-expanded" : ""}`}
       onClick={handleClick}
       onDoubleClick={handleDoubleClick}
+      onContextMenu={(ev) => {
+        if (!props.buildMenu) return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        setMenu({ x: ev.clientX, y: ev.clientY });
+      }}
       // 键盘可达：Tab 能落到卡片上，Enter 展开/收起，Ctrl+Enter 进详情，Delete 删除。
       // 以前只有鼠标能操作，键盘用户根本进不去任何一条内容。
       tabIndex={0}
@@ -138,7 +149,7 @@ function EntryCard(props: EntryCardProps) {
           props.onDelete();
         }
       }}
-      title={expanded ? "点击收起 · 双击编辑" : overflows ? "点击展开全文 · 双击编辑" : undefined}
+      title={expanded ? "点击收起 · 双击编辑 · 右键更多" : overflows ? "点击展开全文 · 双击编辑 · 右键更多" : "双击编辑 · 右键更多"}
     >
       {e.title ? <h3 className="memo-card-title">{e.title}</h3> : null}
       <div
@@ -195,6 +206,14 @@ function EntryCard(props: EntryCardProps) {
           </span>
         ))}
         {e.triggerKey ? <span className="entry-trigger">{e.triggerKey}</span> : null}
+        {e.ocrState === "done" && e.ocrText ? (
+          <span className="entry-ocr" title={`图片里识别出 ${e.ocrText.length} 个字，可以直接搜到`}>
+            OCR {e.ocrText.length} 字
+          </span>
+        ) : e.ocrState === "pending" ? (
+          <span className="entry-ocr is-pending" title="正在识别图里的文字">
+            识别中…</span>
+        ) : null}
         {missingLabel ? (
           <span
             className="entry-missing"
@@ -262,6 +281,14 @@ function EntryCard(props: EntryCardProps) {
           </button>
         </span>
       </footer>
+      {menu && props.buildMenu ? (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          items={props.buildMenu(e)}
+          onClose={() => setMenu(null)}
+        />
+      ) : null}
     </article>
   );
 }
