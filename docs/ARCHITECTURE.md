@@ -191,7 +191,7 @@ meta           键值对（设备 id、一次性标记、filters.hidden、compos
 派生列**不跨端传**：`mergeEntry` 一律本端重算，否则版本混跑时旧客户端会把状态抹掉。
 
 `entries.title` 现在由片段写入（`SaveSnippet` 存用户起的标题；读的时候没标题才退回正文首行）。
-空标题的条目在卡片上不多一行。隐写模式也用它做 `@名称@` 的落点。
+空标题的条目在卡片上不多一行。
 表结构是 `CREATE TABLE IF NOT EXISTS`，**新增列必须同时加 `ensureColumn` 迁移**（见 `store.go`），
 否则老库不会自动长出新列（`title` / `todo_state` / `todo_done_at` / `snippet_kind` 都是这么加的）。
 

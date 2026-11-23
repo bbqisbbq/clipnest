@@ -162,16 +162,6 @@ func packPoint(p pointT) uintptr {
 	return uintptr(uint32(p.X)) | uintptr(uint32(p.Y))<<32
 }
 
-// WorkAreaBottomRight puts a width×height window in the bottom-right corner of
-// the work area of the monitor the mouse is on (used by the 隐写 hint bar).
-
-// MakeNonActivating decorates a window so showing it never steals keyboard
-// focus (WS_EX_NOACTIVATE), it stays out of the taskbar, and clicks pass
-// through it (WS_EX_TRANSPARENT). The corner HUD uses all three: it must never
-// pull the caret out of the invisible 隐写 input window.
-
-// GWL_EXSTYLE == -20
-
 // ActivateWindow brings hwnd to the foreground.
 //
 // Windows only lets a thread call SetForegroundWindow when that thread is (or is

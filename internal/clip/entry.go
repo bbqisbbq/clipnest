@@ -44,7 +44,7 @@ const (
 // Entry is the single content type of the app.
 type Entry struct {
 	ID string `json:"id"`
-	// Title 是给条目起的名字（现在只有隐写模式在写：`@名称@` 作为落点）。
+	// Title 是给条目起的名字，现在**只有片段在写**（`Snippet.Title`：用户给缩写起的名）。
 	// 普通条目留空，卡片就不多一行标题。
 	Title   string   `json:"title,omitempty"`
 	Content string   `json:"content"`
