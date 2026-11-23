@@ -5,6 +5,7 @@ import { MEMO_IMG_RE } from "../lib/images";
 import { subscribeToolbarSettings, toolbarFor, toolbarVersion } from "../lib/editorToolbar";
 import { applyTag, findTagToken, pickTags, type TagToken } from "../lib/tagSuggest";
 import TagSuggest from "./TagSuggest";
+import { registerTagHost, repaintTags, unregisterTagHost } from "../lib/tagHighlight";
 
 // 全应用唯一的 Markdown 编辑器：Vditor（IR 即时渲染）。
 //
@@ -146,7 +147,51 @@ export function warmUpMarkdown(): Promise<void> {
   return warmPromise;
 }
 
-// 取编辑器里的 markdown（取不到就当空串：实例可能正在销毁）
+// 插入标签后把光标挪到标签**后面**。
+// Vditor.insertValue 会把光标留在插入内容之前，接着打字就打在 `#tag` 前面（实测）。
+// 先按"光标正好停在插入文本前"处理（最常见），再兜底找编辑器里最后一次出现。
+function caretAfterInserted(host: HTMLElement | null, needle: string): void {
+  const sel = window.getSelection();
+  if (!host || !sel) return;
+  // 落点：标签之后，若紧跟一个空格就跳过它（Vditor 重排后末尾空格可能被拆到
+  // 另一个文本节点，所以**只按 `#tag` 找**，别把空格算进查找串 —— 算进去就找不到）。
+  const place = (node: Text, idx: number) => {
+    const after = idx + needle.length + (node.data[idx + needle.length] === " " ? 1 : 0);
+    const r = document.createRange();
+    r.setStart(node, Math.min(after, node.data.length));
+    r.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(r);
+  };
+  const node = sel.anchorNode;
+  if (node && node.nodeType === Node.TEXT_NODE) {
+    const t = node as Text;
+    const off = sel.anchorOffset;
+    if (t.data.startsWith(needle, off)) {
+      place(t, off);
+      return;
+    }
+    const here = t.data.lastIndexOf(needle);
+    if (here >= 0) {
+      place(t, here);
+      return;
+    }
+  }
+  const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
+  let found: Text | null = null;
+  let at = -1;
+  while (walker.nextNode()) {
+    const t = walker.currentNode as Text;
+    const i = t.data.lastIndexOf(needle);
+    if (i >= 0) {
+      found = t;
+      at = i;
+    }
+  }
+  if (found && at >= 0) place(found, at);
+}
+
+// 取编辑器里的 markdown（取不到就当空串：实例可能正在销毁）'
 function safeValue(v: Vditor): string {
   try {
     return v.getValue();
@@ -183,6 +228,8 @@ const MarkdownSurface = forwardRef<MarkdownSurfaceHandle, Props>(function Markdo
   // 输入法正在组词（拼音/五笔还没上屏）：这时候的 Enter/空格/上下键都是给输入法的，
   // 我们插一句话进去只会把候选确认打断；等 compositionend 之后再来联想。
   const composingRef = useRef(false);
+  // 插入标签后"把光标放到标签后面"的重试任务号：用户一动键盘/鼠标就作废
+  const caretTaskRef = useRef(0);
 
   // 排查用开关：localStorage["clipnest.debugTagSuggest"] = "1" 时把选区状态写进
   // clipnest.log（不默认开：每次输入都过一次桥太吵）。
@@ -290,6 +337,20 @@ const MarkdownSurface = forwardRef<MarkdownSurfaceHandle, Props>(function Markdo
       // 原生的 input 事件，而我们那条宿主上的 input 监听（草稿落库、脏标记全靠它）
       // 是听 DOM 事件的 —— 漏了这一步，界面看着是 `#writing`，库里草稿却是空的。
       onChangeRef.current(dehydrateImages(after).replace(/\r\n/g, "\n"));
+      // 光标挪到标签后面。**要挪两次以上**：Vditor 在我们插入后会自己重排一次 IR，
+      // 那一下会把原生选区重置回它记录的旧范围（实测 1.5s 后又跑到 `#tag` 前面）。
+      // 所以隔几个时间点再落一次；一旦内容变了（用户已经开始接着打字）就停手。
+      const baseline = after;
+      const gen = ++caretTaskRef.current;
+      const inserted = `#${tag}`;
+      for (const delay of [0, 50, 120, 250, 450, 700, 1000, 1500]) {
+        window.setTimeout(() => {
+          // 期间用户自己动了（打字/点了别处）就作废，绝不跟人抢光标
+          if (caretTaskRef.current !== gen || safeValue(v) !== baseline) return;
+          caretAfterInserted(hostRef.current, inserted);
+        }, delay);
+      }
+      repaintTags();
       refreshSuggestRef.current();
     });
   }, [debugSuggest]);
@@ -384,6 +445,7 @@ const MarkdownSurface = forwardRef<MarkdownSurfaceHandle, Props>(function Markdo
             }
             vditorRef.current = instance;
             setReady(true);
+            repaintTags();
             if (props.autoFocus) instance?.focus();
           },
         });
@@ -404,7 +466,8 @@ const MarkdownSurface = forwardRef<MarkdownSurfaceHandle, Props>(function Markdo
           } catch {
             /* 实例正在销毁：取不到内容就跳过，下一次输入会再来 */
           }
-          // 每一次真实输入之后看一眼：光标是不是刚停在一个 `#后面
+          // 每一次真实输入之后：重绘标签高亮 + 看一眼光标是不是刚停在一个 `#后面
+          repaintTags();
           refreshSuggestRef.current();
         };
         const onCompositionStart = () => {
@@ -416,11 +479,18 @@ const MarkdownSurface = forwardRef<MarkdownSurfaceHandle, Props>(function Markdo
           composingRef.current = false;
           refreshSuggestRef.current();
         };
+        const onMouseDown = () => {
+          caretTaskRef.current++; // 用户点了别处：别再挪光标
+        };
+        host.addEventListener("mousedown", onMouseDown, true);
+        registerTagHost(host);
         host.addEventListener("input", onDomInput, true);
         host.addEventListener("blur", onDomInput, true);
         host.addEventListener("compositionstart", onCompositionStart, true);
         host.addEventListener("compositionend", onCompositionEnd, true);
         cleanupDom = () => {
+          host.removeEventListener("mousedown", onMouseDown, true);
+          unregisterTagHost(host);
           host.removeEventListener("input", onDomInput, true);
           host.removeEventListener("blur", onDomInput, true);
           host.removeEventListener("compositionstart", onCompositionStart, true);
@@ -461,6 +531,7 @@ const MarkdownSurface = forwardRef<MarkdownSurfaceHandle, Props>(function Markdo
     const host = hostRef.current;
     if (!host) return;
     const onKeyDown = (ev: KeyboardEvent) => {
+      caretTaskRef.current++; // 用户开始打字：别再挪光标
       // 229 / isComposing：按键属于输入法组词，一律放行（否则中文候选没法用 Enter 确认）
       if (ev.isComposing || ev.keyCode === 229) return;
       const cur = suggestRef.current;
@@ -533,6 +604,8 @@ const MarkdownSurface = forwardRef<MarkdownSurfaceHandle, Props>(function Markdo
     void hydrateImages(next).then((hydrated) => {
       // 卸载后 vditorRef 已被清空，可选链会兜住
       vditorRef.current?.setValue(hydrated, true);
+      // setValue 走的是 Vditor 自己的渲染流程，不会触发我们的 DOM input 监听
+      window.setTimeout(repaintTags, 0);
     });
   }, [props.value, ready]);
 

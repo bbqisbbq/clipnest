@@ -84,6 +84,14 @@
 - **`insertValue` 不派发原生 `input` 事件**：我们的"内容变了"信号来源是宿主元素上的 DOM
   `input` 冒泡（草稿落库、脏标记都挂在它上面）。用 `Vditor.insertValue` 插文本之后必须
   **手工调一次 `onChange`**，否则界面看着对、库里草稿是空的（标签联想实测踩到）。
+- **Vditor 的 IR 正文本体自己就是一个 `<pre class="vditor-reset">`**：判断"我在不在代码块里"
+  只能看 `<code>`，按 `pre` 排除等于把整个编辑区排除掉（标签高亮第一版 ranges 恒为 0 就是这个）。
+- **给纯文本上色别往 DOM 里插节点**：IR 模式里 `#标签` 就是普通文本，包 `<span>` 会打断光标、
+  弄乱 Vditor 的结构、撤销也乱。用 CSS Highlight API（`CSS.highlights` + `::highlight()`）
+  只注册范围，能上颜色/背景（圆角内距这些不生效），对编辑零干扰。
+- **Vditor 会在插入后异步重排，并把原生选区重置回它记录的旧范围**：`insertValue` 之后立刻
+  设光标没用（实测 1.5s 后又跑回 `#tag` 前面）。要么在多个时间点补落（并且用户一动就停手），
+  要么别指望一次就定住；另外重排后**末尾那个空格会被拆到别的文本节点**，查找串别带空格。
 - **点弹层时先把焦点要回编辑器**：`execCommand` 只作用于"当前文档的焦点选区"，点候选
   （哪怕 mousedown 已 preventDefault）焦点也可能飘走 —— 那样 `delete` 会删错、`insertValue` 落空。
 - **输入法组词期间不许拦键**：`keydown` 里遇到 `ev.isComposing || ev.keyCode === 229`

@@ -66,3 +66,12 @@
   color: var(--text-3);
   font-size: 11px;
 }
+
+/* 编辑器里的 `#标签`：IR 模式下标签就是普通文本，没有元素可挂样式，所以用
+   Highlight API（lib/tagHighlight.ts）注册范围，这里只负责"画"。
+   ::highlight 只接受颜色类属性（color / background-color / text-decoration…），
+   圆角、内距这些不生效 —— 所以效果是"一块淡底色 + 强调色文字"。 */
+::highlight(clipnest-tag) {
+  background-color: var(--accent-tint);
+  color: var(--accent);
+}

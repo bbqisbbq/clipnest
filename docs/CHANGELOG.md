@@ -58,6 +58,11 @@
     等于把这条常见路径整个关掉了）。
   - 点候选时先把焦点要回编辑器，再删令牌、`insertValue` 插入，并**手工同步一次外层 onChange**
     —— `insertValue` 不派发原生 `input` 事件，漏了这一步界面显示对了、库里草稿却是空的。
+  - 插入后**光标落在标签后面**（Vditor 会在插入后异步重排、把原生选区重置回旧位置，
+    所以要隔几个时间点再落一次；用户一动键盘/鼠标就立即停手，不跟人抢光标）。
+  - **标签在编辑器里有独特样式**：用 Chromium 的 CSS Highlight API（`CSS.highlights` +
+    `::highlight(clipnest-tag)`）给 `#标签` 上底色 + 强调色文字。只注册文本范围、不插 DOM，
+    所以不会打断 contenteditable 的光标与 IR 结构（往正文包 `<span>` 是另一条会翻车的路）。
   - 外观：面板用 `--surface-3` + `--border-strong` + `--shadow-pop`（第一版误用了不存在的
     `--surface-1`/`--line`，整条 background/border 声明失效 ⇒ 弹窗透明、与背后界面糊在一起）。
   - 排查开关：`localStorage["clipnest.debugTagSuggest"]="1"` 会把选区/候选数写进 `clipnest.log`。
