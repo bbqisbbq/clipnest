@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Events } from "@wailsio/runtime";
 import { ClipService, EventNames, type Entry, type Snippet } from "./lib/api";
 import { useSettingsTheme } from "./hooks/useTheme";
+import { useMinuteTick } from "./hooks/useClock";
 import { formatBytes, formatRelative } from "./lib/format";
 import { IconPin, IconSearch, IconTrash, IconFolder, kindIcon } from "./components/Icons";
 
@@ -36,6 +37,9 @@ type RowAction = "pin" | "archive" | "delete";
 export default function Picker() {
   // 快速粘贴窗和「记一笔」一样是常驻窗口：不订阅设置就永远停在启动时那套配色。
   useSettingsTheme();
+  // 行尾的"刚刚 / 3 分钟前"是渲染时算的：窗口一直挂着不动就不会变。一分钟一 tick，
+  // 让它自己改口（只在弹窗打开这一小会儿生效，代价可以忽略）。
+  useMinuteTick();
   const [items, setItems] = useState<Entry[]>([]);
   const [snippets, setSnippets] = useState<Snippet[]>([]);
   const [query, setQuery] = useState("");
