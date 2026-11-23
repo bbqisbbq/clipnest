@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Events } from "@wailsio/runtime";
 import MarkdownSurface, { type MarkdownSurfaceHandle, warmUpMarkdown } from "./components/MarkdownSurface";
+import PrivacyToggle from "./components/PrivacyToggle";
 import { ClipService, EventNames } from "./lib/api";
 import { drag, noDrag } from "./lib/window";
 import { useSettingsTheme } from "./hooks/useTheme";
@@ -150,6 +151,7 @@ export default function Capture() {
           <span className="capture-hint">写 #标签 就能归类</span>
         )}
         <span className="capture-keys">Enter 保存 · Esc 关闭</span>
+        <PrivacyToggle className="capture-privacy" />
         <button className="capture-close" style={noDrag} onClick={close} title="关闭（Esc）">
           ×
         </button>

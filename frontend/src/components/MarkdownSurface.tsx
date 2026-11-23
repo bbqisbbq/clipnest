@@ -6,6 +6,14 @@ import { subscribeToolbarSettings, toolbarFor, toolbarVersion } from "../lib/edi
 import { applyTag, findTagToken, pickTags, type TagToken } from "../lib/tagSuggest";
 import TagSuggest from "./TagSuggest";
 import { registerTagHost, repaintTags, unregisterTagHost } from "../lib/tagHighlight";
+import { registerPrivacyHost, repaintPrivacy, unregisterPrivacyHost } from "../lib/privacyMask";
+
+// 两种上色（#标签 / 隐私遮罩）都要重算，顺序固定：先遮罩再标签 ——
+// 标签高亮会跳过被遮住的文字（见 lib/tagHighlight.ts）。
+function repaintAll(): void {
+  repaintPrivacy();
+  repaintTags();
+}
 
 // 全应用唯一的 Markdown 编辑器：Vditor（IR 即时渲染）。
 //
@@ -350,7 +358,7 @@ const MarkdownSurface = forwardRef<MarkdownSurfaceHandle, Props>(function Markdo
           caretAfterInserted(hostRef.current, inserted);
         }, delay);
       }
-      repaintTags();
+      repaintAll();
       refreshSuggestRef.current();
     });
   }, [debugSuggest]);
@@ -445,7 +453,7 @@ const MarkdownSurface = forwardRef<MarkdownSurfaceHandle, Props>(function Markdo
             }
             vditorRef.current = instance;
             setReady(true);
-            repaintTags();
+            repaintAll();
             if (props.autoFocus) instance?.focus();
           },
         });
@@ -467,7 +475,7 @@ const MarkdownSurface = forwardRef<MarkdownSurfaceHandle, Props>(function Markdo
             /* 实例正在销毁：取不到内容就跳过，下一次输入会再来 */
           }
           // 每一次真实输入之后：重绘标签高亮 + 看一眼光标是不是刚停在一个 `#后面
-          repaintTags();
+          repaintAll();
           refreshSuggestRef.current();
         };
         const onCompositionStart = () => {
@@ -484,6 +492,7 @@ const MarkdownSurface = forwardRef<MarkdownSurfaceHandle, Props>(function Markdo
         };
         host.addEventListener("mousedown", onMouseDown, true);
         registerTagHost(host);
+        registerPrivacyHost(host);
         host.addEventListener("input", onDomInput, true);
         host.addEventListener("blur", onDomInput, true);
         host.addEventListener("compositionstart", onCompositionStart, true);
@@ -491,6 +500,7 @@ const MarkdownSurface = forwardRef<MarkdownSurfaceHandle, Props>(function Markdo
         cleanupDom = () => {
           host.removeEventListener("mousedown", onMouseDown, true);
           unregisterTagHost(host);
+          unregisterPrivacyHost(host);
           host.removeEventListener("input", onDomInput, true);
           host.removeEventListener("blur", onDomInput, true);
           host.removeEventListener("compositionstart", onCompositionStart, true);
@@ -579,10 +589,15 @@ const MarkdownSurface = forwardRef<MarkdownSurfaceHandle, Props>(function Markdo
   // 光标移动（点回来、方向键、输入后）都要重算一次：只看 input 事件的话，
   // 「用鼠标点到一个已经写好的 #标签 后面」永远不会弹候选 —— 以前这里先判断
   // "弹窗已开"才继续，等于把这条路径整个关掉了。
+  //
+  // 隐私模式同理：「可读段落」是跟着光标走的，点进别的段落就得立刻换过来。
   useEffect(() => {
     const onSelection = () => {
       const host = hostRef.current;
       const sel = window.getSelection();
+      if (host && sel?.anchorNode && host.contains(sel.anchorNode)) {
+        repaintPrivacy();
+      }
       if (!host || !sel?.anchorNode || !host.contains(sel.anchorNode)) {
         if (suggestRef.current) setSuggest(null);
         tokenRef.current = null;
@@ -605,7 +620,7 @@ const MarkdownSurface = forwardRef<MarkdownSurfaceHandle, Props>(function Markdo
       // 卸载后 vditorRef 已被清空，可选链会兜住
       vditorRef.current?.setValue(hydrated, true);
       // setValue 走的是 Vditor 自己的渲染流程，不会触发我们的 DOM input 监听
-      window.setTimeout(repaintTags, 0);
+      window.setTimeout(repaintAll, 0);
     });
   }, [props.value, ready]);
 

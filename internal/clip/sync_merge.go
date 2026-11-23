@@ -32,6 +32,9 @@ var localSettingsFields = []localField{
 	{func(s *Settings) { s.AutoStart = false }, func(d, src *Settings) { d.AutoStart = src.AutoStart }},
 	{func(s *Settings) { s.ShowOnLaunch = false }, func(d, src *Settings) { d.ShowOnLaunch = src.ShowOnLaunch }},
 	{func(s *Settings) { s.SyncSettings = false }, func(d, src *Settings) { d.SyncSettings = src.SyncSettings }},
+	// 隐私模式是"这台机器旁边有没有人看"的问题，跟另一台机器的习惯无关：
+	// 家里没人看、公司有人看，同步过去只会让人措手不及。
+	{func(s *Settings) { s.PrivacyInput = false }, func(d, src *Settings) { d.PrivacyInput = src.PrivacyInput }},
 	// 默认打开哪个筛选器指向的是本机的筛选器 id（筛选器不跨端同步），
 	// 所以它只在本机有意义，对端带来的值必须丢掉。
 	{func(s *Settings) { s.DefaultFilterID = "" }, func(d, src *Settings) { d.DefaultFilterID = src.DefaultFilterID }},

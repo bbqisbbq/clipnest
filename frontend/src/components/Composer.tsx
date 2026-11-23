@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import MarkdownSurface, { type MarkdownSurfaceHandle } from "./MarkdownSurface";
+import PrivacyToggle from "./PrivacyToggle";
 
 // 底部输入卡片：只负责"记一条新的"。
 // 编辑已有内容走右侧详情视图（EntryDetailView），两者不要混在一起——
@@ -98,6 +99,7 @@ export default function Composer(props: Props) {
             <span className="composer-hint">写 #标签 归类 · - [ ] 待办 · Ctrl+Enter 保存</span>
           </span>
           <div className="composer-btns">
+            <PrivacyToggle />
             <button className="link-btn" onClick={clear}>
               清空
             </button>

@@ -400,6 +400,13 @@ export interface Settings {
     "captureTransparency": number;
 
     /**
+     * PrivacyInput 打开后，编辑器里只有光标所在的那个段落保持可读，其余段落被遮成
+     * 极淡（色调贴近背景）。这是**纯视觉**保护：不影响保存、不影响已保存的内容、
+     * 也不进同步包（机器本地字段，见 sync_merge.go 的 localSettingsFields）。
+     */
+    "privacyInput": boolean;
+
+    /**
      * ThemeCustomCSS is user-authored CSS applied on top of the preset.
      */
     "themeCustomCss": string;

@@ -102,6 +102,10 @@ src/lib/
   dates.ts               日期键唯一写法："2026-11-19" / "2026-11"（日历、今天、EntryQuery.day）
   format.ts              时间/体积格式化
   window.ts              无边框窗口控制
+  tagSuggest.ts          `#` 标签联想的纯逻辑（token 识别、候选过滤、插入）
+  tagHighlight.ts        用 CSS Highlight API 给编辑器里的 `#标签` 上色（不插 DOM）
+  privacyMask.ts         隐私模式：只留光标所在段落可读，其余用 Highlight API 遮成极淡
+  privacyMode.ts         隐私模式开关状态（存 Settings.PrivacyInput，三处输入框共用）
 src/components/
   TitleBar / Sidebar / Calendar / Tip / Icons      布局与小组件
   SettingsView          设置页编排者（草稿 + 自动保存 + 顶部返回/状态条）
@@ -117,6 +121,7 @@ src/components/
                           不要指望 Vditor 的 `options.input`——IR 模式手打时它不触发
   SnippetFields         片段的额外编辑项（嵌在详情的属性面板里）
   HotkeyInput / Lightbox / Picker / Capture
+  PrivacyToggle          隐私模式的小眼睛开关（详情 / 记一条 / 快速输入窗各一个）
 src/styles/vditor-theme.css  Vditor 的 token 映射 + 三条硬编码浅色补丁（深色主题必需）
 src/styles/
   fonts → base → layout → entries → controls → settings → picker → snippets → timeline → editor → vditor-theme → detail → todo → filter
@@ -237,6 +242,7 @@ go build -o bin\clipnest-dev.exe .        # 后端 + 内嵌前端产物
 go test ./internal/...                    # 存储/查询/待办/筛选规则/同步/展开引擎/附件回收（audit_fix_test.go）
 cd frontend; npx tsc --noEmit; npx vite build --mode production
 node --experimental-strip-types scratch/tag-suggest-check.mjs   # 标签联想：`#` 识别 / 候选过滤（纯逻辑，不需要浏览器）
+node --experimental-strip-types scratch/privacy-mask-check.mjs   # 隐私模式：哪些段落要遮（纯逻辑，不需要浏览器）
 pwsh -File scripts\visual-check\check-css.ps1   # 样式回归截图（改 CSS 后跑）
 pwsh -STA -File scratch\e2e-capture-resize.ps1  # 记一笔浮层：拖动/拉伸/尺寸记忆（真鼠标事件）
 pwsh -File scratch\e2e-capture-transparency.ps1 # 记一笔浮层：圆角真透明 + 卡片半透明（按像素量；浅色主题要加 -Preset default-light -Backdrop '#1e6fd9'）

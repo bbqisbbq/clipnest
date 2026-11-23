@@ -32,10 +32,13 @@ import "./styles/todo.css";
 import "./styles/filter.css";
 // 标签联想弹窗：自己一套命名空间（.tag-suggest*），放在最后只为不再被别的规则碰到
 import "./styles/suggest.css";
+// 隐私模式：::highlight(clipnest-mask) 与开关按钮
+import "./styles/privacy.css";
 import "./theme-light.css";
 import { applyTheme, storedTheme } from "./lib/themes";
 import { warmUpMarkdown } from "./components/MarkdownSurface";
 import { applyToolbarSettings } from "./lib/editorToolbar";
+import { watchPrivacyMode } from "./lib/privacyMode";
 import { DialogProvider } from "./components/Dialog";
 
 // The same bundle serves every Wails window: the manager (default), the hotkey
@@ -52,6 +55,8 @@ document.body.classList.toggle("is-capture", isCapture);
 void ClipService.GetSettings()
   .then((st) => applyToolbarSettings(st.editorToolbar, st.composerToolbar))
   .catch(() => undefined);
+// 隐私模式：每个窗口都订一次（存的是 Settings.PrivacyInput；localStorage 跨窗口不可靠）
+watchPrivacyMode();
 
 // Forward frontend failures to the Go log. Without this a render error just
 // leaves an empty window and there is nothing to debug from outside.

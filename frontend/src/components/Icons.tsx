@@ -244,3 +244,24 @@ export const IconTodo = (p: IconProps) =>
     </>,
     p,
   );
+
+/** 隐私模式：睁眼（当前可读）/ 闭眼（已遮罩） */
+export const IconEye = (p: IconProps) =>
+  svg(
+    <>
+      <path d="M2.5 12s3.5-6.5 9.5-6.5S21.5 12 21.5 12s-3.5 6.5-9.5 6.5S2.5 12 2.5 12z" />
+      <circle cx="12" cy="12" r="2.8" />
+    </>,
+    p,
+  );
+
+export const IconEyeOff = (p: IconProps) =>
+  svg(
+    <>
+      <path d="M4 4.5l16 15" />
+      <path d="M9.6 6.1A9.7 9.7 0 0 1 12 5.5c6 0 9.5 6.5 9.5 6.5a17 17 0 0 1-3.3 4" />
+      <path d="M6.4 7.9A16.9 16.9 0 0 0 2.5 12S6 18.5 12 18.5a9.4 9.4 0 0 0 3.6-.7" />
+      <path d="M9.9 10a3 3 0 0 0 4.2 4.2" />
+    </>,
+    p,
+  );

@@ -1,0 +1,37 @@
+/* 隐私模式（lib/privacyMask.ts 注册范围，这个文件只负责"画"）。
+   ::highlight 只接受颜色类属性：没有模糊、没有透明层、也管不到图片 ——
+   所以效果是"文字退成几乎和背景一样的淡色，能看出有几行、读不出字"。 */
+::highlight(clipnest-mask) {
+  color: color-mix(in srgb, var(--text) 16%, var(--surface));
+}
+
+/* 开关按钮：默认安静，开启时给一点强调色（让人一眼看出"我现在是遮着的"） */
+.privacy-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  transition:
+    color 0.12s ease,
+    background-color 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.privacy-toggle:hover {
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  color: var(--text);
+}
+
+.privacy-toggle.is-on {
+  color: var(--accent);
+  border-color: var(--accent-line);
+  background: var(--accent-tint);
+}

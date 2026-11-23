@@ -6,6 +6,8 @@
 //
 // 不支持该 API 的环境（老 WebView2）自动退化成"没有高亮"，不影响编辑。
 
+import { isMaskedNode } from "./privacyMask";
+
 const HIGHLIGHT_NAME = "clipnest-tag";// 与后端 tagPattern 同一字符集（internal/clip/entry.go）
 const TAG_RE = /#([\p{L}\p{N}_\-\/]+)/gu;
 // `#` 前面必须是行首/空白/标点，`abc#def` 不算标签
@@ -64,6 +66,9 @@ function collectRanges(root: HTMLElement, out: Range[]): void {
   });
   while (walker.nextNode()) {
     const text = walker.currentNode as Text;
+    // 隐私模式下被遮住的段落：连标签底色一起省掉 —— 否则灰雾里会透出一块强调色，
+    // 等于把"这里有标签"漏出去。
+    if (isMaskedNode(text)) continue;
     const data = text.data;
     if (!data.includes("#")) continue;
     TAG_RE.lastIndex = 0;

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import MarkdownSurface, { type MarkdownSurfaceHandle } from "./MarkdownSurface";
 import SnippetFields from "./SnippetFields";
+import PrivacyToggle from "./PrivacyToggle";
 import { ClipService, type Entry } from "../lib/api";
 import { isDialogOpen, useChoose, useConfirm } from "./Dialog";
 import { SNIPPET_VARS } from "../lib/snippetTemplate";
@@ -204,6 +205,7 @@ export default function EntryDetailView(props: Props) {
         <div className="detail-head-right">
           {savedAt ? <span className="detail-saved">已保存 {savedAt}</span> : null}
           {dirty ? <span className="detail-dirty">未保存</span> : null}
+          <PrivacyToggle />
           <button className="btn btn-primary btn-sm" onClick={() => void save()} disabled={busy || !dirty}>
             {busy ? "保存中…" : dirty ? "保存" : "已保存"}
           </button>

@@ -60,6 +60,10 @@ type Settings struct {
 	// 0 时卡片完全不透明，只是四角真透明；大于 0 才有"能看见后面的窗口"的效果。
 	// WebView2 糊不了桌面背景，所以这里给不了毛玻璃，只能靠降低 alpha。
 	CaptureTransparency int `json:"captureTransparency"`
+	// PrivacyInput 打开后，编辑器里只有光标所在的那个段落保持可读，其余段落被遮成
+	// 极淡（色调贴近背景）。这是**纯视觉**保护：不影响保存、不影响已保存的内容、
+	// 也不进同步包（机器本地字段，见 sync_merge.go 的 localSettingsFields）。
+	PrivacyInput bool `json:"privacyInput"`
 	// ThemeCustomCSS is user-authored CSS applied on top of the preset.
 	ThemeCustomCSS string `json:"themeCustomCss"`
 	// EditorToolbar / ComposerToolbar 决定工具栏显示哪些按钮（Vditor 的 item 名）。
