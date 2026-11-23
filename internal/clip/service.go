@@ -81,6 +81,8 @@ type ClipService struct {
 	// OCR 队列（见 ocr_worker.go）：图片条目入队后由单个 worker 串行识别。
 	ocrQueue chan string
 	ocrOnce  sync.Once
+	// PP-OCR 引擎（见 ocr_engine.go）：懒加载，模型只加载一次。
+	ocrPPOCR ocrEngineState
 
 	// bg 收集所有后台循环，bgCtx 让正在跑的 HTTP 请求随退出一起取消。
 	// Shutdown 先等它们收尾再关库，否则同步会对着已关闭的 *sql.DB 写。

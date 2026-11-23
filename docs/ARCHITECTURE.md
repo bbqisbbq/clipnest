@@ -45,7 +45,9 @@ internal/clip/           业务层：条目、捕获、片段、同步、绑定 
 | `entry_title.go` | 标题：从正文第一个 `# 一级标题` 派生 + `normalizeTitle`（手写锁定 / 自动跟随 / 清空退回）。规则都在这里，别在 UI 里重算 |
 | `ocr.go` | 图片 OCR 引擎：Windows 自带 `Windows.Media.Ocr`，经 PowerShell `-EncodedCommand` 调用（脚本纯 ASCII）；外加识别结果的后处理（CJK 空格合并、协议头纠错） |
 | `ocr_worker.go` | OCR 队列与 worker（单个串行）+ 启动补扫 + 手动触发 `OcrEntry`。慢（约 0.5~1.2 秒/张），所以绝不挡采集 |
-| `entry_ocr.go` | OCR 的存储边：`SetEntryOCR`（写结果 + 重建搜索索引，**不动 updated_at**）、`EntryIDsNeedingOCR`、`OCRStats` || `syncpanel.go` | 设置页「设备包」面板的数据形状 |
+| `entry_ocr.go` | OCR 的存储边：`SetEntryOCR`（写结果 + 重建搜索索引，**不动 updated_at**）、`EntryIDsNeedingOCR`、`OCRStats` |
+| `ocr_engine.go` | 引擎选择：`system`（Windows 自带）↔ `ppocr`（PP-OCR），资源在 `<数据目录>/ocr/`；ppocr 不可用时**退回系统引擎**而不是罢工；`OcrEngineStatus` / `OpenOcrAssetsDir` 给设置页 |
+| `internal/ppocr/` | PP-OCRv5 + onnxruntime（**独立包，cgo 只出现在 `engine_cgo.go`**）。`engine_stub.go`（`!windows \|\| !cgo`）给同签名空实现 —— 没 cgo 也能编译。纯逻辑（CTC 解码 / 连通域成框 / 缩放裁剪）在 `ppocr.go`，能不加载模型直接测 || `syncpanel.go` | 设置页「设备包」面板的数据形状 |
 
 ### 同步（WebDAV 打包）
 
@@ -252,6 +254,9 @@ node --experimental-strip-types scratch/privacy-mask-check.mjs   # 隐私模式�
 $env:CLIPNEST_OCR_LIVE=1; go test ./internal/clip -run TestSystemOCRLive -v   # 真引擎 OCR 体检（要 Windows + 语言包）
 go run ./scratch/ocrdemo <数据目录> <png>   # OCR 全链路演示：入库 → 识别 → 搜索命中
 node --experimental-strip-types scratch/entry-menu-check.mjs   # 右键菜单条目规则（纯逻辑，9 项断言）
+go test ./internal/ppocr                                    # PP-OCR 纯逻辑（CTC/成框/缩放，不需要模型）
+$env:CLIPNEST_PPOCR_LIVE=1; $env:CLIPNEST_PPOCR_DIR=scratch\ppocr-assets\engine; go test ./internal/ppocr -run TestLiveRecognize -v   # 真引擎
+go run ./scratch/ocrcmp <数据目录> <png>                   # 两个引擎并排比（沙箱数据目录里放 ocr/ 资源即启用 ppocr）
 pwsh -File scripts\visual-check\check-css.ps1   # 样式回归截图（改 CSS 后跑）
 pwsh -STA -File scratch\e2e-capture-resize.ps1  # 记一笔浮层：拖动/拉伸/尺寸记忆（真鼠标事件）
 pwsh -File scratch\e2e-capture-transparency.ps1 # 记一笔浮层：圆角真透明 + 卡片半透明（按像素量；浅色主题要加 -Preset default-light -Backdrop '#1e6fd9'）

@@ -415,6 +415,13 @@ export interface Settings {
     "privacyInput": boolean;
 
     /**
+     * OcrEngine 选哪个 OCR 引擎：`system`（默认，Windows 自带，零依赖）或 `ppocr`
+     * （PP-OCRv5 + onnxruntime，要下载 42MB 资源，中文和小字的准确率明显更高）。
+     * 机器本地字段：算力是本机的，模型也是本机装的。
+     */
+    "ocrEngine": string;
+
+    /**
      * ThemeCustomCSS is user-authored CSS applied on top of the preset.
      */
     "themeCustomCss": string;

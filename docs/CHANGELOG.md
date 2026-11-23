@@ -36,6 +36,25 @@
   组件只管画与关。这样"哪条内容该有哪些操作"能跑断言，不用点鼠标。
 - 补：`scratch/entry-menu-check.mjs`（9 项断言：图片才有 OCR、识别过才显示复制识别文字、
   force 随状态、四个开关文案、删除在最后、分组结构、id 唯一）。
+- 新：**高精度 OCR 引擎（可选，默认关）**：设置 →「图片文字识别」可以在
+  `系统自带（Windows.Media.Ocr）` 与 `PP-OCRv5 + onnxruntime` 之间切换。
+  同一张深色界面截图实测（`scratch/ocrcmp`）：
+
+  | 原文 | 系统自带 | PP-OCR |
+  | --- | --- | --- |
+  | 坚果云WebDAV配置说明 | `坚 果 云 WebDAV 配 置 说 明` | `坚果云WebDAV配置说明` |
+  | https://dav.jianguoyun.com/dav/ | `https.//dav.jianguoyun com/dav/` | `https://dav.jianguoyun.com/dav/` |
+  | 用户名…已保存在本机 | `厍 户 名…已 保 存 在 朩 机` | `用户名…已保存在本机` |
+  | 2026-11-23 14:31 | `2026 一 11 一 23 1431` | `2026-11-23 14:31` |
+
+  速度：冷 892ms / 热 **295ms**（模型常驻）；系统引擎 482ms（含每次起 PowerShell 进程）。
+- 设计：PP-OCR 走**独立包** `internal/ppocr`，cgo 只出现在 `engine_cgo.go`，
+  `engine_stub.go`（`!windows || !cgo`）提供同签名的降级实现 —— 没装 gcc 的机器照样能编译，
+  高精度引擎用不了就自动退回系统引擎，不会让整个应用起不来。
+- 资源随用随装：安装包不带那 42MB（onnxruntime.dll 21.6MB + det 4.6MB + rec 15.8MB + 字典），
+  放一键下载之前，先在设置里点「打开资源目录」把四个文件放进去，点「重新检查」即用。
+- 补：`internal/ppocr/ppocr_test.go`（CTC 解码 5 例、连通域成框、噪点丢弃、缩放/裁剪边界、字典末尾空格）
+  + `ppocr_live_test.go`（`CLIPNEST_PPOCR_LIVE=1` 才跑真引擎，断言"坚果云"没被塞空格）。
 
 ## 2.9.4（2026-11-23）
 

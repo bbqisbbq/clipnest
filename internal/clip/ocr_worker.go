@@ -135,7 +135,8 @@ func (s *ClipService) runOCRForEntry(id string, force bool) (string, error) {
 		return "", err
 	}
 
-	text, err := runSystemOCR(png)
+	// 引擎由设置决定：默认系统自带，用户可以在设置里切到 PP-OCR（见 ocr_engine.go）
+	text, err := s.runOCR(png)
 	if err != nil {
 		state := OcrStateFailed
 		if !ocrAvailable() {

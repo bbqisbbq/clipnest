@@ -325,6 +325,20 @@ function settingsPane() {
         </div>
       </section>
       <section class="card">
+        <div class="card-head"><h3>图片文字识别</h3><p>把截图里的文字认出来，直接进搜索索引 —— 复制一张截图后，用图里的词就能搜到它。</p></div>
+        <div class="card-body">
+          ${field("识别引擎", `<select class="input is-select"><option>系统自带（无需下载）</option></select>`)}
+          <div class="field is-stacked"><div class="field-label"><span>PP-OCR 资源</span></div><div class="field-control">
+            <div class="ocr-assets">
+              <span class="ocr-status is-bad">资源还没下载（E:\...\ClipNest\ocr）</span>
+              <button class="btn btn-ghost">打开资源目录</button>
+              <button class="btn btn-ghost">重新检查</button>
+            </div>
+          </div></div>
+          ${field("识别是本地进行的", `<span class="muted">全部在本机完成</span>`)}
+        </div>
+      </section>
+      <section class="card">
         <div class="card-head"><h3>交互</h3><p>快捷键与光标处弹窗。</p></div>
         <div class="card-body">
           ${field("快速粘贴", `<button class="btn btn-ghost hotkey-box">Ctrl+Shift+V</button>`)}

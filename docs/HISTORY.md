@@ -179,14 +179,27 @@
   要在脚本里把 `[Console]::OutputEncoding` 设成 UTF-8。
 - **中文空格合并别用 `\s`**：系统 OCR 会给每个汉字之间塞空格（`坚 果 云`），要合并；但
   `\s` 包含换行，会把两行中文粘成一行（测试 `TestNormalizeOCRText` 抓到的）。
-- **CSS 变量名先查再写**：我给右键菜单写了 `background: var(--surface-1)`，而这个主题只有
-  `--surface` / `--surface-2` / `--surface-3` —— 变量不存在不会报错，只会**背景透明**，
-  菜单浮在卡片正文上糊成一片（标本页截图一眼看出来）。凡是新写 `var(--x)`，先在 `base.css` 里确认它存在。
+- **onnxruntime 的环境是进程级单例**：`InitializeEnvironment()` 只能成功一次，再调就报
+  `The onnxruntime has already been initialized`。踩法很阴：设置页做"引擎可用吗"的状态检查时
+  先初始化了环境，真正识别时第二次初始化失败 —— 而代码里是"PP-OCR 失败就退回系统引擎"，
+  于是**看起来一切正常，实际一直在用低精度引擎**（`scratch/ocrcmp` 里两个引擎输出一模一样才发现）。
+  现在用包级 `sync.Once` 兜住。
+- **DB 后处理里的 unclip 别按最长边乘比例**：`grow = max(w,h)*(ratio-1)/2` 会把一条 600×20 的文字行
+  撑成 200 高，切出来全是背景，识别模型当然什么都读不出（表现为"框巨大、结果空"）。
+  PaddleOCR 的算式是按 `面积×ratio/周长` 推一个**统一**外扩距离。
+- **可选功能别绑死编译链**：PP-OCR 需要 cgo。把它做成独立包 `internal/ppocr`，真实现放
+  `engine_cgo.go`（`windows && cgo`），`engine_stub.go`（`!windows || !cgo`）给同签名空实现 ——
+  没有 gcc 的机器仍能编译、能用系统引擎。这比"在 clip 包里加 cgo 依赖"稳得多。
+- **大文件下载在这台机器上要靠镜像**：GitHub Release / NuGet CDN 走代理都反复截断
+  （`schannel: server closed abruptly`），onnxruntime 的 win-x64 DLL 最后是从
+  **清华 PyPI 镜像**下 `onnxruntime-1.32.0-cp311-cp311-win_amd64.whl` 解出来的（`pip download -i https://pypi.tuna.tsinghua.edu.cn/simple`）。
+  下次再要这类二进制，先试镜像。
 - **能抽成纯函数的规则就别留在组件里**：右键菜单"哪条内容该有哪些操作"（图片才有 OCR、
   识别过才显示复制识别文字、删除永远在最后）放在组件里就只能靠手点验证；抽成
   `lib/entryMenu.ts` 之后 `scratch/entry-menu-check.mjs` 一条条断言，回归时不用动鼠标。
 - **写派生数据不能碰 `updated_at`**：OCR 结果属于派生数据，而 `updated_at` 是"内容变过"的等价物
-  （同步指纹、时间线排序、冲突仲裁都靠它）。改它会让开机后的批量识别看起来像"所有图片刚被编辑"。- **两三个字的检索词要照顾到**：`entries_fts` 是 trigram 分词，**少于 3 个字用不了 MATCH**，
+  （同步指纹、时间线排序、冲突仲裁都靠它）。改它会让开机后的批量识别看起来像"所有图片刚被编辑"。
+- **两三个字的检索词要照顾到**：`entries_fts` 是 trigram 分词，**少于 3 个字用不了 MATCH**，
   `EntryQuery` 因此对短词退回 `LIKE`。加了 `ocr_text` 列之后，那个 LIKE 分支必须把它一起带上，
   否则"搜图片里的两字词"永远搜不到。
 

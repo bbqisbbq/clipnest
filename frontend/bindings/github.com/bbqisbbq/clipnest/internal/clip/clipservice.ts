@@ -340,6 +340,20 @@ export function Match(buf: string): $CancellablePromise<[expand$0.Trigger, numbe
 }
 
 /**
+ * OcrAssetsDir 返回本机放 OCR 资源（onnxruntime.dll + 模型）的目录：数据目录下的 ocr/。
+ */
+export function OcrAssetsDir(): $CancellablePromise<string> {
+    return $Call.ByID(1162650989);
+}
+
+/**
+ * OcrEngineStatus 给设置页用的状态：当前选了哪个、PP-OCR 能不能用、为什么不能用。
+ */
+export function OcrEngineStatus(): $CancellablePromise<[string, boolean, string]> {
+    return $Call.ByID(4101261419);
+}
+
+/**
  * OcrEntry 对单条条目跑一次 OCR（右键菜单/界面按钮用）。
  * 
  * force=false 时已有结果直接返回缓存；force=true 重跑。
@@ -360,6 +374,13 @@ export function OpenDataDir(): $CancellablePromise<void> {
  */
 export function OpenEntry(id: string): $CancellablePromise<void> {
     return $Call.ByID(1572321951, id);
+}
+
+/**
+ * OpenOcrAssetsDir 打开 OCR 资源目录（没有就建一个），方便把 42MB 资源放进去。
+ */
+export function OpenOcrAssetsDir(): $CancellablePromise<void> {
+    return $Call.ByID(1398537793);
 }
 
 /**

@@ -64,6 +64,10 @@ type Settings struct {
 	// 极淡（色调贴近背景）。这是**纯视觉**保护：不影响保存、不影响已保存的内容、
 	// 也不进同步包（机器本地字段，见 sync_merge.go 的 localSettingsFields）。
 	PrivacyInput bool `json:"privacyInput"`
+	// OcrEngine 选哪个 OCR 引擎：`system`（默认，Windows 自带，零依赖）或 `ppocr`
+	// （PP-OCRv5 + onnxruntime，要下载 42MB 资源，中文和小字的准确率明显更高）。
+	// 机器本地字段：算力是本机的，模型也是本机装的。
+	OcrEngine string `json:"ocrEngine"`
 	// ThemeCustomCSS is user-authored CSS applied on top of the preset.
 	ThemeCustomCSS string `json:"themeCustomCss"`
 	// EditorToolbar / ComposerToolbar 决定工具栏显示哪些按钮（Vditor 的 item 名）。
@@ -133,6 +137,7 @@ func DefaultSettings() Settings {
 		ThemePreset:      "default-dark",
 		ThemeCustomCSS:   "",
 		UpdateCheck:      true,
+		OcrEngine:        OcrEngineSystem,
 	}
 }
 
@@ -157,6 +162,13 @@ func (st *Settings) normalize() {
 		st.CaptureTransparency = 0
 	case st.CaptureTransparency > MaxCaptureTransparency:
 		st.CaptureTransparency = MaxCaptureTransparency
+	}
+	switch st.OcrEngine {
+	case "", OcrEngineSystem:
+		st.OcrEngine = OcrEngineSystem
+	case OcrEnginePPOCR:
+	default:
+		st.OcrEngine = OcrEngineSystem // 认不出来的值一律退回默认，别让引擎选择卡住整个识别
 	}
 	switch {
 	case st.SyncIntervalMin < 0:

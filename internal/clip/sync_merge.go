@@ -35,6 +35,8 @@ var localSettingsFields = []localField{
 	// 隐私模式是"这台机器旁边有没有人看"的问题，跟另一台机器的习惯无关：
 	// 家里没人看、公司有人看，同步过去只会让人措手不及。
 	{func(s *Settings) { s.PrivacyInput = false }, func(d, src *Settings) { d.PrivacyInput = src.PrivacyInput }},
+	// OCR 引擎是"这台机器上装了什么"的问题（42MB 资源、本机算力），跟对端的偏好无关。
+	{func(s *Settings) { s.OcrEngine = "" }, func(d, src *Settings) { d.OcrEngine = src.OcrEngine }},
 	// 默认打开哪个筛选器指向的是本机的筛选器 id（筛选器不跨端同步），
 	// 所以它只在本机有意义，对端带来的值必须丢掉。
 	{func(s *Settings) { s.DefaultFilterID = "" }, func(d, src *Settings) { d.DefaultFilterID = src.DefaultFilterID }},
