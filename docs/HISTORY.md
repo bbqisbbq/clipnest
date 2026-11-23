@@ -179,6 +179,21 @@
   要在脚本里把 `[Console]::OutputEncoding` 设成 UTF-8。
 - **中文空格合并别用 `\s`**：系统 OCR 会给每个汉字之间塞空格（`坚 果 云`），要合并；但
   `\s` 包含换行，会把两行中文粘成一行（测试 `TestNormalizeOCRText` 抓到的）。
+- **新事件要在 `main.go` 里 `application.RegisterEvent[T]("名字")`**，否则 TS 生成器不会产出
+  `EventNames.Xxx` 常量（而且运行时前端也收不到、Wails 每条 emit 都记一次 "event not registered"）。
+  只写 `s.emit("ocr:progress", …)` 是够后端用的，但对前端等于没这事件。
+- **`flex` 容器里的 `width: 100%` 不等于"占满一行"**：OCR 那行塞了状态徽章 + 三个按钮 + 一行进度，
+  结果是整块被压成 145px 宽、按钮在里面竖着排。改成"外层 column 容器 + `flex: 1 1 100%`"才对；
+  同时 `.field.is-stacked .field-control` 要允许 `flex-wrap`。判断依据别靠肉眼猜 ——
+  headless Chrome 里读一次 `getBoundingClientRect()` + `getComputedStyle().display` 就知道是谁在压缩。
+- **PowerShell 的 `.Replace()` 静默失败会浪费一整轮**：改 CSS/JSX 时用 `-Raw` 读到的是 `.Replace` 匹配不上的换行/引号，
+  替换没生效却不报错（我因此以为 `flex-wrap` 加上了，实际没加）。**改文件一律用 edit 工具**，别用字符串替换。
+- **`CGO_ENABLED=0` 会把 cgo 功能连代码带字符串一起删掉**：Taskfile 的打包任务默认
+  `CGO_ENABLED=0`，于是 `internal/ppocr` 走的 stub；更坑的是编译器能证明 `CompiledIn()` 恒为
+  false，把后面的 `fetchOCRZip`（含资源 URL、"校验失败"文案）整段当死代码删了 ——
+  现象是包里连 `ocr-assets-v1` 都搜不到，只有 mutex 那句"已经在下载了"还在。
+  **发布打包必须 `$env:CGO_ENABLED=1`**；自查办法：在 `bin\clipnest.exe` 里搜
+  `releases/download/ocr-assets-v1`。
 - **onnxruntime 的环境是进程级单例**：`InitializeEnvironment()` 只能成功一次，再调就报
   `The onnxruntime has already been initialized`。踩法很阴：设置页做"引擎可用吗"的状态检查时
   先初始化了环境，真正识别时第二次初始化失败 —— 而代码里是"PP-OCR 失败就退回系统引擎"，

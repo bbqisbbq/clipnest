@@ -23,6 +23,7 @@ export type {
     FilterCondition,
     FilterFieldSpec,
     FilterGroup,
+    OCRProgress,
     Settings,
     Snippet,
     SnippetFields,

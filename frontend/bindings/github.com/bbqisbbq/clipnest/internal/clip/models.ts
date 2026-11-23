@@ -313,6 +313,27 @@ export enum Kind {
 };
 
 /**
+ * OCRProgress 是 `ocr:progress` 事件的数据（设置页拿它画进度）。
+ */
+export interface OCRProgress {
+    /**
+     * Stage: download | extract | done
+     */
+    "stage": string;
+
+    /**
+     * Received / Total 是字节数（extract 阶段用 已解压文件数/总数）
+     */
+    "received": number;
+    "total": number;
+
+    /**
+     * Text 给界面直接显示的一句话
+     */
+    "text": string;
+}
+
+/**
  * Settings controls capture behaviour and the UI. It is persisted as JSON next
  * to the item log.
  */

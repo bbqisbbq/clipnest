@@ -79,6 +79,9 @@
 
 .field.is-stacked .field-control {
   justify-content: flex-start;
+  /* 堆叠行里的内容本来就可能有多行（OCR 的状态 + 进度文字 + 三四个按钮）：
+     不换行的话整块会被 flex 压成一条窄缝，里面再换行就变成"竖排"了。 */
+  flex-wrap: wrap;
 }
 
 .field-label {
@@ -186,12 +189,33 @@ select.input.is-select {
   padding-right: 28px;
 }
 
-/* OCR 资源那一行：状态 + 两个按钮 */
+/* OCR 资源那一行：状态 + 按钮。允许换行 —— 按钮有三四个，窄窗口里挤不下 */
+.ocr-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  /* 占满一行且不参与压缩：否则这段会被父级的 flex 挤成窄条，按钮跟着竖着排 */
+  flex: 1 1 100%;
+  min-width: 0;
+}
 .ocr-assets {
   display: flex;
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
+}
+/* 下载进度/错误：说明文字，独占一行 */
+.ocr-progress,
+.ocr-error {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.ocr-progress {
+  color: var(--text-2);
+}
+.ocr-error {
+  color: var(--danger);
 }
 .ocr-status {
   font-size: 12px;
@@ -208,6 +232,17 @@ select.input.is-select {
 .ocr-status.is-bad {
   color: var(--danger);
   border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+}
+/* 下载进度与错误：跟状态徽章同一行下面，别把整行挤得跳来跳去 */
+.ocr-progress {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.ocr-error {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--danger);
 }
 
 .input.is-area {

@@ -233,6 +233,10 @@ wails3 task windows:package             # NSIS 全用户安装包（需要 NSIS�
 2. `wails3 task common:update:build-assets`（同步 `build/**/Info.plist`、`windows/info.json`、`wails_tools.nsh` 等资产）；
 3. `wails3 task windows:package` → `bin\clipnest-amd64-installer.exe`，改名成 `clipnest-<版本>-amd64-setup.exe`
    （**只发全用户安装包**，不带 per-user 版本）；
+   ⚠️ **打包必须带 `CGO_ENABLED=1`**（`$env:CGO_ENABLED=1; wails3 task windows:package`）：
+   Taskfile 里默认是 0，那样 `internal/ppocr` 编进来的是 stub —— 高精度 OCR 与它的下载按钮
+   在装好的版本里等于不存在（而且 Go 会把整段"下载/解压"代码当死代码删掉，连 URL 都搜不到，
+   可以 `Select-String` 二进制里有没有 `releases/download/ocr-assets-v1` 来自查）；
 4. **签名**：`go run ./scratch/signinstaller sign bin\clipnest-<版本>-amd64-setup.exe` → 同名 `.sig`，
    再 `go run ./scratch/signinstaller verify <安装包> <安装包>.sig` 确认"签名有效"。
    **.sig 必须和安装包一起上传**：漏了的话更新检查会明确拒绝（"发布缺少签名文件"），

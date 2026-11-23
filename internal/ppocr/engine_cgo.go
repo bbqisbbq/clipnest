@@ -6,11 +6,11 @@ package ppocr
 //
 // cgo 只出现在这个文件里 —— 没开 cgo 或不在 Windows 上时，engine_stub.go 提供
 // 同签名的降级实现，整个应用照常编译。
-
-/*
-#cgo LDFLAGS: -lstdc++
-*/
-import "C"
+//
+// 注意：**发布包必须用 CGO_ENABLED=1 构建**，否则编进来的是 stub、这个引擎等于不存在
+// （`go build` 默认是 1，但 Taskfile 里 default 是 0，打包时要显式给）。
+// onnxruntime 的 Go 绑定是纯 C API，不需要 libstdc++，所以不加额外 LDFLAGS ——
+// 一加就容易把 mingw 的 libstdc++-6.dll 变成运行期依赖，装机版会起不来。
 
 import (
 	"bytes"

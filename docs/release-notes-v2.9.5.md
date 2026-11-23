@@ -22,8 +22,8 @@
 - 两个字的关键词也搜得到（短词走 LIKE 分支，连带 `ocr_text`）
 
 默认用 **Windows 自带的 OCR 引擎**（零依赖、每张约 0.5 秒）。想要更高精度可以切到
-**PP-OCRv5 + onnxruntime**：设置 →「图片文字识别」→「打开资源目录」，把
-`onnxruntime.dll`、`det.onnx`、`rec.onnx`、`ppocr_keys.txt` 放进去，点「重新检查」。
+**PP-OCRv5 + onnxruntime**：设置 →「图片文字识别」→ 引擎选 PP-OCR → 点**「一键下载（25 MB）」**，
+下完自动解压、自动复查状态即可用（也可以自己把四个文件放进资源目录再点「重新检查」）。
 
 同一张深色界面截图实测：
 

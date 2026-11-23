@@ -329,10 +329,14 @@ function settingsPane() {
         <div class="card-body">
           ${field("识别引擎", `<select class="input is-select"><option>系统自带（无需下载）</option></select>`)}
           <div class="field is-stacked"><div class="field-label"><span>PP-OCR 资源</span></div><div class="field-control">
-            <div class="ocr-assets">
-              <span class="ocr-status is-bad">资源还没下载（E:\...\ClipNest\ocr）</span>
-              <button class="btn btn-ghost">打开资源目录</button>
-              <button class="btn btn-ghost">重新检查</button>
+            <div class="ocr-stack">
+              <div class="ocr-assets">
+                <span class="ocr-status is-bad">资源还没下载</span>
+                <button class="btn btn-primary">一键下载（25 MB）</button>
+                <button class="btn btn-ghost">打开资源目录</button>
+                <button class="btn btn-ghost">重新检查</button>
+              </div>
+              <p class="ocr-progress">正在下载… 46%（12.1 MB / 25.3 MB）</p>
             </div>
           </div></div>
           ${field("识别是本地进行的", `<span class="muted">全部在本机完成</span>`)}

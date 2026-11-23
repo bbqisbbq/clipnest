@@ -52,7 +52,10 @@
   `engine_stub.go`（`!windows || !cgo`）提供同签名的降级实现 —— 没装 gcc 的机器照样能编译，
   高精度引擎用不了就自动退回系统引擎，不会让整个应用起不来。
 - 资源随用随装：安装包不带那 42MB（onnxruntime.dll 21.6MB + det 4.6MB + rec 15.8MB + 字典），
-  放一键下载之前，先在设置里点「打开资源目录」把四个文件放进去，点「重新检查」即用。
+  设置里**「一键下载（25 MB）」**：下到临时文件 → 校验大小与 SHA256 → 按白名单解压四个文件
+  （每个先写 `.tmp` 再 rename）→ 自动复查状态。进度走 `ocr:progress` 事件，界面显示百分比。
+  下载源是本仓库的 `ocr-assets-v1` **pre-release**（不会进 `/releases/latest`，不影响自动更新，实测 latest 仍是应用版本）。
+  仍然可以自己放文件到 `<数据目录>/ocr/` 再点「重新检查」。
 - 补：`internal/ppocr/ppocr_test.go`（CTC 解码 5 例、连通域成框、噪点丢弃、缩放/裁剪边界、字典末尾空格）
   + `ppocr_live_test.go`（`CLIPNEST_PPOCR_LIVE=1` 才跑真引擎，断言"坚果云"没被塞空格）。
 

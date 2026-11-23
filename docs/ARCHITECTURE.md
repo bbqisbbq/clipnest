@@ -47,6 +47,7 @@ internal/clip/           业务层：条目、捕获、片段、同步、绑定 
 | `ocr_worker.go` | OCR 队列与 worker（单个串行）+ 启动补扫 + 手动触发 `OcrEntry`。慢（约 0.5~1.2 秒/张），所以绝不挡采集 |
 | `entry_ocr.go` | OCR 的存储边：`SetEntryOCR`（写结果 + 重建搜索索引，**不动 updated_at**）、`EntryIDsNeedingOCR`、`OCRStats` |
 | `ocr_engine.go` | 引擎选择：`system`（Windows 自带）↔ `ppocr`（PP-OCR），资源在 `<数据目录>/ocr/`；ppocr 不可用时**退回系统引擎**而不是罢工；`OcrEngineStatus` / `OpenOcrAssetsDir` 给设置页 |
+| `ocr_assets.go` | PP-OCR 资源的一键下载：拉 `ocr-assets-v1`（pre-release，不影响自动更新）→ 校验大小+SHA256 → 白名单解压 4 个文件（`.tmp` + rename）→ 进度走 `ocr:progress` 事件。**换资源包必须同步改 `ocrAssetsSize` / `ocrAssetsSHA`** |
 | `internal/ppocr/` | PP-OCRv5 + onnxruntime（**独立包，cgo 只出现在 `engine_cgo.go`**）。`engine_stub.go`（`!windows \|\| !cgo`）给同签名空实现 —— 没 cgo 也能编译。纯逻辑（CTC 解码 / 连通域成框 / 缩放裁剪）在 `ppocr.go`，能不加载模型直接测 || `syncpanel.go` | 设置页「设备包」面板的数据形状 |
 
 ### 同步（WebDAV 打包）
@@ -257,6 +258,7 @@ node --experimental-strip-types scratch/entry-menu-check.mjs   # 右键菜单条
 go test ./internal/ppocr                                    # PP-OCR 纯逻辑（CTC/成框/缩放，不需要模型）
 $env:CLIPNEST_PPOCR_LIVE=1; $env:CLIPNEST_PPOCR_DIR=scratch\ppocr-assets\engine; go test ./internal/ppocr -run TestLiveRecognize -v   # 真引擎
 go run ./scratch/ocrcmp <数据目录> <png>                   # 两个引擎并排比（沙箱数据目录里放 ocr/ 资源即启用 ppocr）
+go run ./scratch/ocrdownload <数据目录>                    # 一键下载全链路（下载→校验→解压→引擎能起；要 HTTPS_PROXY）
 pwsh -File scripts\visual-check\check-css.ps1   # 样式回归截图（改 CSS 后跑）
 pwsh -STA -File scratch\e2e-capture-resize.ps1  # 记一笔浮层：拖动/拉伸/尺寸记忆（真鼠标事件）
 pwsh -File scratch\e2e-capture-transparency.ps1 # 记一笔浮层：圆角真透明 + 卡片半透明（按像素量；浅色主题要加 -Preset default-light -Backdrop '#1e6fd9'）

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/bbqisbbq/clipnest/internal/expand"
@@ -83,6 +84,8 @@ type ClipService struct {
 	ocrOnce  sync.Once
 	// PP-OCR 引擎（见 ocr_engine.go）：懒加载，模型只加载一次。
 	ocrPPOCR ocrEngineState
+	// 资源下载的互斥标记：同一次只允许一个下载在跑（见 ocr_assets.go）。
+	ocrDownloading atomic.Bool
 
 	// bg 收集所有后台循环，bgCtx 让正在跑的 HTTP 请求随退出一起取消。
 	// Shutdown 先等它们收尾再关库，否则同步会对着已关闭的 *sql.DB 写。

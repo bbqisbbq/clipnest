@@ -44,6 +44,11 @@ export const ClipStats = "clip:stats";
 export const ClipUpdated = "clip:updated";
 
 /**
+ * Name of the custom event "ocr:progress".
+ */
+export const OcrProgress = "ocr:progress";
+
+/**
  * Name of the custom event "picker:opened".
  */
 export const PickerOpened = "picker:opened";

@@ -37,6 +37,9 @@ const (
 // ErrUnavailable 表示这个构建里没有 PP-OCR（非 Windows 或没开 cgo）。
 var ErrUnavailable = errors.New("这个构建不支持高精度 OCR（需要 Windows + cgo）")
 
+// CompiledIn 报告这个构建是否带上了真引擎（界面与下载器据此决定要不要提供入口）。
+func CompiledIn() bool { return compiledIn() }
+
 // ErrAssetsMissing 表示引擎代码在，但模型/动态库文件不全。
 type ErrAssetsMissing struct {
 	Dir     string
@@ -49,7 +52,7 @@ func (e *ErrAssetsMissing) Error() string {
 
 // Ready 检查资源目录是否齐全；返回 nil 表示可以尝试初始化。
 func Ready(dir string) error {
-	if !compiledIn() {
+	if !CompiledIn() {
 		return ErrUnavailable
 	}
 	var missing []string

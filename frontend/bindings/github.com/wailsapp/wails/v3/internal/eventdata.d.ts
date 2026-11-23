@@ -19,6 +19,7 @@ declare module "@wailsio/runtime" {
             "clip:new": clip$0.Entry;
             "clip:stats": clip$0.Stats;
             "clip:updated": clip$0.Entry;
+            "ocr:progress": clip$0.OCRProgress;
             "picker:opened": string;
             "picker:paste-failed": string;
             "settings:changed": clip$0.Settings;

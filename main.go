@@ -47,6 +47,9 @@ func init() {
 	// Wails 还会为每次检查更新记一条 "event not registered" 警告。
 	application.RegisterEvent[string]("ui:navigate")
 	application.RegisterEvent[clip.UpdateInfo]("update:available")
+	// OCR 资源下载进度（设置页那行进度条靠它）。
+	// 不注册的话前端也收不到事件，Wails 还会为每次 emit 记一条 "event not registered" 警告。
+	application.RegisterEvent[clip.OCRProgress]("ocr:progress")
 }
 
 func main() {

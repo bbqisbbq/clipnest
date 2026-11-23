@@ -114,6 +114,13 @@ export function DemoteFromSnippet(id: string): $CancellablePromise<$models.Entry
 }
 
 /**
+ * DownloadOCRAssets 下载并安装 PP-OCR 资源，返回一句给界面显示的结果。
+ */
+export function DownloadOCRAssets(): $CancellablePromise<string> {
+    return $Call.ByID(2693997194);
+}
+
+/**
  * DownloadUpdate fetches the installer into a temp directory and returns its path.
  */
 export function DownloadUpdate(): $CancellablePromise<string> {

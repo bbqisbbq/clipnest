@@ -10,6 +10,7 @@ export type Stats = Models.Stats;
 export type AppInfo = Models.AppInfo;
 export type SyncStatus = Models.SyncStatus;
 export type UpdateInfo = Models.UpdateInfo;
+export type OCRProgress = Models.OCRProgress;
 export type SyncPanel = Models.SyncPanel;
 export type Entry = Models.Entry;
 export type EntryQuery = Models.EntryQuery;
