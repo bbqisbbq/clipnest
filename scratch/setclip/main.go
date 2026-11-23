@@ -18,11 +18,23 @@ import (
 
 func main() {
 	rtf := flag.String("rtf", "", "RTF document to place on the clipboard")
+	imagePath := flag.String("image", "", "PNG file to place on the clipboard")
 	customName := flag.String("custom", "", "name of a custom clipboard format")
 	payload := flag.String("payload", "", "hex payload for -custom")
 	flag.Parse()
 
 	switch {
+	case *imagePath != "":
+		data, err := os.ReadFile(*imagePath)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "image:", err)
+			os.Exit(1)
+		}
+		if err := clip.WriteImageToClipboard(data); err != nil {
+			fmt.Fprintln(os.Stderr, "image:", err)
+			os.Exit(1)
+		}
+		fmt.Printf("image %s placed on clipboard (%d bytes)\n", *imagePath, len(data))
 	case *rtf != "":
 		if err := clip.WriteRTFToClipboard(*rtf, ""); err != nil {
 			fmt.Fprintln(os.Stderr, "rtf:", err)
