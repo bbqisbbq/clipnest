@@ -1,0 +1,10 @@
+﻿--- 系统可用的 OCR 语言
+  en-US  (English (United States))
+  zh-Hans-CN  (中文(中华人民共和国))
+--- 图片 760 × 220
+
+=== en-US  冷启 22 ms / 稳态 13 ms  行数 System.Object[]
+WebDAV https://dav.jianguoyun.com/dav/ 447043705@qq.com ClipNest 120 5--3* • clipnest data/ Total items: 36 Last sync: 2026-11-23 14:31
+
+=== zh-Hans-CN  冷启 72 ms / 稳态 49 ms  行数 System.Object[]
+坚 果 云 WebDAV 配 置 说 明 服 务 器 地 址 https.//dav.jianguoyun com/dav/ 厍 户 名 447膶3705@qq com 应 用 密 码 已 保 存 在 朩 机 ClipNest 同 步 间 隔 120 分 钟 远 端 clipnest data/ TOtal items: 36 Last sync. 2026 一 11 一 23 1431
