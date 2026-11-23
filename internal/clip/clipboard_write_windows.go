@@ -145,6 +145,42 @@ func WriteFilesToClipboard(paths []string) error {
 	return setClipboardBytes(cfHDrop, payload)
 }
 
+// WriteRichToClipboard puts the same content on the clipboard in three shapes at
+// once: HTML (images inlined as data URIs), RTF (images embedded as \pict) and
+// plain text. Which one an app takes depends on what it supports:
+//
+//	浏览器 / Electron / 富文本框 → CF_HTML
+//	Word / WPS / Outlook / WordPad → RTF
+//	记事本 / 聊天框               → CF_UNICODETEXT
+//
+// 只有这样才能"图文一起过去"：单独放一张图，文字进不去；只放文字，图进不去。
+func WriteRichToClipboard(htmlFragment, rtf, plain string) error {
+	initFormats()
+	if formats.html == 0 {
+		return errors.New("当前系统没有可用的 HTML 剪贴板格式")
+	}
+	if err := openClipboard(); err != nil {
+		return err
+	}
+	defer closeClipboard()
+	if r, _, cerr := procEmptyClipboard.Call(); r == 0 {
+		return fmt.Errorf("EmptyClipboard: %v", cerr)
+	}
+	if htmlFragment != "" {
+		if err := setClipboardBytes(formats.html, buildHTMLPayload(htmlFragment)); err != nil {
+			return err
+		}
+	}
+	if rtf != "" && formats.rtf != 0 {
+		// RTF 写不进去（个别环境没有 riched 格式）不算失败：HTML/纯文本还在。
+		_ = setClipboardBytes(formats.rtf, []byte(rtf))
+	}
+	if plain == "" {
+		plain = stripTags(htmlFragment)
+	}
+	return setClipboardBytes(cfUnicodeText, utf16Bytes(plain))
+}
+
 // buildHDropPayload serialises a DROPFILES structure with wide strings.
 func buildHDropPayload(paths []string) []byte {
 	var buf bytes.Buffer

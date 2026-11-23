@@ -5,6 +5,7 @@ import { useSettingsTheme } from "./hooks/useTheme";
 import { useMinuteTick } from "./hooks/useClock";
 import { formatBytes, formatRelative } from "./lib/format";
 import { IconPin, IconSearch, IconTrash, IconFolder, kindIcon } from "./components/Icons";
+import { entryClipboardPayload } from "./lib/entryClipboard";
 
 // 片段在弹窗里的显示名与 Enter 行为（和后端 SnippetAction 对应）
 const SNIPPET_LABEL: Record<string, string> = {
@@ -149,10 +150,12 @@ export default function Picker() {
   const pick = useCallback(async (row: Row | undefined, paste: boolean) => {
     if (!row) return;
     try {
+      // 条目要先渲染成 HTML 再交给 Go：图文混排的条目只有这样图才能跟着一起过去
+      const payload = row.kind === "entry" ? entryClipboardPayload(row.entry.content) : null;
       const msg =
         row.kind === "snippet"
           ? await ClipService.PickSnippet(row.snippet.id, paste)
-          : await ClipService.PickEntry(row.entry.id, paste);
+          : await ClipService.PickEntry(row.entry.id, paste, payload?.html ?? "", payload?.plain ?? "");
       if (msg) setStatus(msg);
     } catch (err) {
       setStatus(`失败：${String(err)}`);

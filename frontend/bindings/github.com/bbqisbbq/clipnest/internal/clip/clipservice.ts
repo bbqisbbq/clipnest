@@ -56,10 +56,14 @@ export function CommandOutput(t: expand$0.Trigger): $CancellablePromise<string> 
 }
 
 /**
- * CopyEntry writes an entry back to the Windows clipboard.
+ * CopyEntry puts an entry on the clipboard.
+ * 
+ * html/plain 由前端给：HTML 是**卡片同一套渲染器（marked）**的产物，图片仍是
+ * `memoimg:` 令牌 —— 换成真字节交给 Go 做，因为字节在 Go 这边（entry_blobs）。
+ * 传空串时退回纯文本（图片令牌会被剥掉，不会把 `![](memoimg:…)` 丢给别人）。
  */
-export function CopyEntry(id: string): $CancellablePromise<void> {
-    return $Call.ByID(3479851616, id);
+export function CopyEntry(id: string, html: string, plain: string): $CancellablePromise<void> {
+    return $Call.ByID(3479851616, id, html, plain);
 }
 
 /**
@@ -359,8 +363,8 @@ export function PasteImage(t: expand$0.Trigger): $CancellablePromise<void> {
  * that was focused when the popup opened. It returns a short status string the
  * popup can show while it closes.
  */
-export function PickEntry(id: string, paste: boolean): $CancellablePromise<string> {
-    return $Call.ByID(2779856916, id, paste);
+export function PickEntry(id: string, paste: boolean, html: string, plain: string): $CancellablePromise<string> {
+    return $Call.ByID(2779856916, id, paste, html, plain);
 }
 
 /**

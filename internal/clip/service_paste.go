@@ -32,13 +32,21 @@ func (s *ClipService) GetImageData(id string) (string, error) {
 	return "data:" + mime + ";base64," + encodeBase64(payload), nil
 }
 
-// CopyEntry writes an entry back to the Windows clipboard.
-func (s *ClipService) CopyEntry(id string) error {
+// echoBlanketWindow 是"刚写完富文本剪贴板"之后一律丢弃采集回声的窗口。
+// WM_CLIPBOARDUPDATE 是毫秒级到达的，1.2 秒足够；再长就会把人紧接着的一次真实复制吞掉。
+const echoBlanketWindow = 1200 * time.Millisecond
+
+// CopyEntry puts an entry on the clipboard.
+//
+// html/plain 由前端给：HTML 是**卡片同一套渲染器（marked）**的产物，图片仍是
+// `memoimg:` 令牌 —— 换成真字节交给 Go 做，因为字节在 Go 这边（entry_blobs）。
+// 传空串时退回纯文本（图片令牌会被剥掉，不会把 `![](memoimg:…)` 丢给别人）。
+func (s *ClipService) CopyEntry(id, html, plain string) error {
 	e, ok := s.store.GetEntry(id)
 	if !ok {
 		return errors.New("条目不存在")
 	}
-	if err := s.writeEntryToClipboard(e); err != nil {
+	if err := s.writeEntryToClipboard(e, html, plain); err != nil {
 		return err
 	}
 	_ = s.store.BumpCopyCount(id)
@@ -53,7 +61,7 @@ func (s *ClipService) CopyEntry(id string) error {
 // 不能用 e.Hash：那是条目自己的内容哈希，两种口径算出来的值从来就不相等，
 // 于是手写/导入的备忘被复制回剪贴板时不会被认作"自己写的"，会多出一条
 // 来源显示 clipnest 的采集条目。
-func (s *ClipService) writeEntryToClipboard(e Entry) error {
+func (s *ClipService) writeEntryToClipboard(e Entry, htmlDoc, plain string) error {
 	s.mu.Lock()
 	s.suppressHash = entryEchoHash(e)
 	s.suppressAt = time.Now()
@@ -89,8 +97,43 @@ func (s *ClipService) writeEntryToClipboard(e Entry) error {
 		}
 		return WriteRawToClipboard(e.FormatID, e.FormatName, data)
 	default:
-		return WriteTextToClipboard(e.Content)
+		return s.writeBodyEntry(e, htmlDoc, plain)
 	}
+}
+
+// writeBodyEntry 回填"正文型"条目（文本 / 链接 / 手写备忘）。
+//
+// 正文里有图片（`memoimg:` 令牌）时必须**图文一起**交给目标程序，所以同时放三份
+// 表示：HTML（data URI）、RTF（\pict）、纯文本。只有纯文本一条路时，图片会以
+// `![](memoimg:ab12…)` 的形式裸奔到别人的聊天框里 —— 图丢了、还多一串垃圾。
+func (s *ClipService) writeBodyEntry(e Entry, htmlDoc, plain string) error {
+	tokens := memoTokensIn(e.Content)
+	if htmlDoc == "" || len(tokens) == 0 {
+		// 没有渲染结果或没有图：纯文本就够，但要保证令牌不泄露出去。
+		return WriteTextToClipboard(stripMemoTokens(e.Content))
+	}
+
+	pngs := make(map[string][]byte, len(tokens))
+	for _, token := range tokens {
+		if data, _, err := s.store.LoadEntryBlob(token); err == nil && len(data) > 0 {
+			pngs[token] = data
+		}
+	}
+	htmlFragment := embedMemoImages(htmlDoc, pngs)
+	if plain == "" {
+		plain = stripMemoTokens(e.Content)
+	}
+	// RTF 必须用**还带着 memoimg: 令牌**的那一版：\pict 要靠令牌去 pngs 里取字节，
+	// 而 embedMemoImages 之后 src 已经是 data URI 了（这里踩过一次：图片段落变成空行）。
+	rtf := htmlToRTF(htmlDoc, pngs)
+
+	// 写的是 HTML/RTF：采集侧读回来算的是 htmlHash/rtfHash，跟条目自己的口径对不上，
+	// 靠哈希抑制回声不可靠 —— 所以开一个短窗口，这段时间内一律丢弃回声。
+	s.mu.Lock()
+	s.suppressAllUntil = time.Now().Add(echoBlanketWindow)
+	s.mu.Unlock()
+
+	return WriteRichToClipboard(htmlFragment, rtf, plain)
 }
 
 // DeleteAll removes every non-pinned entry and reports how many went away.
@@ -178,7 +221,7 @@ func (s *ClipService) HidePicker() {
 // PickItem copies an entry and, when paste is true, pastes it into the window
 // that was focused when the popup opened. It returns a short status string the
 // popup can show while it closes.
-func (s *ClipService) PickEntry(id string, paste bool) (string, error) {
+func (s *ClipService) PickEntry(id string, paste bool, html, plain string) (string, error) {
 	e, ok := s.store.GetEntry(id)
 	if !ok {
 		return "", errors.New("条目不存在")
@@ -191,7 +234,7 @@ func (s *ClipService) PickEntry(id string, paste bool) (string, error) {
 	}
 
 	// 先放回剪贴板（保留格式），需要时再合成 Ctrl+V
-	if err := s.writeEntryToClipboard(e); err != nil {
+	if err := s.writeEntryToClipboard(e, html, plain); err != nil {
 		return "", err
 	}
 	if paste && s.store.Settings().PasteOnPick {

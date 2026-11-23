@@ -26,6 +26,7 @@ func WriteRTFToClipboard(string, string) error         { return ErrNotSupported 
 func WriteImageToClipboard([]byte) error               { return ErrNotSupported }
 func WriteFilesToClipboard([]string) error             { return ErrNotSupported }
 func WriteRawToClipboard(uint32, string, []byte) error { return ErrNotSupported }
+func WriteRichToClipboard(string, string, string) error { return ErrNotSupported }
 func foregroundAppName() string                        { return "" }
 func setAutoStart(bool, string) error                  { return ErrNotSupported }
 func autoStartEnabled() bool                           { return false }

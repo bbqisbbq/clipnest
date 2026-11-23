@@ -74,10 +74,18 @@ func (s *ClipService) handleClipboardChange() {
 	}
 
 	// Ignore the echo of our own copy-back.
+	//
+	// 两种抑制：① 精确哈希（写纯文本时成立）；② 一个很短的"一律丢弃"窗口 ——
+	// 写图文混排条目时放的是 HTML/RTF，采集侧读回来算的是 htmlHash/rtfHash，
+	// 跟条目自己的口径对不上，靠哈希拦不住；不拦就是"复制一次多一条采集记录"。
 	s.mu.Lock()
-	suppressed := cap.Hash == s.suppressHash && time.Since(s.suppressAt) < 4*time.Second
+	blanket := time.Now().Before(s.suppressAllUntil)
+	suppressed := blanket || (cap.Hash == s.suppressHash && time.Since(s.suppressAt) < 4*time.Second)
 	s.mu.Unlock()
 	if suppressed {
+		if blanket {
+			Logf(s.store.Dir(), "capture echo suppressed (rich copy-back window)")
+		}
 		return
 	}
 

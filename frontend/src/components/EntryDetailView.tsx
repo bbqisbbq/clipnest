@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import MarkdownSurface, { type MarkdownSurfaceHandle } from "./MarkdownSurface";
 import SnippetFields from "./SnippetFields";
 import PrivacyToggle from "./PrivacyToggle";
+import { entryClipboardPayload } from "../lib/entryClipboard";
 import { ClipService, type Entry } from "../lib/api";
 import { isDialogOpen, useChoose, useConfirm } from "./Dialog";
 import { SNIPPET_VARS } from "../lib/snippetTemplate";
@@ -318,7 +319,9 @@ export default function EntryDetailView(props: Props) {
                 onClick={() =>
                   void (async () => {
                     try {
-                      await ClipService.CopyEntry(entry.id);
+                      // 传渲染好的 HTML：图文混排的条目要靠它图文一起粘贴出去
+                      const payload = entryClipboardPayload(entry.content);
+                      await ClipService.CopyEntry(entry.id, payload.html, payload.plain);
                       props.onNotify("已复制到剪贴板");
                     } catch (err) {
                       props.onNotify(`复制失败：${String(err)}`);

@@ -59,6 +59,7 @@ internal/clip/           业务层：条目、捕获、片段、同步、绑定 
 
 | 文件 | 职责 |
 | --- | --- |
+| `clipboard_rich.go` | 图文混排回填的纯变换：`memoimg:` 令牌 → data URI、HTML → RTF（内嵌 `\pict`）、令牌剥离。不碰剪贴板 API，任何平台都能单测 |
 | `snippet.go` | 片段 ↔ 条目的适配层（`Snippet` 只是 `expand.Trigger` 的形状） |
 | `snippet_host.go` | 实现 `expand.Host`：缩写索引、匹配、渲染、执行 |
 | `snippet_actions.go` | 片段动作（粘贴/命令/启动程序/打开网址） |

@@ -72,8 +72,11 @@ type ClipService struct {
 	mu           sync.Mutex
 	suppressHash string
 	suppressAt   time.Time
-	stopCh       chan struct{}
-	stopped      bool
+	// suppressAllUntil 是程序化写剪贴板之后的短窗口：写 HTML/RTF（图文混排回填）时
+	// 哈希口径对不上，这段时间内的采集回声一律丢弃。见 service_capture.go。
+	suppressAllUntil time.Time
+	stopCh           chan struct{}
+	stopped          bool
 
 	// bg 收集所有后台循环，bgCtx 让正在跑的 HTTP 请求随退出一起取消。
 	// Shutdown 先等它们收尾再关库，否则同步会对着已关闭的 *sql.DB 写。
