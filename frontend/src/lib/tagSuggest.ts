@@ -86,8 +86,9 @@ export function applyTag(token: TagToken, tag: string, insert?: (text: string) =
   const text = `#${tag} `;
 
   if (insert) {
-    // 先删掉已经打出来的 `#prefix`（与 MarkdownSurface.wrap() 同一手法），
-    // 再让编辑器在光标处插入完整标签，末尾带一个空格好接着写。
+    // 先删掉已经打出来的 `#prefix`，再让编辑器在光标处插入完整标签（末尾带一个空格）。
+    // 与 MarkdownSurface.wrap()（工具条的粗体/斜体替换选区）完全同一条路径 ——
+    // 那条路每天在用，别再自己发明别的删改方式。
     try {
       document.execCommand("delete");
     } catch {

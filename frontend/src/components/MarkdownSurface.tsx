@@ -146,6 +146,15 @@ export function warmUpMarkdown(): Promise<void> {
   return warmPromise;
 }
 
+// 取编辑器里的 markdown（取不到就当空串：实例可能正在销毁）
+function safeValue(v: Vditor): string {
+  try {
+    return v.getValue();
+  } catch {
+    return "";
+  }
+}
+
 // ---- 组件 ----------------------------------------------------------------
 
 const MarkdownSurface = forwardRef<MarkdownSurfaceHandle, Props>(function MarkdownSurface(props, ref) {
@@ -171,6 +180,9 @@ const MarkdownSurface = forwardRef<MarkdownSurfaceHandle, Props>(function Markdo
   const tokenRef = useRef<TagToken | null>(null);
   const tagsCache = useRef<{ at: number; list: string[] }>({ at: 0, list: [] });
   const tagsInflight = useRef(false);
+  // 输入法正在组词（拼音/五笔还没上屏）：这时候的 Enter/空格/上下键都是给输入法的，
+  // 我们插一句话进去只会把候选确认打断；等 compositionend 之后再来联想。
+  const composingRef = useRef(false);
 
   // 排查用开关：localStorage["clipnest.debugTagSuggest"] = "1" 时把选区状态写进
   // clipnest.log（不默认开：每次输入都过一次桥太吵）。
@@ -183,6 +195,11 @@ const MarkdownSurface = forwardRef<MarkdownSurfaceHandle, Props>(function Markdo
   }, []);
 
   const refreshSuggest = useCallback(() => {
+    if (composingRef.current) {
+      tokenRef.current = null;
+      setSuggest(null);
+      return;
+    }
     const token = findTagToken();
     tokenRef.current = token;
     if (!token || !token.rect) {
@@ -210,7 +227,6 @@ const MarkdownSurface = forwardRef<MarkdownSurfaceHandle, Props>(function Markdo
     }
 
     const items = pickTags(tagsCache.current.list, token.prefix);
-    debugSuggest(`prefix=${JSON.stringify(token.prefix)} candidates=${items.length}`);
     // 只剩"已经打完整"的那一个时不再挡着输入
     if (items.length === 0) {
       setSuggest(null);
@@ -224,6 +240,7 @@ const MarkdownSurface = forwardRef<MarkdownSurfaceHandle, Props>(function Markdo
     const width = 224;
     const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
     const top = Math.min(rect.bottom + 6, window.innerHeight - 216);
+    debugSuggest(`prefix=${JSON.stringify(token.prefix)} n=${items.length} rect=${Math.round(rect.left)},${Math.round(rect.top)},${Math.round(rect.bottom)} vp=${window.innerWidth}x${window.innerHeight} at=${Math.round(left)},${Math.round(top)}`);
     setSuggest({ items, active: 0, left, top });
   }, [debugSuggest]);
   const refreshSuggestRef = useRef(refreshSuggest);
@@ -234,11 +251,48 @@ const MarkdownSurface = forwardRef<MarkdownSurfaceHandle, Props>(function Markdo
     tokenRef.current = null;
     setSuggest(null);
     if (!token) return;
-    // 走编辑器自己的插入入口（Vditor.insertValue），别直接改 DOM 文本节点：
-    // 那条路工具条也在用，插入后 IR 会按模型重排，getValue() 立刻能取到。
-    applyTag(token, tag, (text) => vditorRef.current?.insertValue(text));
-    refreshSuggestRef.current();
-  }, []);
+    const v = vditorRef.current;
+    if (!v) return;
+    // 先把焦点要回来：execCommand 只作用于"当前文档的焦点选区"。点候选时焦点哪怕被
+    // mousedown 的 preventDefault 挡着，也可能已经飘走 —— 那样 delete 会删错东西、
+    // insertValue 落空（实测把整个草稿清空了）。
+    try {
+      v.focus();
+    } catch {
+      /* 实例正在重建：下面那步会失败，下一次输入会自己修正 */
+    }
+    // 等一帧：focus() 之后浏览器才把选区真正还给编辑器
+    requestAnimationFrame(() => {
+      const before = safeValue(v);
+      try {
+        // 走编辑器自己的插入入口（Vditor.insertValue）：工具条的粗体/斜体也用它，
+        // 删选区 + 插入 = wrap() 的同一条路径，别再自己发明别的改法。
+        applyTag(token, tag, (text) => v.insertValue(text));
+      } catch (err) {
+        debugSuggest(`accept failed: ${String(err)}`);
+      }
+      let after = safeValue(v);
+      if (!after.includes(`#${tag}`)) {
+        // 兜底：DOM 那条路没把改动落进模型（IR 重排、焦点打架都可能），
+        // 就在 markdown 文本上直接换掉光标前最近的那一个 `#prefix`。
+        const idx = before.lastIndexOf(`#${token.prefix}`);
+        if (idx >= 0) {
+          const next = `${before.slice(0, idx)}#${tag} ${before.slice(idx + token.prefix.length + 1)}`;
+          v.setValue(next, true);
+          after = safeValue(v);
+          debugSuggest(`accept fallback setValue ok=${after.includes(`#${tag}`)}`);
+        } else {
+          debugSuggest(`accept fallback: token not found in value`);
+        }
+      }
+      debugSuggest(`accept tag=${tag} before=${JSON.stringify(before.slice(0, 40))} after=${JSON.stringify(after.slice(0, 40))}`);
+      // **必须手工同步一次外层状态**：Vditor 的 insertValue 走它自己的模型，不会派发
+      // 原生的 input 事件，而我们那条宿主上的 input 监听（草稿落库、脏标记全靠它）
+      // 是听 DOM 事件的 —— 漏了这一步，界面看着是 `#writing`，库里草稿却是空的。
+      onChangeRef.current(dehydrateImages(after).replace(/\r\n/g, "\n"));
+      refreshSuggestRef.current();
+    });
+  }, [debugSuggest]);
 
   // 回调放进 ref：Vditor 的选项只在初始化时读一次，不能让它们成为重渲染依赖
   const onChangeRef = useRef(props.onChange);
@@ -353,11 +407,24 @@ const MarkdownSurface = forwardRef<MarkdownSurfaceHandle, Props>(function Markdo
           // 每一次真实输入之后看一眼：光标是不是刚停在一个 `#后面
           refreshSuggestRef.current();
         };
+        const onCompositionStart = () => {
+          composingRef.current = true;
+          tokenRef.current = null;
+          setSuggest(null);
+        };
+        const onCompositionEnd = () => {
+          composingRef.current = false;
+          refreshSuggestRef.current();
+        };
         host.addEventListener("input", onDomInput, true);
         host.addEventListener("blur", onDomInput, true);
+        host.addEventListener("compositionstart", onCompositionStart, true);
+        host.addEventListener("compositionend", onCompositionEnd, true);
         cleanupDom = () => {
           host.removeEventListener("input", onDomInput, true);
           host.removeEventListener("blur", onDomInput, true);
+          host.removeEventListener("compositionstart", onCompositionStart, true);
+          host.removeEventListener("compositionend", onCompositionEnd, true);
         };
       } catch (err) {
         console.error("vditor init failed", err);
@@ -394,7 +461,12 @@ const MarkdownSurface = forwardRef<MarkdownSurfaceHandle, Props>(function Markdo
     const host = hostRef.current;
     if (!host) return;
     const onKeyDown = (ev: KeyboardEvent) => {
+      // 229 / isComposing：按键属于输入法组词，一律放行（否则中文候选没法用 Enter 确认）
+      if (ev.isComposing || ev.keyCode === 229) return;
       const cur = suggestRef.current;
+      if (ev.key === "Enter" || ev.key === "Tab" || ev.key === "Escape") {
+        debugSuggest(`keydown ${ev.key} open=${!!cur} n=${cur?.items.length ?? -1} token=${!!tokenRef.current}`);
+      }
       if (!cur || cur.items.length === 0) return;
       const move = (delta: number) => {
         const next = (cur.active + delta + cur.items.length) % cur.items.length;
@@ -431,17 +503,18 @@ const MarkdownSurface = forwardRef<MarkdownSurfaceHandle, Props>(function Markdo
     };
     host.addEventListener("keydown", onKeyDown, true);
     return () => host.removeEventListener("keydown", onKeyDown, true);
-  }, [acceptTag]);
+  }, [acceptTag, debugSuggest]);
 
-  // 用鼠标点到别处、或方向键移动光标时也要跟着走：只看 input 事件的话，
-  // 弹窗会停在原地直到下一次打字。
+  // 光标移动（点回来、方向键、输入后）都要重算一次：只看 input 事件的话，
+  // 「用鼠标点到一个已经写好的 #标签 后面」永远不会弹候选 —— 以前这里先判断
+  // "弹窗已开"才继续，等于把这条路径整个关掉了。
   useEffect(() => {
     const onSelection = () => {
-      if (!suggestRef.current) return;
       const host = hostRef.current;
       const sel = window.getSelection();
       if (!host || !sel?.anchorNode || !host.contains(sel.anchorNode)) {
-        setSuggest(null);
+        if (suggestRef.current) setSuggest(null);
+        tokenRef.current = null;
         return;
       }
       refreshSuggest();

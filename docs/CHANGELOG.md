@@ -52,7 +52,15 @@
   `↑↓` 选择、`Enter`/`Tab` 插入、`Esc` 关闭、鼠标点选；插入的是 `#标签 `，走
   `Vditor.insertValue` 这条模型入口（不是直接改 DOM），所以正文与标签列立刻一致。
   三个写字的地方（详情 / 记一条 / 热键记一笔）共用同一层 `MarkdownSurface`，一处实现三处生效。
-  排查开关：`localStorage["clipnest.debugTagSuggest"]="1"` 会把选区状态写进 `clipnest.log`。
+  - **中文输入法**：组词期间（`isComposing` / keyCode 229）一律放行，不拦 Enter/Space/方向键，
+    否则候选没法确认；组词结束（`compositionend`）后立刻按已上屏的文字联想。
+  - 鼠标点回一个**已经写好的** `#标签` 后面也会弹（`selectionchange` 以前先判断"弹窗已开"就返回，
+    等于把这条常见路径整个关掉了）。
+  - 点候选时先把焦点要回编辑器，再删令牌、`insertValue` 插入，并**手工同步一次外层 onChange**
+    —— `insertValue` 不派发原生 `input` 事件，漏了这一步界面显示对了、库里草稿却是空的。
+  - 外观：面板用 `--surface-3` + `--border-strong` + `--shadow-pop`（第一版误用了不存在的
+    `--surface-1`/`--line`，整条 background/border 声明失效 ⇒ 弹窗透明、与背后界面糊在一起）。
+  - 排查开关：`localStorage["clipnest.debugTagSuggest"]="1"` 会把选区/候选数写进 `clipnest.log`。
 - 修：**日历热度点不跟着内容变**。`Calendar` 只依赖 `[month, query]`，采集/保存/删除
   之后那个点不会动（侧栏角标、列表、待办都刷了，只有日历停在打开那一刻）。现在跟随
   `liveSignal` 重算。

@@ -81,10 +81,26 @@
   早期写法在 `.then` 里比较 `tokenRef.current !== token`，可每敲一个键都会生成新的 token
   对象，于是结果永远被当成过期丢掉 —— 弹窗一次都不出现。正确做法是**缓存下来后重新算一遍**
   （`refreshSuggestRef.current()`），让"当前光标"重新参与判断。
-- **离线调 GUI 别指望 SetCursorPos/SetForegroundWindow 或注入全局热键**：这台机器上实测
-  `SendKeys('^+n')` 不会触发应用注册的全局热键，点击也不改焦点（六张截图字节数完全一样 =
-  输入压根没进窗口），键还会落到前台窗口（那次是浏览器）。纯逻辑就写成可直接跑的脚本
-  （`scratch/tag-suggest-check.mjs`），只能在真实交互里验的部分，明确交给用户点一下。
+- **`insertValue` 不派发原生 `input` 事件**：我们的"内容变了"信号来源是宿主元素上的 DOM
+  `input` 冒泡（草稿落库、脏标记都挂在它上面）。用 `Vditor.insertValue` 插文本之后必须
+  **手工调一次 `onChange`**，否则界面看着对、库里草稿是空的（标签联想实测踩到）。
+- **点弹层时先把焦点要回编辑器**：`execCommand` 只作用于"当前文档的焦点选区"，点候选
+  （哪怕 mousedown 已 preventDefault）焦点也可能飘走 —— 那样 `delete` 会删错、`insertValue` 落空。
+- **输入法组词期间不许拦键**：`keydown` 里遇到 `ev.isComposing || ev.keyCode === 229`
+  一律放行，否则中文候选按 Enter 确认不了。组词结束（`compositionend`）再重新算联想。
+  同理，`selectionchange` 里别先判断"弹层是否已开"就 return —— 那样"用鼠标点回一个写好的
+  `#标签`"永远不会触发联想。
+- **CSS 变量名写错不是"回退成默认色"，是整条声明失效**：标签联想第一版用了不存在的
+  `--surface-1` / `--line` / `--text-1`，于是 `background` / `border` 整条被丢弃，弹窗变成透明、
+  和背后界面糊在一起。改完样式先确认变量在 `base.css` 里真的有定义（`--surface` /
+  `--surface-2` / `--surface-3` / `--border` / `--border-strong` / `--text` / `--text-2` / `--text-3`）。
+- **离线回放 UI：注入本身有效，错的是"人同时在动"**。点击进输入框再打字、点候选、截图全都生效；
+  几次"输入没进窗口 / 字符少一个"都是因为有人在那个窗口上操作（用户自己删了一个字母，我当成了
+  代码 bug，白改了一轮）。两条规矩：① 回放前先说一句"别动那个窗口"；② 更稳的是走**确定性
+  路径**——把数据预先写进库（`scratch/setdraft` 写草稿、`seedtags` 造带标签的条目），启动后
+  只点两下，不需要打字也不受输入法影响。纯逻辑（识别/过滤/替换）另外用
+  `node --experimental-strip-types scratch/tag-suggest-check.mjs` 跑，完全不碰界面。
+
 - **两处都监听 window `keydown` 时 `stopPropagation` 没用**，同一节点上的其他监听照样执行；
   要么 `stopImmediatePropagation`，要么像 `Dialog` 那样导出一个 `isDialogOpen()` 让下层自己让位。
 - **`memo()` 比 props 时别把箭头函数算进去**：上层每次渲染都新建闭包，比进去等于白 memo；
