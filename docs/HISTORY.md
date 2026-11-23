@@ -108,6 +108,18 @@
   并归一化 `scope` → DROP → 补索引）；② 写路径上的错误不许静默丢，墓碑写不进去就让删除回滚。
   **单测全绿也抓不到这一类**：测试库每次都是新建的，schema 永远是最新的 —— 必须专门造一个
   老 schema 的库来跑（`store_migrate_test.go`）。
+- **侧栏角标和列表不能各写一套 SQL**：`EntryStats` 原来手写 `actions LIKE '%,clipboard,%'`
+  当"剪贴板"，而「剪贴板」筛选器走 `where()` 编译出来的 `action`；两边再各自演化一次，就出现
+  「我写的 3 + 剪贴板 2 ≠ 全部 6」。现在角标**直接复用 `BuiltinFilters()` 的 Query**，
+  数字与"点进去能看到的条数"由同一个编译器产出（`filter_stats_test.go` 钉死）。
+  教训：凡是"同一份语义算两遍"的地方，第二遍迟早会漂。
+- **界面上能改数据的写路径必须发事件**：侧栏角标只在收到 `clip:new/bumped/updated/deleted/
+  cleared/stats` 时才重取（`useAppData.refreshMeta`）。`SaveEntry` / `SetEntryPinned` /
+  `SetEntryArchived` / `SetTodoDone` 以前一个都不发，于是"手写几条、置顶、归档"之后数字
+  一直停在启动那一刻。新加写路径时顺手想一句"界面靠什么知道它变了"。
+- **`actions` 是能力位，不是来源**：快速粘贴窗（`Picker.tsx` 的 `action: "clipboard"`）只看这一列，
+  而它有历史欠账（老模型写进来的行是空的）。按"来源"筛内容要用 `source`，按"能不能出现在
+  粘贴窗"才用 `actions` —— 混着用就会出现"复制过却在窗口里找不到"。启动时有一次幂等回填。
 - **PROPFIND 的 props 要自己列**：只请求 `<resourcetype/>` 时坚果云只回 resourcetype，
   `getcontentlength` / `getlastmodified` 一概没有 —— 设备表于是永远是 `0 B` / `—`，
   而这两列正是排查"对方到底有没有上传"的关键。要 size/mtime/etag 就得写进请求体。

@@ -26,11 +26,16 @@ type EntryFilter struct {
 
 // BuiltinFilters are the default entry points. They are code, not rows, so a
 // fresh install always has a usable sidebar; user edits are stored as overrides.
+//
+// 「剪贴板」按**来源**（source）而不是 capabilities（actions）划分：它和「我写的」是一对
+// 互补的入口，两边加起来就是全部内容。原先按 `Action: clipboard`（"出现在快速粘贴列表"）
+// 筛，实测就出现了 我写的 3 + 剪贴板 2 ≠ 全部 6（actions 列在老数据上是空的）。
+// 顺带：`EntryStats` 直接复用这里的 Query，角标与列表因此不会再漂。
 func BuiltinFilters() []EntryFilter {
 	return []EntryFilter{
 		{ID: "all", Name: "全部内容", Icon: "all", Builtin: true, Query: EntryQuery{}},
-		{ID: "mine", Name: "我写的", Icon: "memo", Builtin: true, Query: EntryQuery{Source: "manual"}},
-		{ID: "clipboard", Name: "剪贴板", Icon: "pin", Builtin: true, Query: EntryQuery{Action: ActionClipboard}},
+		{ID: "mine", Name: "我写的", Icon: "memo", Builtin: true, Query: EntryQuery{Source: string(SourceManual)}},
+		{ID: "clipboard", Name: "剪贴板", Icon: "pin", Builtin: true, Query: EntryQuery{Source: string(SourceClipboard)}},
 		{ID: "snippets", Name: "片段", Icon: "snippet", Builtin: true, Query: EntryQuery{Snippets: true}},
 		{ID: "images", Name: "图片", Icon: "image", Builtin: true, Query: EntryQuery{Kind: string(KindImage)}},
 		{ID: "pinned", Name: "置顶", Icon: "star", Builtin: true, Deletable: true, Query: EntryQuery{Pinned: true}},
@@ -75,6 +80,12 @@ func (s *ClipService) SaveEntry(e Entry) (Entry, error) {
 	// 缩写在这次保存里被设置/改掉/清掉，都要重建内存里的触发器索引，
 	// 否则「设为片段」要重启才生效（见 refreshTriggers 的说明）。
 	s.refreshTriggers()
+	// **改完要让界面知道**：侧栏那几个数字（我写的 / 片段 / 置顶 / 已归档）全部靠
+	// 收到事件才重取（App.tsx 订阅 clip:new/bumped/updated/deleted/cleared/stats）。
+	// 以前这里的写路径一个事件都不发，于是"手写几条 / 置顶 / 归档"之后角标一直不动，
+	// 数字与实际条数长期对不上。
+	s.emit("clip:updated", saved)
+	s.emit("clip:stats", s.store.Stats())
 	return saved, nil
 }
 
@@ -107,7 +118,8 @@ func (s *ClipService) SetEntryPinned(id string, pinned bool) (Entry, error) {
 		return Entry{}, errors.New("条目不存在")
 	}
 	e.Pinned = pinned
-	return s.store.SaveEntry(e)
+	// 走服务层 SaveEntry：置顶/取消置顶会改「置顶」那个角标，必须发事件。
+	return s.SaveEntry(e)
 }
 
 // SetEntryArchived flips the archive flag (same reasoning as SetEntryPinned).
@@ -187,7 +199,14 @@ func (s *ClipService) GetTodos(q EntryQuery) []TodoRef { return s.store.ListTodo
 // SetTodoDone flips one task line inside an entry. The entry is re-read and
 // saved back whole, so tags / trigger / hash are never reset by a checkbox click.
 func (s *ClipService) SetTodoDone(entryID, key string, done bool) (Entry, error) {
-	return s.store.SetTodoDone(entryID, key, done)
+	e, err := s.store.SetTodoDone(entryID, key, done)
+	if err != nil {
+		return e, err
+	}
+	// 待办角标是"还差几件事"，勾选一件就得动。
+	s.emit("clip:updated", e)
+	s.emit("clip:stats", s.store.Stats())
+	return e, nil
 }
 
 // ---- 筛选器 API ----------------------------------------------------------

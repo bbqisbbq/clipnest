@@ -123,6 +123,7 @@ func Open(dir string) (*Store, error) {
 	logDirValue.Store(dir)
 
 	migrateTombstoneSchema(db)
+	backfillClipboardCapability(db)
 
 	dropLegacyTables(db)
 
@@ -499,6 +500,74 @@ func TrimLog(dir string, limit int64) {
 	}
 	keep := data[len(data)/2:]
 	_ = os.WriteFile(p, keep, 0o644)
+}
+
+// clipboardCapabilityBackfillKey marks the one-shot repair below as done.
+const clipboardCapabilityBackfillKey = "entries.clipboardCapabilityBackfill"
+
+// backfillClipboardCapability gives collected entries back their
+// "出现在快速粘贴列表" capability when the `actions` column lost it.
+//
+// 为什么要修：快速粘贴窗就是按 `action = clipboard` 取列表的（Picker.tsx），
+// 这些行在窗口里根本不出现——用户复制过的东西"在列表里找不到"。实测一台真机上有
+// 3 条 `source=clipboard` 却是空 actions 的条目（老模型写进去的行，或曾被整行回写覆盖）。
+// 一次性、幂等：规格统一用 actionSpec 重写（`,a,b,` 形式），不手工拼字符串。
+func backfillClipboardCapability(db *sql.DB) {
+	var done string
+	if err := db.QueryRow(`SELECT v FROM meta WHERE k = ?`, clipboardCapabilityBackfillKey).Scan(&done); err == nil && done != "" {
+		return
+	}
+	rows, err := db.Query(`SELECT id, actions FROM entries WHERE source = ?`, string(SourceClipboard))
+	if err != nil {
+		Logf("", "clipboard capability backfill: scan failed (will retry next start): %v", err)
+		return // 不写完成标记：下次启动再试
+	}
+	type fix struct{ id, spec string }
+	var list []fix
+	for rows.Next() {
+		var id, spec string
+		if rows.Scan(&id, &spec) != nil {
+			continue
+		}
+		acts := splitActionSpec(spec)
+		has := false
+		for _, a := range acts {
+			if a == ActionClipboard {
+				has = true
+				break
+			}
+		}
+		if !has {
+			list = append(list, fix{id, actionSpec(append(acts, ActionClipboard))})
+		}
+	}
+	rows.Close()
+
+	tx, err := db.Begin()
+	if err != nil {
+		Logf("", "clipboard capability backfill: begin failed: %v", err)
+		return
+	}
+	defer func() { _ = tx.Rollback() }()
+	for _, f := range list {
+		if _, err := tx.Exec(`UPDATE entries SET actions = ? WHERE id = ?`, f.spec, f.id); err != nil {
+			Logf("", "clipboard capability backfill: update %s failed: %v", f.id, err)
+			return
+		}
+	}
+	if _, err := tx.Exec(
+		`INSERT INTO meta (k, v) VALUES (?,?) ON CONFLICT(k) DO UPDATE SET v = excluded.v`,
+		clipboardCapabilityBackfillKey, "1"); err != nil {
+		Logf("", "clipboard capability backfill: meta write failed: %v", err)
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		Logf("", "clipboard capability backfill: commit failed: %v", err)
+		return
+	}
+	if len(list) > 0 {
+		Logf("", "restored clipboard capability on %d entries (they were missing from the quick-paste list)", len(list))
+	}
 }
 
 // migrateTombstoneSchema rebuilds the tombstones table when it still carries the

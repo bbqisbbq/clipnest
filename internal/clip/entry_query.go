@@ -241,19 +241,26 @@ type EntryStats struct {
 }
 
 // EntryStats counts entries per dimension.
+//
+// **数字必须与"点进去能看到的条数"一致**，所以这里不再手写 SQL，而是直接复用
+// BuiltinFilters() 里那些查询、走同一个 `where()` 编译器：筛选器改了，角标自动跟着改。
+//
+// 以前两边各写一套：角标用 `actions LIKE '%,clipboard,%'`（"有这个能力"），
+// 而「剪贴板」筛选器后来按 `action` 也是同一列，于是**老数据 actions 为空的行两边一起漏**，
+// 手写却带 clipboard 能力的行又被算进"剪贴板" —— 实测「我写的 3 + 剪贴板 2」凑不出「全部 6」。
 func (s *Store) EntryStats() EntryStats {
 	var st EntryStats
-	q := func(dst *int, sqlText string, args ...any) {
-		_ = s.db.QueryRow(sqlText, args...).Scan(dst)
+	byID := map[string]EntryQuery{}
+	for _, f := range BuiltinFilters() {
+		byID[f.ID] = f.Query
 	}
-	q(&st.Total, `SELECT COUNT(*) FROM entries WHERE archived = 0`)
-	q(&st.Manual, `SELECT COUNT(*) FROM entries WHERE archived = 0 AND source = 'manual'`)
-	q(&st.Clipboard, `SELECT COUNT(*) FROM entries WHERE archived = 0 AND actions LIKE '%,clipboard,%'`)
-	q(&st.Snippets, `SELECT COUNT(*) FROM entries WHERE archived = 0 AND trigger_key <> ''`)
-	q(&st.Pinned, `SELECT COUNT(*) FROM entries WHERE archived = 0 AND pinned = 1`)
-	q(&st.Archived, `SELECT COUNT(*) FROM entries WHERE archived = 1`)
-	start, end, _ := dayBounds(time.Now().Format("2006-01-02"))
-	q(&st.Today, `SELECT COUNT(*) FROM entries WHERE archived = 0 AND created_at >= ? AND created_at < ?`, start, end)
+	st.Total = s.CountEntriesMatching(byID["all"])
+	st.Manual = s.CountEntriesMatching(byID["mine"])
+	st.Clipboard = s.CountEntriesMatching(byID["clipboard"])
+	st.Snippets = s.CountEntriesMatching(byID["snippets"])
+	st.Pinned = s.CountEntriesMatching(byID["pinned"])
+	st.Archived = s.CountEntriesMatching(byID["archived"])
+	st.Today = s.CountEntriesMatching(EntryQuery{Day: time.Now().Format("2006-01-02")})
 
 	// 待办要按清单项数，只能扫正文（有任务行的条目通常极少，代价可接受）
 	rows, err := s.db.Query(`SELECT content FROM entries WHERE archived = 0 AND todo_state <> ''`)
