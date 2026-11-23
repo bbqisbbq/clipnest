@@ -17,6 +17,9 @@ import (
 // 本机包的组装（附件预算、墓碑并集）以及「内容没变就不上传」的指纹。
 // 不负责：怎么传输（sync_dav.go）、怎么合并条目（sync_run.go / sync_merge.go）。
 
+// metaSyncBlobDeferred 记着"上一轮因为预算没发出去的附件"，下一轮优先发（sync_blobplan.go）。
+const metaSyncBlobDeferred = "sync.blobDeferred"
+
 // manifestItem is the per-entry index record inside a package.
 type manifestItem struct {
 	Hash      string    `json:"hash"`
@@ -191,26 +194,22 @@ func parsePackage(data []byte) (*syncPackage, error) {
 // "本机已经没有"必须和"超预算"分开算：老实现把两者都折进 Truncated，等于把
 // **数据已经丢了**说成"下轮再传"——那张图就再也不会有人发现它回不来了。
 type blobStats struct {
-	sent    int
-	capped  int
-	missing int
+	sent     int
+	capped   int
+	missing  int
+	oversize int // 单件超过整个预算，永远发不出去（必须在结果行里说出来）
 }
 
-// buildOwnPackage renders what this machine knows: the newest syncMaxEntries
-// records, the blobs no peer has yet, our tombstones and (when newest) our settings.
+// buildOwnPackage renders everything this machine knows: every entry, the blobs no
+// peer has yet, our tombstones and (when newest) our settings.
 //
-// 注意这是"最近 N 条"而不是整份历史：条目再多也不会无限膨胀成一个几百 MB 的包。
-// `Tail: true` 不能漏——漏了拿到的是**最旧**的 N 条，最近复制的东西永远同步不出去。
-// 满额时记一行日志，免得用户看到"同步成功"却找不到三年前的条目。
+// 这里是**全量**：库里有的条目全进包。早期版本只带"最新 500 条"，后果是超过 500
+// 条之后更老的历史永远上不了云（家里那台机器上就永远找不到）。包大小改由三件事
+// 控制：条目记录 deflate 压缩、附件走 syncBlobBudget 预算（欠着的下一轮优先，见
+// sync_blobplan.go）、以及"内容没变就不重传"的指纹。
 func (s *ClipService) buildOwnPackage(peerHasBlob map[string]bool, peerTombstones []Tombstone, st Settings) ([]byte, string, blobStats, error) {
 	var stats blobStats
-	entries := s.store.ListEntries(EntryQuery{Limit: syncMaxEntries, Tail: true})
-	if len(entries) == syncMaxEntries {
-		if total := s.store.CountEntries(); total > len(entries) {
-			Logf(s.store.Dir(), "sync: package capped at %d newest entries (store holds %d; older ones stay local)",
-				syncMaxEntries, total)
-		}
-	}
+	entries := s.store.AllEntries()
 	idx := pkgIndex{
 		Version:   syncPackageVersion,
 		DeviceID:  st.SyncDeviceID,
@@ -220,13 +219,13 @@ func (s *ClipService) buildOwnPackage(peerHasBlob map[string]bool, peerTombstone
 	}
 	records := make([]entryRecord, 0, len(entries))
 	blobs := make(map[string][]byte, 8)
-	budget := syncBlobBudget
 
+	// 第一遍只挑附件、不读字节：96MB 预算下把候选全读进内存会翻倍峰值。
+	cands := make([]blobCandidate, 0, 8)
 	for _, e := range entries {
 		if e.Hash == "" {
 			continue
 		}
-		// 附件：图片靠正文里的 memoimg 令牌，私有格式靠采集哈希（见 entryBlobKey）。
 		key := entryBlobKey(e)
 		ext := entryBlobExt(e)
 		idx.Entries = append(idx.Entries, manifestItem{
@@ -247,25 +246,36 @@ func (s *ClipService) buildOwnPackage(peerHasBlob map[string]bool, peerTombstone
 		if key == "" || ext == "" || peerHasBlob["entry-"+e.Hash+ext] {
 			continue // no payload, or a peer already carries it
 		}
-		if budget <= 0 {
-			stats.capped++
-			idx.Truncated = true
-			continue
-		}
-		payload, _, err := s.store.LoadEntryBlob(key)
-		if err != nil || len(payload) == 0 {
+		size, ok := s.store.EntryBlobSize(key)
+		if !ok || size <= 0 {
 			stats.missing++
-			Logf(s.store.Dir(), "sync: blob for entry %s is gone locally (%v) — no peer can get it", e.Hash, err)
+			Logf(s.store.Dir(), "sync: blob for entry %s is gone locally — no peer can get it", e.Hash)
 			continue
 		}
-		if len(payload) > budget {
-			stats.capped++
-			idx.Truncated = true
+		cands = append(cands, blobCandidate{key: "entry-" + e.Hash + ext, blob: key, size: size})
+	}
+
+	// 第二遍：按预算真的去读。上一轮欠下的附件排在最前，否则同一批永远占满额度。
+	plan := planBlobUpload(cands, syncBlobBudget, deferredBlobKeys(s.store.Meta(metaSyncBlobDeferred)))
+	for _, c := range plan.chosen {
+		payload, _, err := s.store.LoadEntryBlob(c.blob)
+		if err != nil || len(payload) == 0 {
+			// 行还在、盘上的文件没了（storage=file 的附件被手动删掉）：这已经算数据丢失，
+			// 不能记成"下轮再传"。
+			stats.missing++
+			Logf(s.store.Dir(), "sync: blob %s unreadable (%v) — no peer can get it", c.key, err)
 			continue
 		}
-		blobs["entry-"+e.Hash+ext] = payload
+		blobs[c.key] = payload
 		stats.sent++
-		budget -= len(payload)
+	}
+	stats.capped = len(plan.deferred)
+	stats.oversize = plan.oversize
+	if stats.capped > 0 || stats.oversize > 0 {
+		idx.Truncated = true
+	}
+	if err := s.store.SetMeta(metaSyncBlobDeferred, encodeDeferredBlobs(plan.deferred)); err != nil {
+		Logf(s.store.Dir(), "sync: save deferred blobs failed: %v", err)
 	}
 
 	horizon := time.Now().AddDate(0, 0, -tombstoneRetentionDays)
@@ -288,6 +298,10 @@ func (s *ClipService) buildOwnPackage(peerHasBlob map[string]bool, peerTombstone
 	payload, err := buildPackage(idx, records, blobs)
 	if err != nil {
 		return nil, "", stats, err
+	}
+	if len(payload) > syncPackageWarnBytes {
+		Logf(s.store.Dir(), "sync: package is %d MiB (%d entries, %d blobs) — 服务器配额与 60 秒请求超时才是这里的瓶颈",
+			len(payload)>>20, len(records), len(blobs))
 	}
 	return payload, packageFingerprint(idx, blobNames), stats, nil
 }

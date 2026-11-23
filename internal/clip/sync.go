@@ -38,11 +38,15 @@ const (
 	syncHTTPTimeout = 60 * time.Second
 	// syncPackageVersion is bumped whenever the archive layout changes.
 	syncPackageVersion = 3
-	// syncMaxEntries caps how many entries one package carries (newest first).
-	// 超过这个数的老条目**不会**进包——不是"整份历史"，见 docs/SYNC.md。
-	syncMaxEntries = 500
+	// 包里是**全量**：库里有的条目都进包。早期版本只带"最新 500 条"，超过 500 条
+	// 之后更老的历史永远上不了云——那才是"家里电脑上找不到"的第二个原因。
+	// 现在包大小由压缩、附件预算（syncBlobBudget）、指纹跳过三件事兜着。
+	//
 	// syncBlobBudget caps payload bytes inside one package.
 	syncBlobBudget = 96 << 20
+	// syncPackageWarnBytes 只是日志阈值：包超过它就写一行，让人知道"再攒下去
+	// 会撞服务器配额 / 60 秒请求超时"，而不是等同步开始失败才发现。
+	syncPackageWarnBytes = 24 << 20
 	// syncPeerConcurrency is how many peer packages are fetched in parallel.
 	syncPeerConcurrency = 4
 	// tombstoneRetentionDays keeps deletion markers long enough for a machine

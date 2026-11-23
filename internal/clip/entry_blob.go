@@ -106,6 +106,22 @@ func (s *Store) LoadEntryBlob(hash string) ([]byte, string, error) {
 	return data, mime, nil
 }
 
+// EntryBlobSize reports the stored byte size without reading the payload.
+//
+// 组包时要先只按大小做预算（见 sync_blobplan.go）：96MB 的预算下，把候选附件
+// 全部读进内存再挑，峰值内存会翻倍。
+func (s *Store) EntryBlobSize(hash string) (int, bool) {
+	hash = strings.TrimPrefix(strings.TrimSpace(hash), memoImagePrefix)
+	if hash == "" {
+		return 0, false
+	}
+	var size int
+	if err := s.db.QueryRow(`SELECT size FROM entry_blobs WHERE hash = ?`, hash).Scan(&size); err != nil {
+		return 0, false
+	}
+	return size, true
+}
+
 // blobExtForKind is the file extension used for an entry's attachment.
 func blobExtForKind(k Kind) string {
 	if k == KindImage {

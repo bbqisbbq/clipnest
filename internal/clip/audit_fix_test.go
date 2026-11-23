@@ -62,11 +62,14 @@ func TestCustomFormatEmptyPayloadIsRejected(t *testing.T) {
 	}
 }
 
-// TestSyncPackageCarriesNewestEntries：包里必须是"最新的 N 条"。
-// 取最旧的那批会让最近复制的内容永远同步不出去。
-func TestSyncPackageCarriesNewestEntries(t *testing.T) {
+// TestSyncPackageCarriesEveryEntry：包里必须是**全量**，不是"最新 N 条"。
+//
+// 早期版本只带最新 500 条，于是库超过 500 条之后更老的历史永远上不了云（另一台
+// 机器上永远找不到）。这里故意造 620 条（越过老上限），最老那一条也必须在包里。
+func TestSyncPackageCarriesEveryEntry(t *testing.T) {
 	svc := newTestService(t, t.TempDir())
-	for i := 0; i < syncMaxEntries+10; i++ {
+	const total = 620
+	for i := 0; i < total; i++ {
 		if _, err := svc.store.SaveEntry(Entry{
 			Content: "entry-" + pad(i),
 			Source:  SourceManual,
@@ -83,23 +86,25 @@ func TestSyncPackageCarriesNewestEntries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parsePackage: %v", err)
 	}
-	if len(parsed.entries) != syncMaxEntries {
-		t.Fatalf("package holds %d entries, want %d", len(parsed.entries), syncMaxEntries)
+	if len(parsed.entries) != total {
+		t.Fatalf("package holds %d entries, want all %d", len(parsed.entries), total)
 	}
+	// 顺手留个量级参照：全量之后包到底多大，是这次改动的核心取舍。
+	t.Logf("%d 条纯文本条目的包 = %d KiB（deflate 后）", total, len(pkg)/1024)
 	var hasNewest, hasOldest bool
 	for _, e := range parsed.entries {
-		if e.Content == "entry-"+pad(syncMaxEntries+9) {
+		switch e.Content {
+		case "entry-" + pad(total - 1):
 			hasNewest = true
-		}
-		if e.Content == "entry-"+pad(0) {
+		case "entry-" + pad(0):
 			hasOldest = true
 		}
 	}
 	if !hasNewest {
 		t.Error("最新的条目不在包里")
 	}
-	if hasOldest {
-		t.Error("最旧的条目不该在包里（说明仍然取了最旧的 N 条）")
+	if !hasOldest {
+		t.Error("最旧的条目不在包里（说明包又被截断了）")
 	}
 }
 

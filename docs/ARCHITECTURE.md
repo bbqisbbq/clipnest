@@ -50,7 +50,8 @@ internal/clip/           业务层：条目、捕获、片段、同步、绑定 
 | --- | --- |
 | `sync.go` | 门面：远端布局说明、常量、`SyncStatus`、`SyncNow`/`TestSync`、定时循环 |
 | `sync_dav.go` | 传输层：URL/鉴权/`GET`/`PUT`/`MKCOL`/列包、设备 id 与包名 |
-| `sync_package.go` | 包格式：索引/记录结构、`buildPackage`/`parsePackage`、指纹 |
+| `sync_package.go` | 包格式：索引/记录结构、`buildPackage`/`parsePackage`、指纹、`buildOwnPackage`（全量条目 + 附件挑选入口） |
+| `sync_blobplan.go` | 纯函数：附件按预算挑选与挂账轮转（`planBlobUpload`）；96 MiB 预算在单测里造不出来，用几十字节测 |
 | `sync_run.go` | 一次同步的编排：列包 → 并行拉取 → 合并 → 采纳设置 → 上传 → 状态 |
 | `sync_merge.go` | 纯规则：可同步字段裁剪（`machineOnlyFields`）、墓碑合并 |
 

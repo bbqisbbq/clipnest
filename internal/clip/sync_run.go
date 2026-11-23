@@ -71,9 +71,10 @@ type syncRun struct {
 	peerItems      int
 
 	// push 阶段的附件统计（见 buildOwnPackage）
-	blobsSent    int
-	blobsCap     int
-	blobsMissing int
+	blobsSent     int
+	blobsCap      int
+	blobsMissing  int
+	blobsOversize int
 }
 
 func (s *ClipService) syncOnce(upload bool) (SyncStatus, error) {
@@ -381,6 +382,7 @@ func (r *syncRun) push(upload bool) (syncPushInfo, error) {
 		return info, err
 	}
 	r.blobsSent, r.blobsCap, r.blobsMissing = stats.sent, stats.capped, stats.missing
+	r.blobsOversize = stats.oversize
 	info.bytes = int64(len(payload))
 
 	target := syncDevicesDir + "/" + r.ownName
@@ -440,7 +442,10 @@ func (r *syncRun) report(info syncPushInfo, settingsPulled, settingsPushed bool)
 		result += fmt.Sprintf("，%d 个附件本机已丢失（对端也拿不到，建议重新采集）", r.blobsMissing)
 	}
 	if r.blobsCap > 0 {
-		result += fmt.Sprintf("，%d 个附件超出本轮预算未上传（下轮继续）", r.blobsCap)
+		result += fmt.Sprintf("，%d 个附件超出本轮预算未上传（下轮优先补发）", r.blobsCap)
+	}
+	if r.blobsOversize > 0 {
+		result += fmt.Sprintf("，%d 个附件单个就超过单包预算（%d MiB），永远发不出去", r.blobsOversize, syncBlobBudget>>20)
 	}
 	if r.siblingHint != "" {
 		result += "；" + r.siblingHint

@@ -72,6 +72,30 @@ func (s *Store) ListEntries(q EntryQuery) []Entry {
 	return out
 }
 
+// AllEntries returns every entry in the store, oldest first, with no page limit.
+//
+// ListEntries 有一条 500 的硬上限（那是对界面的保护：谁也不能一次拉一万张卡片）。
+// 但同步包要的是**全量**——用 ListEntries 组包等于把库截断，老条目永远上不了云。
+// 所以这里单独开一条不带 LIMIT 的读，只给同步用。
+func (s *Store) AllEntries() []Entry {
+	rows, err := s.db.Query(
+		`SELECT ` + entryColumns + ` FROM entries ORDER BY created_at ASC, updated_at ASC`)
+	if err != nil {
+		Logf(s.dir, "all entries failed: %v", err)
+		return nil
+	}
+	defer rows.Close()
+	out := make([]Entry, 0, 256)
+	for rows.Next() {
+		e, err := scanEntry(rows)
+		if err != nil {
+			return out
+		}
+		out = append(out, e)
+	}
+	return out
+}
+
 // where compiles the query into SQL predicates. Both the list and the calendar
 // use it, so a heat dot can never disagree with what clicking that day shows.
 func (q EntryQuery) where() ([]string, []any) {

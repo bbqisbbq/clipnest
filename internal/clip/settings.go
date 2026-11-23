@@ -120,7 +120,7 @@ func DefaultSettings() Settings {
 		SyncURL:          "",
 		SyncUser:         "",
 		SyncPass:         "",
-		SyncIntervalMin:  30,
+		SyncIntervalMin:  120,
 		SyncSettings:     true,
 		SnippetsInPicker: true,
 		ExpandEnabled:    false,
@@ -139,6 +139,12 @@ func DefaultSettings() Settings {
 // settings.json、对端同步包）超出物理范围。
 const MaxCaptureTransparency = 100
 
+// MaxSyncIntervalMin caps the auto-sync interval at one day (0 = 只在手动点击时同步).
+//
+// 包是全量的，所以间隔不再是"越小越好"：一台攒了几千条的机器每半小时推一遍整包
+// 纯属浪费配额。默认给 120 分钟，上限一天，够用也不至于让两台机器长期对不上。
+const MaxSyncIntervalMin = 1440
+
 // normalize clamps values that come from settings.json (user-editable) or from
 // the UI. Nothing downstream may assume a field arrived validated.
 func (st *Settings) normalize() {
@@ -147,6 +153,12 @@ func (st *Settings) normalize() {
 		st.CaptureTransparency = 0
 	case st.CaptureTransparency > MaxCaptureTransparency:
 		st.CaptureTransparency = MaxCaptureTransparency
+	}
+	switch {
+	case st.SyncIntervalMin < 0:
+		st.SyncIntervalMin = 0
+	case st.SyncIntervalMin > MaxSyncIntervalMin:
+		st.SyncIntervalMin = MaxSyncIntervalMin
 	}
 }
 
