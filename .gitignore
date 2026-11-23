@@ -62,3 +62,12 @@ scratch/tmp-profile-transparency/
 # 沙箱 APPDATA（各 e2e 脚本自己建，含 WebView2 缓存与真实条目）
 scratch/tmp-profile-*/
 
+
+# PP-OCR 引擎资产（onnxruntime.dll + 约 21MB 模型，本地下载，不入库）
+scratch/ppocr-assets/
+# 沙箱数据目录与截图
+scratch/appdata-*/
+scratch/ocr-shots/
+scratch/title-shots/
+scratch/e2e-tags-shots/
+scratch/privacy-shots*/

@@ -67,6 +67,15 @@ export function CopyEntry(id: string, html: string, plain: string): $Cancellable
 }
 
 /**
+ * CopyPlainText 把一段纯文本放进剪贴板（OCR 识别结果、右键菜单里的"复制"都用它）。
+ * 
+ * 同样要走回声抑制：不抑制的话"复制识别文字"会被自己的监听器当成新内容采集一条。
+ */
+export function CopyPlainText(text: string): $CancellablePromise<void> {
+    return $Call.ByID(2159740799, text);
+}
+
+/**
  * CountEntriesWith reports how many entries match q — 筛选器弹窗的实时预览。
  */
 export function CountEntriesWith(q: $models.EntryQuery): $CancellablePromise<number> {
@@ -331,6 +340,15 @@ export function Match(buf: string): $CancellablePromise<[expand$0.Trigger, numbe
 }
 
 /**
+ * OcrEntry 对单条条目跑一次 OCR（右键菜单/界面按钮用）。
+ * 
+ * force=false 时已有结果直接返回缓存；force=true 重跑。
+ */
+export function OcrEntry(id: string, force: boolean): $CancellablePromise<string> {
+    return $Call.ByID(1795028913, id, force);
+}
+
+/**
  * OpenDataDir reveals the data directory in Explorer.
  */
 export function OpenDataDir(): $CancellablePromise<void> {
@@ -359,7 +377,7 @@ export function PasteImage(t: expand$0.Trigger): $CancellablePromise<void> {
 }
 
 /**
- * PickItem copies an entry and, when paste is true, pastes it into the window
+ * PickEntry copies an entry and, when paste is true, pastes it into the window
  * that was focused when the popup opened. It returns a short status string the
  * popup can show while it closes.
  */

@@ -173,8 +173,10 @@ func (q EntryQuery) where() ([]string, []any) {
 			args = append(args, `"`+strings.ReplaceAll(text, `"`, `""`)+`"`)
 		} else {
 			like := "%" + escapeLike(text) + "%"
-			where = append(where, `(content LIKE ? ESCAPE '\' OR tags LIKE ? ESCAPE '\' OR title LIKE ? ESCAPE '\')`)
-			args = append(args, like, like, like)
+			// 少于 3 个字用不了 trigram（FTS5 的 trigram 分词至少 3 个字），退回 LIKE。
+			// ocr_text 也要一起扫：图片的识别文字同样该被两字词搜到。
+			where = append(where, `(content LIKE ? ESCAPE '\' OR tags LIKE ? ESCAPE '\' OR title LIKE ? ESCAPE '\' OR ocr_text LIKE ? ESCAPE '\')`)
+			args = append(args, like, like, like, like)
 		}
 	}
 	// 规则可能一个条件都没剩下（全被丢弃）：给个恒真条件，别拼出空 WHERE

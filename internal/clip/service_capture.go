@@ -134,6 +134,10 @@ func (s *ClipService) handleClipboardChange() {
 		s.emit("clip:bumped", *entry)
 	}
 	s.emit("clip:stats", s.store.Stats())
+	// 图片条目丢进 OCR 队列：识别慢（约 1 秒/张），绝不能挡在采集路径上。
+	if entry.Kind == KindImage {
+		s.enqueueOCR(entry.ID)
+	}
 }
 
 // The quick-capture popup: a one-box editor for a memo.

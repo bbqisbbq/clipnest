@@ -78,6 +78,10 @@ type ClipService struct {
 	stopCh           chan struct{}
 	stopped          bool
 
+	// OCR 队列（见 ocr_worker.go）：图片条目入队后由单个 worker 串行识别。
+	ocrQueue chan string
+	ocrOnce  sync.Once
+
 	// bg 收集所有后台循环，bgCtx 让正在跑的 HTTP 请求随退出一起取消。
 	// Shutdown 先等它们收尾再关库，否则同步会对着已关闭的 *sql.DB 写。
 	bg       sync.WaitGroup
@@ -145,6 +149,7 @@ func (s *ClipService) Start() error {
 	// 连带把同步、更新检查、缩写展开一起掐掉 —— 那会让程序"看起来正常但什么都不做"。
 	s.spawn(s.refreshFilesLoop)
 	s.spawn(s.syncLoop)
+	s.startOCRWorker()
 	s.restartUpdateCheck()
 	s.refreshTriggers()
 	s.applyExpander(s.store.Settings())

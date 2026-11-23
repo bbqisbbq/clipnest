@@ -97,8 +97,7 @@ export interface Entry {
     "expiresAt"?: string | null;
 
     /**
-     * 待办（从正文的 - [ ] 派生，见 todo.go）：
-     *   TodoState 落库（'' / open / done），收集页与筛选器按它过滤；
+     * 待办（从正文的 - [ ] 派生，见 todo.go）：	//   TodoState 落库（'' / open / done），收集页与筛选器按它过滤；
      *   TodoTotal / TodoOpen 只在内存里算，给卡片上的「2/5」用。
      * 派生数据不跨端传：mergeEntry 拿到远端条目后会本端重算。
      */
@@ -106,6 +105,13 @@ export interface Entry {
     "todoDoneAt"?: string | null;
     "todoTotal"?: number;
     "todoOpen"?: number;
+
+    /**
+     * 图片 OCR（见 ocr.go）：识别出来的文字 + 状态（pending/done/failed/
+     * unsupported/skipped）。文字同时进搜索索引，所以图片里的字也能搜到。
+     */
+    "ocrText"?: string;
+    "ocrState"?: string;
     "createdAt": string;
     "updatedAt": string;
 }

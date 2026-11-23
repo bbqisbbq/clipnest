@@ -86,14 +86,18 @@ type Entry struct {
 	// 生命周期：nil = 永久。现在所有条目都不自动过期（以保留为主）。
 	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
 
-	// 待办（从正文的 - [ ] 派生，见 todo.go）：
-	//   TodoState 落库（'' / open / done），收集页与筛选器按它过滤；
+	// 待办（从正文的 - [ ] 派生，见 todo.go）：	//   TodoState 落库（'' / open / done），收集页与筛选器按它过滤；
 	//   TodoTotal / TodoOpen 只在内存里算，给卡片上的「2/5」用。
 	// 派生数据不跨端传：mergeEntry 拿到远端条目后会本端重算。
 	TodoState  string     `json:"todoState,omitempty"`
 	TodoDoneAt *time.Time `json:"todoDoneAt,omitempty"`
 	TodoTotal  int        `json:"todoTotal,omitempty"`
 	TodoOpen   int        `json:"todoOpen,omitempty"`
+
+	// 图片 OCR（见 ocr.go）：识别出来的文字 + 状态（pending/done/failed/
+	// unsupported/skipped）。文字同时进搜索索引，所以图片里的字也能搜到。
+	OcrText  string `json:"ocrText,omitempty"`
+	OcrState string `json:"ocrState,omitempty"`
 
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`

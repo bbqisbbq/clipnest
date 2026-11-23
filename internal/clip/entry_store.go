@@ -63,7 +63,10 @@ CREATE TABLE IF NOT EXISTS entries (
   updated_at   TEXT NOT NULL,
   -- 待办派生列（见 todo.go）：正文里任务行的汇总状态，'' = 没有任务行
   todo_state    TEXT NOT NULL DEFAULT '',
-  todo_done_at  TEXT NOT NULL DEFAULT ''
+  todo_done_at  TEXT NOT NULL DEFAULT '',
+  -- 图片 OCR（见 ocr.go / ocr_worker.go）：识别出的文字进搜索索引，状态给界面用
+  ocr_text   TEXT NOT NULL DEFAULT '',
+  ocr_state  TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS idx_entries_created ON entries(created_at);
@@ -100,10 +103,11 @@ CREATE TABLE IF NOT EXISTS entry_filters (
 const entryColumns = `id, content, kind, source, title, title_source, tags, actions, pinned, archived,
 	hash, seen_count, copy_count, source_app, width, height, html, rtf, format_name, format_id, files,
 	trigger_key, case_sensitive, keep_trigger, apps, exclude_apps, group_name, use_count, snippet_kind,
-	expires_at, created_at, updated_at, todo_state, todo_done_at`
+	expires_at, created_at, updated_at, todo_state, todo_done_at,
+	ocr_text, ocr_state`
 
 // entryPlaceholders must stay in sync with entryColumns (INSERT 的 ? 个数)。
-const entryPlaceholders = `?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?`
+const entryPlaceholders = `?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?`
 
 func scanEntry(sc scannable) (Entry, error) {
 	var (
@@ -125,7 +129,8 @@ func scanEntry(sc scannable) (Entry, error) {
 		&e.HTML, &e.RTF, &e.FormatName, &formatID, &files,
 		&e.TriggerKey, &caseSensitive, &keepTrigger, &apps, &excludeApps, &e.GroupName, &e.UseCount,
 		&e.SnippetKind,
-		&expiresAt, &createdAt, &updatedAt, &todoState, &todoDoneAt)
+		&expiresAt, &createdAt, &updatedAt, &todoState, &todoDoneAt,
+		&e.OcrText, &e.OcrState)
 	if err != nil {
 		return Entry{}, err
 	}
@@ -243,7 +248,8 @@ func upsertEntry(db execer, e Entry) error {
 			keep_trigger=excluded.keep_trigger, apps=excluded.apps,
 			exclude_apps=excluded.exclude_apps, group_name=excluded.group_name,
 			expires_at=excluded.expires_at, updated_at=excluded.updated_at,
-			todo_state=excluded.todo_state, todo_done_at=excluded.todo_done_at`,
+			todo_state=excluded.todo_state, todo_done_at=excluded.todo_done_at,
+			ocr_text=excluded.ocr_text, ocr_state=excluded.ocr_state`,
 		e.ID, e.Content, string(e.Kind), string(e.Source), e.Title, e.TitleSource,
 		TagSpec(e.Tags), actionSpec(e.Actions), boolInt(e.Pinned), boolInt(e.Archived),
 		e.Hash, e.SeenCount, e.CopyCount, e.SourceApp, e.Width, e.Height,
@@ -252,6 +258,7 @@ func upsertEntry(db execer, e Entry) error {
 		joinList(e.Apps), joinList(e.ExcludeApps), e.GroupName, e.UseCount, e.SnippetKind,
 		encodeTimePtr(e.ExpiresAt), encodeTime(e.CreatedAt), encodeTime(e.UpdatedAt),
 		e.TodoState, encodeTimePtr(e.TodoDoneAt),
+		e.OcrText, e.OcrState,
 	)
 	return err
 }
@@ -274,8 +281,15 @@ func indexEntryTx(db execer, e Entry) error {
 	if t := strings.TrimSpace(e.Title); t != "" {
 		fields = strings.TrimSpace(fields + " " + t)
 	}
+	// OCR 文本并进被索引的 content 列：`entries_fts` 是虚拟表，
+	// `CREATE ... IF NOT EXISTS` 加不了列，为它重建索引表不值当 —— 检索只关心
+	// "命不命中"，不关心命中在正文还是识别文字里。
+	indexed := e.Content
+	if e.OcrText != "" {
+		indexed += "\n" + e.OcrText
+	}
 	_, err := db.Exec(`INSERT INTO entries_fts (id, content, tags) VALUES (?,?,?)`,
-		e.ID, e.Content, fields)
+		e.ID, indexed, fields)
 	return err
 }
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -218,7 +219,22 @@ func (s *ClipService) HidePicker() {
 	}
 }
 
-// PickItem copies an entry and, when paste is true, pastes it into the window
+// CopyPlainText 把一段纯文本放进剪贴板（OCR 识别结果、右键菜单里的"复制"都用它）。
+//
+// 同样要走回声抑制：不抑制的话"复制识别文字"会被自己的监听器当成新内容采集一条。
+func (s *ClipService) CopyPlainText(text string) error {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return errors.New("没有可复制的内容")
+	}
+	s.mu.Lock()
+	s.suppressHash = entryEchoHash(Entry{Content: text, Kind: KindText})
+	s.suppressAt = time.Now()
+	s.mu.Unlock()
+	return WriteTextToClipboard(text)
+}
+
+// PickEntry copies an entry and, when paste is true, pastes it into the window
 // that was focused when the popup opened. It returns a short status string the
 // popup can show while it closes.
 func (s *ClipService) PickEntry(id string, paste bool, html, plain string) (string, error) {
