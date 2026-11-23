@@ -265,3 +265,9 @@ export const IconEyeOff = (p: IconProps) =>
     </>,
     p,
   );
+
+/** 折叠/展开用的雪佛龙：V 形笔画，靠 CSS 旋转 180° 表示"收起"。
+    不要再用 ⌄ / ⌃ / ‹ / › 这类文本字形当箭头：它们来自回退字体，粗细与基线
+    跟正文不是一套（在 12px 下尤其明显：又小又偏下，看着像掉了个字符）。 */
+export const IconChevron = (p: IconProps) =>
+  svg(<path d="M6 9.5l6 6 6-6" />, p);

@@ -68,6 +68,9 @@
 }
 .todo-group-head {
   align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   margin: 4px 0 6px 4px;
   padding: 3px 6px;
   border: 0;
@@ -80,6 +83,17 @@
 .todo-group-head:hover {
   color: var(--accent);
   background: var(--accent-tint);
+}
+
+/* 「展开/收起已完成」前面那个 V：和卡片上的展开按钮用同一个图标，展开时翻上来。
+   以前这里一个箭头都没有，纯文字 —— 看不出它能点。 */
+.todo-group-icon {
+  flex: none;
+  transition: transform 0.16s ease;
+}
+
+.todo-group-head.is-open .todo-group-icon {
+  transform: rotate(180deg);
 }
 
 .todo-row {

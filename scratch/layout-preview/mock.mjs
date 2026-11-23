@@ -26,6 +26,9 @@ const css = readFileSync(join(distAssets, cssFile()), "utf8").replace(/url\(\/as
 const icon = (paths, size = 14, extra = "") =>
   `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" ${extra}>${paths}</svg>`;
 
+// 与 components/Icons.tsx 的 IconChevron 同一个路径（展开按钮 / 待办分组头 / 日历翻月）
+const CHEV = `<path d="M6 9.5l6 6 6-6"/>`;
+
 const ICONS = {
   all: `<rect x="3.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.6"/>`,
   memo: `<path d="M4 6.5h10.5L17.5 9v9.5H4z"/><path d="M14.5 2.5V6H18"/><path d="M7 11h7M7 14h5"/>`,
@@ -95,7 +98,7 @@ function calendar() {
     );
   }
   return `<div class="cal">
-  <div class="cal-head"><button class="cal-nav">‹</button><span class="cal-title">2026 年 11 月</span><button class="cal-nav">›</button></div>
+  <div class="cal-head"><button class="cal-nav cal-nav--prev">${icon(CHEV, 13)}</button><span class="cal-title">2026 年 11 月</span><button class="cal-nav cal-nav--next">${icon(CHEV, 13)}</button></div>
   <div class="cal-grid cal-weekdays"><span class="cal-weekday">一</span><span class="cal-weekday">二</span><span class="cal-weekday">三</span><span class="cal-weekday">四</span><span class="cal-weekday">五</span><span class="cal-weekday">六</span><span class="cal-weekday">日</span></div>
   <div class="cal-grid">${cells.join("")}</div>
 </div>`;
@@ -138,7 +141,7 @@ function card(o) {
   const body = o.image
     ? `<div class="entry-image clampable"><p><img alt="" src="${o.image}"/></p></div>`
     : `<div class="memo-body clampable${o.folded ? " is-clipped" : ""}">${o.body}</div>`;
-  const toggle = o.collapsible ? `<button class="entry-toggle ${o.expanded ? "is-open" : ""}">${o.expanded ? "收起 ⌃" : "展开全文 ⌄"}</button>` : "";
+  const toggle = o.collapsible ? `<button class="entry-toggle ${o.expanded ? "is-open" : ""}">${o.expanded ? "收起" : "展开全文"}${icon(CHEV, 12, `class="entry-toggle-icon"`)}</button>` : "";
   const meta = [
     `<span>${o.time}</span>`,
     o.todo ? `<span class="entry-todo">1/3 待办</span>` : "",
@@ -191,6 +194,7 @@ function entriesPane() {
     card({ time: "14:31", collected: true, src: "来自 chrome.exe", actions: ["剪贴板"], tags: ["工作"], body: "<p>把 <code>hook 注入</code> 那段挪到 <code>service_capture.go</code>，合并窗口从 45ms 提到 60ms 再测一次抖动。</p>" }),
     card({ time: "14:12", collected: true, src: "来自 Code.exe", body: "<p>https://github.com/bbqisbbq/clipnest</p>" }),
     card({ time: "13:40", tags: ["想法"], title: "卡片密度", body: "<p>列表已经够密了，问题在上下的呼吸：分组标题贴着第一张卡片，最后一张卡片又贴着输入区，看起来像一整块。</p><p>给分组加一点上边距、给时间线底部留白，视觉上就分成几块了。</p>", collapsible: true, folded: true }),
+    card({ time: "13:12", tags: ["想法"], title: "展开态", body: "<p>这一段是展开之后的样子，用来对照「收起」那个按钮：箭头翻上来、文字变成「收起」。</p><p>第二段只是把卡片撑长一点。</p>", collapsible: true, expanded: true }),
     card({ time: "11:05", collected: true, src: "来自 WeChat.exe", actions: ["剪贴板"], body: "<p>周五 15:00 评审，会议室 B，带上迭代清单。</p>" }),
     card({ time: "10:22", image: IMG, collected: true, src: "来自 Snipaste.exe" }),
     card({ time: "09:48", collected: true, todo: true, body: "<ul><li>整理 2.6 的 release note</li><li>把 Wails 绑定重新生成一次</li><li>确认托盘菜单里的开机自启开关</li></ul>" }),
@@ -294,7 +298,7 @@ function todoPane() {
       ${row("问一下双屏下 picker 的定位", "昨天 20:11")}
     </section>
     <section class="todo-group todo-group--done">
-      <button class="todo-group-head">展开已完成（2）</button>
+      <button class="todo-group-head">${icon(CHEV, 12, `class="todo-group-icon"`)}展开已完成（2）</button>
     </section>
   </div>
 </div>`;

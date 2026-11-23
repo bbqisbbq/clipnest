@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Entry, TodoRef } from "../lib/api";
 import { ClipService } from "../lib/api";
+import { IconChevron } from "./Icons";
 
 // 待办收集页：把「所有条目正文里的 - [ ] 任务」摊平成一页。
 //
@@ -195,7 +196,11 @@ export default function TodoView({ onOpenEntry, onNotify, onChanged, onStartTask
 
         {done.length > 0 ? (
           <section className="todo-group todo-group--done">
-            <button className="todo-group-head" onClick={() => setShowDone((v) => !v)}>
+            <button
+              className={`todo-group-head ${showDone ? "is-open" : ""}`}
+              onClick={() => setShowDone((v) => !v)}
+            >
+              <IconChevron size={12} className="todo-group-icon" />
               {showDone ? "收起" : "展开"}已完成（{done.length}）
             </button>
             {showDone

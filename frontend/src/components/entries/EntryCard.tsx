@@ -2,6 +2,7 @@ import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { marked } from "marked";
 import type { Entry } from "../../lib/api";
 import { resolveImages } from "../../lib/images";
+import { IconChevron } from "../Icons";
 
 // 时间线里的一条内容卡片：正文（Markdown 渲染 + 图片换真 src）、元信息、操作按钮。
 // 折叠遮罩的测量也在这里，因为"有没有溢出"是卡片自己的布局事实。
@@ -166,7 +167,8 @@ function EntryCard(props: EntryCardProps) {
             props.onToggleExpand();
           }}
         >
-          {expanded ? "收起 ⌃" : "展开全文 ⌄"}
+          {expanded ? "收起" : "展开全文"}
+          <IconChevron size={12} className="entry-toggle-icon" />
         </button>
       ) : null}
 

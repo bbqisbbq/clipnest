@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ClipService, type EntryQuery } from "../lib/api";
 import { dayKey, monthKey, today } from "../lib/dates";
+import { IconChevron } from "./Icons";
 
 // 日历：月视图，有内容的日子显示热度点，点某天 = 只看那天。
 // 这是统一时间线的"导航器"——不需要滚一条无限长的列表。
@@ -76,15 +77,15 @@ export default function Calendar({ selectedDay, onPickDay, query, liveSignal = 0
   return (
     <div className="cal">
       <div className="cal-head">
-        <button className="cal-nav" onClick={() => shiftMonth(-1)} title="上个月">
-          ‹
+        <button className="cal-nav cal-nav--prev" onClick={() => shiftMonth(-1)} title="上个月">
+          <IconChevron size={13} />
         </button>
         <span className="cal-title">
           {cursor.getFullYear()} 年 {cursor.getMonth() + 1} 月
           {loading ? " …" : ""}
         </span>
-        <button className="cal-nav" onClick={() => shiftMonth(1)} title="下个月">
-          ›
+        <button className="cal-nav cal-nav--next" onClick={() => shiftMonth(1)} title="下个月">
+          <IconChevron size={13} />
         </button>
         <button
           className="cal-today"
