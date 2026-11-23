@@ -28,13 +28,26 @@ function supported(): boolean {
 
 // ---- 纯逻辑（可用 node --experimental-strip-types 直接测）------------------
 
+/** 光标不在这个编辑器里 / 这一轮还没算出来：沿用上一次的段落，别乱动。 */
+const UNKNOWN_CARET = -1;
+/**
+ * 光标停在一个"还没有字的段落"上（刚按了回车、或点了行尾空白）：这一段没有文字，
+ * 所以**其余有字的段落全都该遮**。
+ *
+ * 这个状态是必须的：只在"有文字"的片段里找光标所在段，会让"回车之后"这一刻找不到归属，
+ * 于是沿用上一段、刚写完的那一行迟迟不淡下去 —— 用户看到的是"回车没反应，打了字才生效"。
+ */
+export const NO_READABLE = -2;
+
 /**
  * 哪些片段要被遮：所有"不属于光标所在段"的片段。
  *
  * @param blocks 每个片段所属的段号（同段相同、不同段不同）
- * @param active 光标所在段号；负数 = 还不知道光标在哪 → 一个都不遮（宁可不遮也不乱遮）
+ * @param active 光标所在段号；`NO_READABLE` = 当前段落没有文字（全遮）；
+ *               其他负数 = 光标未知（一个都不遮，宁可不遮也不乱遮）
  */
 export function pickMasked(blocks: number[], active: number): number[] {
+  if (active === NO_READABLE) return blocks.map((_, i) => i);
   if (active < 0) return [];
   const out: number[] = [];
   for (let i = 0; i < blocks.length; i++) {
@@ -95,8 +108,12 @@ export function repaintPrivacy(): void {
   CSS.highlights.set(HIGHLIGHT_NAME, new Highlight(...ranges));
 }
 
-/** 一段要遮的文字：`node` 里 [start, end) 这一段，属于第 `block` 段。 */
-type Segment = { node: Text; start: number; end: number; block: number };
+/**
+ * 一段要遮的文字：`node` 里 [start, end) 这一段，属于第 `block` 段。
+ *
+ * `el` 是它所属的块级元素（可能为 null：字直接躺在正文本体里）。
+ */
+type Segment = { node: Text; start: number; end: number; block: number; el: HTMLElement | null };
 
 function collectRanges(host: HTMLElement, out: Range[]): void {
   const body = editorBody(host);
@@ -107,13 +124,14 @@ function collectRanges(host: HTMLElement, out: Range[]): void {
   const total = Math.max(...segments.map((s) => s.block)) + 1;
 
   const caret = caretBlock(body, segments);
-  if (caret >= 0) lastActive.set(host, caret);
-  let active = caret;
-  if (active < 0) active = lastActive.get(host) ?? -1;
-  // 段落数变少了（删内容、换条目）：把记住的段号夹回来。
-  if (active >= total) active = total - 1;
-  // 从没在这个编辑器里放过光标：默认最后一段可读——打开输入框时光标就在末尾。
-  if (active < 0) active = total - 1;
+  if (caret !== UNKNOWN_CARET) lastActive.set(host, caret);
+  let active = caret !== UNKNOWN_CARET ? caret : (lastActive.get(host) ?? UNKNOWN_CARET);
+  if (active !== NO_READABLE) {
+    // 段落数变少了（删内容、换条目）：把记住的段号夹回来。
+    if (active >= total) active = total - 1;
+    // 从没在这个编辑器里放过光标：默认最后一段可读——打开输入框时光标就在末尾。
+    if (active < 0) active = total - 1;
+  }
 
   for (const i of pickMasked(
     segments.map((s) => s.block),
@@ -174,7 +192,7 @@ function collectSegments(body: HTMLElement): Segment[] {
           }
           fresh = false;
         }
-        if (block >= 0) out.push({ node, start: pos, end, block });
+        if (block >= 0) out.push({ node, start: pos, end, block, el: owner });
       }
       if (nl < 0) break;
       fresh = true; // 跨过换行 = 下一段
@@ -219,25 +237,41 @@ function blockOf(node: Node, body: HTMLElement): HTMLElement | null {
   return el === body ? null : el;
 }
 
-/** 光标所在段的段号；光标不在这个编辑器里就返回 -1。 */
+/**
+ * 光标所在的段号。三种返回：
+ *   · `>= 0`：具体段号，这一段保持可读；
+ *   · `NO_READABLE`：光标在一个"还没有字的段落"上（刚回车 / 点在行尾空白），此刻
+ *     没有任何一段该保持可读 —— **其余有字的段落全遮**。少了这一条，回车之后
+ *     界面要等到你敲下一个字才变，看起来就是"回车没反应"；
+ *   · `UNKNOWN_CARET`：光标不在这个编辑器里（或还没算出来），沿用上一次的结果。
+ */
 function caretBlock(body: HTMLElement, segments: Segment[]): number {
   const sel = document.getSelection();
-  if (!sel || sel.rangeCount === 0 || !sel.anchorNode) return -1;
+  if (!sel || sel.rangeCount === 0 || !sel.anchorNode) return UNKNOWN_CARET;
   const anchor = sel.anchorNode;
-  if (!body.contains(anchor)) return -1;
+  if (!body.contains(anchor)) return UNKNOWN_CARET;
 
   if (anchor instanceof Text) {
     const off = sel.anchorOffset;
     for (const seg of segments) {
       if (seg.node === anchor && off >= seg.start && off <= seg.end) return seg.block;
     }
-    // 落在换行符上（段的边界）：归给前一段
+    // 正好压在换行符上（段的边界）：归给前一段
     let prev = -1;
     for (const seg of segments) {
       if (seg.node === anchor && seg.end <= off) prev = seg.block;
     }
     if (prev >= 0) return prev;
+    // 文本节点是空的（Vditor 常给新段落塞一个空文本节点）：就是"还没有字的段落"
+    return NO_READABLE;
   }
-  // 空段落（刚按了回车还没打字）没有文字可归：保持上一段可读。
-  return -1;
+
+  // 锚点是一个元素：点在行尾空白处时常见（caret 挂在 <p> 上而不是文本节点里）。
+  // 这段里有字就取最后一段（视觉上光标在段末），没字就是空段落。
+  const owner = blockOf(anchor, body);
+  let last = -1;
+  for (const seg of segments) {
+    if (seg.el === owner) last = seg.block;
+  }
+  return last >= 0 ? last : NO_READABLE;
 }

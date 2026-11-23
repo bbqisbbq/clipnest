@@ -5,7 +5,7 @@
 // 只测 pickMasked —— 它把"DOM 里逐段收集"简化成了"每个片段属于第几段"的数组，
 // 剩下的（怎么走 DOM、怎么用 Highlight API 上色）在浏览器里验，见 docs/ARCHITECTURE.md。
 
-const { pickMasked } = await import("../frontend/src/lib/privacyMask.ts");
+const { pickMasked, NO_READABLE } = await import("../frontend/src/lib/privacyMask.ts");
 
 let failed = 0;
 function check(name, ok, detail) {
@@ -27,6 +27,8 @@ const cases = [
   { name: "只有一段：一个都不遮", blocks: [0, 0, 0], active: 0, want: [] },
   { name: "空文档", blocks: [], active: 0, want: [] },
   { name: "光标未知（-1）：一个都不遮", blocks: [0, 1, 2], active: -1, want: [] },
+  { name: "光标在空段落（刚回车）：全遮", blocks: [0, 1, 2], active: NO_READABLE, want: [0, 1, 2] },
+  { name: "空段落但正文还没字：没得遮", blocks: [], active: NO_READABLE, want: [] },
   { name: "段号越界（内容变短）：全遮", blocks: [0, 1], active: 9, want: [0, 1] },
   { name: "空段落不算一段：段号可以不连续", blocks: [0, 2], active: 2, want: [0] },
 ];
