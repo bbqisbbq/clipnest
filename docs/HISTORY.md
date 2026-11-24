@@ -348,6 +348,15 @@
 
 **平台 / 构建**
 
+- **cgo 打包必须 `-linkmode=internal`**（2026-11-24 冒出来的坑）：`CGO_ENABLED=1` 时 Go 改用
+  gcc 外部链接，而 `windows:generate:syso` 生成的 `.syso` 里已经有一份 manifest，mingw 的 `ld`
+  合并资源就报 `.rsrc merge failure: multiple non-default manifests`。
+  最坑的不是报错本身，而是**它不会让 `task windows:package` 停下** —— 后面的 NSIS 步骤照旧
+  拿上一次的 `bin\clipnest.exe` 打个包，命令行上只看得到 `Output: ...installer.exe` 和 `Total size`，
+  于是"打包成功"的假象会一路带到发布页。记住两件事：① 生产 ldflags 里带 `-linkmode=internal`；
+  ② 打包后先看 `bin\clipnest.exe` 的修改时间是不是刚才。
+- **验证 cgo 有没有真的编进去，要查 `bin\clipnest.exe` 而不是安装包**：NSIS 是 deflate 压缩的，
+  在 `.exe` 安装包里 `Select-String` 找 `ocr-assets-v1` 永远是"找不到"，那不是没编进去。
 - **`EmptyClipboard` 之后任何失败都会让用户的剪贴板变成空的**：先确保格式已注册（`initFormats()`）
   再动剪贴板；`GlobalAlloc` 的句柄在 `SetClipboardData` 失败时记得 `GlobalFree`。
 - **Wails 事件要先 `application.RegisterEvent[T]` 才会被前端收到**，否则只有一条 "event not registered" 警告；

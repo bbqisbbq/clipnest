@@ -43,7 +43,14 @@ wails3 task windows:package INSTALL_SCOPE=user
 
 > ⚠️ **打包必须带 `CGO_ENABLED=1`**：Taskfile 里默认是 0，那样 `internal/ppocr` 编进来的是 stub，
 > 高精度 OCR 与它的下载按钮在装好的版本里等于不存在（Go 还会把整段"下载/解压"代码当死代码删掉）。
-> 自查：`Select-String -Path bin\*.exe -Pattern 'releases/download/ocr-assets-v1'` 应当有命中。
+> 自查：`Select-String -Path bin\clipnest.exe -Pattern 'releases/download/ocr-assets-v1'` 应当有命中。
+>
+> ⚠️ **cgo 必须配 `-linkmode=internal`**（`build/windows/Taskfile.yml` 的 ldflags 里已经带上）。
+> 没有它会走 gcc 外部链接，mingw 的 `ld` 合并资源时直接报
+> `.rsrc merge failure: multiple non-default manifests` —— 因为 `windows:generate:syso` 生成的
+> `.syso` 里已经有一份 manifest。**这条报错不会让 task 停下**：后面的 NSIS 步骤会拿上一次的
+> `bin\clipnest.exe` 照打一个安装包，看起来"打包成功"，实际发的是旧二进制。
+> 打包后务必确认 `bin\clipnest.exe` 的修改时间是刚才（见 RELEASE 四的清单）。
 
 安装脚本在 `build/windows/nsis/project.nsi`（UTF-8 **带 BOM**，NSIS 要求），可自定义欢迎页、
 组件页、卸载时是否保留数据、签名命令等。
@@ -82,7 +89,8 @@ powershell -File scripts\sign.ps1 -Path "bin\*.exe" -Timestamp http://timestamp.
 1. 改版本号：`internal/clip/service.go` 的 `Version` 与 `build/config.yml` 的 `info.version` 保持一致；
 2. `wails3 task common:update:build-assets`；
 3. `$env:CGO_ENABLED=1; wails3 task windows:package` → 改名成 `clipnest-<版本>-amd64-setup.exe`
-   （**只发全用户安装包**）；
+   （**只发全用户安装包**）。打包后**先确认 `bin\clipnest.exe` 的时间戳是刚才**，再往下走——
+   链接器报错不会让 task 停下，NSIS 会拿旧 exe 打出一个"看起来成功"的包。
 4. 写 `docs/releases/release-notes-v<版本>.md`（发布页的 `--notes-file`），并把要点加进
    [CHANGELOG](CHANGELOG.md)；
 5. 签名：`pwsh -File scripts\sign-release.ps1 -Installer bin\clipnest-<版本>-amd64-setup.exe`；
