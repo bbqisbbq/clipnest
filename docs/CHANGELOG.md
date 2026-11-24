@@ -2,7 +2,8 @@
 
 > 一版一段，只记**用户能感知的变化**与**数据层面的破坏性改动**。实现细节与踩坑记录在
 > [HISTORY.md](HISTORY.md)，当前架构在 [ARCHITECTURE.md](ARCHITECTURE.md)。
-> 每版的发布说明（含截图与逐条解释）另存 `release-notes-v<版本>.md`，只有最新的几份需要留。
+> 每版的发布说明（含截图与逐条解释）在 [`releases/`](releases/)，只有最新的几份需要留；
+> 打包/签名/发版流程见 [RELEASE.md](RELEASE.md)。
 
 ## 2.10.0（2026-11-24）
 

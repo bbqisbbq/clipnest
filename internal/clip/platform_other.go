@@ -2,8 +2,6 @@
 
 package clip
 
-import "errors"
-
 // This file keeps the package buildable (and testable) on non-Windows hosts.
 // ClipNest itself targets Windows: the clipboard listener, DIB conversion and
 // tray integration are all Win32 only.
@@ -31,6 +29,11 @@ func foregroundAppName() string                         { return "" }
 func setAutoStart(bool, string) error                   { return ErrNotSupported }
 func autoStartEnabled() bool                            { return false }
 func autoStartCommandValue() string                     { return "" }
+func autoStartCommand(string) string                    { return "" }
+func launchProgram(string) error                        { return ErrNotSupported }
+func runCommand(string) (string, error)                 { return "", ErrNotSupported }
+func ProcessImageName(uintptr) string                   { return "" }
+func sendLeftArrows(int)                                {}
 func shellOpen(string) error                            { return ErrNotSupported }
 func OpenExternal(string) error                         { return ErrNotSupported }
 func revealInExplorer(string) error                     { return ErrNotSupported }

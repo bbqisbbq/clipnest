@@ -72,13 +72,8 @@ type bitmapInfo struct {
 
 // ShotFrame is one frozen screen grab: the monitor under the cursor, in physical
 // pixels, already encoded as PNG (what the overlay shows and what a crop slices).
-type ShotFrame struct {
-	PNG    []byte
-	Left   int
-	Top    int
-	Width  int
-	Height int
-}
+//
+// 类型本体在 shot.go（中立文件），这里只放抓屏实现。
 
 // CaptureCursorMonitor grabs the monitor under the mouse cursor.
 //

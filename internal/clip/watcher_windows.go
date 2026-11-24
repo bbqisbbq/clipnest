@@ -3,7 +3,7 @@
 package clip
 
 import (
-	"errors"
+
 	"fmt"
 	"runtime"
 	"sync"
@@ -177,6 +177,3 @@ func (w *Watcher) Stop() {
 		activeWatcher = nil
 	}
 }
-
-// ErrNotSupported is returned by the non-Windows stubs.
-var ErrNotSupported = errors.New("clipboard integration is only implemented on Windows")

@@ -88,19 +88,11 @@ ClipNest 在你使用电脑时安静地记录进入过系统剪贴板的一切�
 - **其它**：开机自启（写 HKCU Run）、单实例（第二次启动只是把窗口拉到前台）、诊断日志。
 - **纯本地优先**：不联网（除非你配置了 WebDAV），数据全部存在 `%APPDATA%\ClipNest`。
 
-## 文件复制怎么处理？—— 四种方案与当前选择
+## 文件复制怎么处理？
 
-文件类复制（`CF_HDROP`）有四种典型做法，ClipNest 采取 **方案 A+B**：
-
-| 方案 | 做法 | 优点 | 代价 |
-| --- | --- | --- | --- |
-| **A+B（当前实现）** | 只记录文件路径与元信息，周期性/手动检查是否还存在，失效则标记「已失效」 | 零磁盘占用、不碰用户原文件、隐私风险最低 | 原文件被移动/删除后引用失效，无法「恢复」内容 |
-| C 归档实体 | 把文件拷进库目录 | 原文件删了也能取回 | 吃磁盘（需配额策略），隐私与备份风险高 |
-| D 忽略文件 | 完全不记录 | 最简单 | 少一类能力 |
-| E A+B + 一键归档 | 平时存引用，需要长期保留时手动「归档到库」 | 兼顾成本与可靠性 | 需要多一套归档目录与配额逻辑 |
-
-> 详细取舍、数据模型与后续可选实现见 [docs/FILE-STRATEGY.md](docs/FILE-STRATEGY.md)。
-> 当前版本实现的是 A+B；E 的「一键归档」已预留在数据模型里（`Entry.Files` 与 `entry_blobs` 附件存储）。
+文件类复制（`CF_HDROP`）**只记路径引用、不搬实体**（方案 A+B）：零磁盘占用、不碰用户原文件，
+代价是原文件被移走后引用失效（卡片上标「已失效」）。「归档到库」（方案 E）已预留在数据模型里，
+还没做。四种方案的完整取舍与数据模型见 [docs/FILE-STRATEGY.md](docs/FILE-STRATEGY.md)。
 
 ## 安装
 
@@ -116,44 +108,7 @@ ClipNest 在你使用电脑时安静地记录进入过系统剪贴板的一切�
 `/releases/latest`，所以每个版本都保留自己的安装包：不会被误装，也方便回滚到指定版本。
 
 安装包**未做 Authenticode 签名**，首次运行会触发 SmartScreen 提示（「更多信息 → 仍要运行」）。
-要签名的话脚本是现成的（自签名证书在 `build\signing\`，不入库）：
-
-```powershell
-# 自签名（默认，无需付费证书）；签名后发布者显示 ClipNest (self-signed)
-powershell -File scripts\sign.ps1 -Path "bin\clipnest-2.4.0-amd64-setup.exe,bin\clipnest.exe" -SelfSigned
-
-# 正式证书（买了 OV/EV 证书后；带时间戳才能长期有效）
-$env:CLIPNEST_SIGN_PFX="D:\certs\clipnest.pfx"; $env:CLIPNEST_SIGN_PASSWORD="***"
-powershell -File scripts\sign.ps1 -Path "bin\*.exe" -Timestamp http://timestamp.digicert.com
-```
-
-自签名不会自动消除"无法验证发布者"提示，但有两个实际好处：文件被篡改会被立刻发现，并且把
-`build\signing\clipnest-selfsigned.cer` 导入「受信任的根证书颁发机构 + 受信任的发布者」后不再报警。
-
-
-### 发布流程（自动更新强制验签）
-
-从 **2.7.1** 起，自动更新会校验安装包的 **ed25519 签名**，**失败即拒绝安装**（宁可让用户停在旧版本，
-也不装一个来源无法确认的可执行文件）。所以每次发布都必须把 `.sig` 和 `.exe` 一起传上去：
-
-```powershell
-# 1. 打包
-wails3 task windows:package
-Rename-Item bin\clipnest-amd64-installer.exe clipnest-<版本>-amd64-setup.exe
-
-# 2. 签名（生成 <安装包>.sig，并自检一遍）
-pwsh -File scripts\sign-release.ps1 -Installer bin\clipnest-<版本>-amd64-setup.exe
-
-# 3. 发布：两个资产都要传
-gh release create v<版本> "bin\clipnest-<版本>-amd64-setup.exe" "bin\clipnest-<版本>-amd64-setup.exe.sig" `
-  --title "ClipNest <版本>" --notes-file docs\release-notes-v<版本>.md
-```
-
-- 私钥在 `build\signing\ed25519.key`（**已 gitignore，丢了就再也签不出可被现有版本接受的包**，
-  需要重新发一版同时信任新旧公钥的过渡版本才能换根）。
-- 公钥硬编码在 `internal/clip/update_sign.go` 的 `updatePubKeyB64`。
-- 签名工具：`go run ./scratch/signinstaller keygen|pubkey|sign|verify`。
-- 漏传 `.sig` 的后果是可预期的：更新检查会明确报「发布缺少签名文件，已拒绝更新」，不会静默装。
+打包、安装包签名（ed25519 强制验签）、发版清单都在 **[docs/RELEASE.md](docs/RELEASE.md)**。
 
 安装向导（简体中文）会问三件事：
 
@@ -171,20 +126,6 @@ gh release create v<版本> "bin\clipnest-<版本>-amd64-setup.exe" "bin\clipnes
 - 缺少 WebView2 运行时会自动安装（安装包里内置 bootstrapper 才会联网下载）。
 - 卸载在「设置 → 应用 → 已安装的应用」里；**会先询问是否删除剪贴板历史**（默认保留），
   静默卸载 `/S` 总是保留数据。卸载同时会清掉开机启动项、桌面与开始菜单快捷方式。
-- 安装包未做代码签名，首次运行可能触发 SmartScreen 提示（「更多信息 → 仍要运行」）。
-
-打包命令：
-
-```powershell
-wails3 task windows:package             # 全用户安装包（发布用的就这一个）
-# 产物：bin\clipnest-amd64-installer.exe（改名为 clipnest-<版本>-amd64-setup.exe 再上传）
-
-# 本地自用想免 UAC 时可以打 per-user 包，但不随发布分发
-wails3 task windows:package INSTALL_SCOPE=user
-```
-
-> 安装脚本在 `build/windows/nsis/project.nsi`（UTF-8 **带 BOM**，NSIS 要求），
-> 可自定义欢迎页、组件页、卸载时是否保留数据、签名命令等。
 
 ## 快速开始
 
@@ -225,31 +166,7 @@ pwsh -File scripts\visual-check\check-css.ps1       # 改了 CSS 就跑一次，
 改了 Go 的导出面（`ClipService` 的方法、模型字段）要重新生成绑定：
 `wails3 generate bindings -clean=true -ts -i`，并确认 `git diff frontend/bindings` 只有预期的改动。
 
-### 打包安装程序（可选）
-
-```powershell
-wails3 task common:update:build-assets   # 改了 config.yml 里的版本号后先跑这个
-wails3 task windows:package             # NSIS 全用户安装包（需要 NSIS，模板已内置配置）
-# 产物 bin\clipnest-amd64-installer.exe，发布前改名为 clipnest-<版本>-amd64-setup.exe
-```
-
-### 发版清单
-
-1. 改版本号：`internal/clip/service.go` 的 `Version` 与 `build/config.yml` 的 `info.version` 保持一致；
-2. `wails3 task common:update:build-assets`（同步 `build/**/Info.plist`、`windows/info.json`、`wails_tools.nsh` 等资产）；
-3. `wails3 task windows:package` → `bin\clipnest-amd64-installer.exe`，改名成 `clipnest-<版本>-amd64-setup.exe`
-   （**只发全用户安装包**，不带 per-user 版本）；
-   ⚠️ **打包必须带 `CGO_ENABLED=1`**（`$env:CGO_ENABLED=1; wails3 task windows:package`）：
-   Taskfile 里默认是 0，那样 `internal/ppocr` 编进来的是 stub —— 高精度 OCR 与它的下载按钮
-   在装好的版本里等于不存在（而且 Go 会把整段"下载/解压"代码当死代码删掉，连 URL 都搜不到，
-   可以 `Select-String` 二进制里有没有 `releases/download/ocr-assets-v1` 来自查）；
-4. **签名**：`go run ./scratch/signinstaller sign bin\clipnest-<版本>-amd64-setup.exe` → 同名 `.sig`，
-   再 `go run ./scratch/signinstaller verify <安装包> <安装包>.sig` 确认"签名有效"。
-   **.sig 必须和安装包一起上传**：漏了的话更新检查会明确拒绝（"发布缺少签名文件"），
-   所有用户都会停在旧版本。私钥在 `build/signing/ed25519.key`（gitignore，别外传）；
-5. 提交 + 打 tag：`git tag -a v<版本> -m "ClipNest <版本>"`，然后 `git push origin main --tags`；
-6. 建 GitHub Release，上传上面那**两个**文件（安装包 + `.sig`）。**每个版本都保留自己的安装包与 `.sig`**
-   旧 release 的资产每次发版都清掉（release 本身留着当变更记录）。
+打包安装包、签名与发版清单见 **[docs/RELEASE.md](docs/RELEASE.md)**。
 
 ## 使用
 
@@ -311,71 +228,32 @@ wails3 task windows:package             # NSIS 全用户安装包（需要 NSIS�
 ## 目录结构
 
 ```
-internal/clip/
-  model.go                    Kind / FileRef / Captured 等纯数据
-  settings.go                 设置结构与默认值（含 WebDAV、主题字段）
-  entry.go                    Entry 类型、采集入库、生命周期
-  entry_store.go              entries 表 schema、读写、FTS、mergeEntry
-  entry_query.go              EntryQuery 查询（筛选器/日历/统计/标签/缩写检索）
-  entry_blob.go               附件字节存取（≤512KB 进库，更大的落盘）
-  entry_image.go              纯函数：解码、缩略、MIME 推断
-  entry_filter_rule.go        筛选器规则树（and/or/not）→ SQL 编译
-  todo.go                     待办：正文里的 - [ ] 派生与勾选写回
-  update.go                   GitHub Releases 自动更新（检查 / 下载 / 静默安装）
-  syncpanel.go                设置页「设备包」面板的数据形状
-  store.go                    SQLite 打开/迁移、meta、墓碑、统计、诊断日志
-  service.go                  ClipService 装配与生命周期
-  service_capture.go          采集管线 + 快速输入窗
-  service_paste.go            条目 → 剪贴板 / 打开 / picker 弹窗
-  service_settings.go         设置保存与副作用（自启、展开器、后台循环）
-  entry_api.go                绑定给前端的条目 API 与筛选器 CRUD
-  snippet*.go                 片段：条目适配、动作、缩写主机、模板变量
-  sync.go / sync_dav.go       同步门面 + WebDAV 传输层
-  sync_package.go / sync_run.go / sync_merge.go   包格式 / 一次同步的编排 / 合并规则
-  clipboard_windows.go        读剪贴板：格式归类与各类型 capture
-  clipboard_formats_windows.go  格式知识与文本提取（跳过清单、URL/RTF/HTML）
-  clipboard_write_windows.go  写回：文本 / HTML / RTF / 图片 / CF_HDROP
-  dib_windows.go              CF_DIB(V5) ↔ image.NRGBA
-  ole_windows.go              OLE IDataObject 回退（延迟渲染）
-  watcher_windows.go          消息窗口 + WM_CLIPBOARDUPDATE 监听
-  picker_windows.go           光标定位、前台接管、合成 Ctrl+V
-  win32_windows.go            Win32 基元：剪贴板 API、前景程序、开机自启
-  shell_windows.go            ShellExecute / 资源管理器定位
-  platform_other.go           非 Windows 桩实现（保持可编译）
-internal/winplat/            输入注入（SendInput / Unicode / Chord），与业务无关的平台层
-internal/expand/             缩写展开引擎（零业务知识，只认 Host 接口）
-内部按职责分文件的完整表格见 docs/ARCHITECTURE.md
-frontend/                     React + TS + Vite
-  src/App.tsx                 管理窗薄壳：装 hooks、切视图、转发通知
-  src/Picker.tsx              快速粘贴弹窗（`?mode=picker`）；src/Capture.tsx 是快速输入窗
-  src/hooks/                  useAppData / useEntries / useFilters / useComposerDraft / useEntryImages / useTheme / useToast
-  src/components/
-    TitleBar / Sidebar / Calendar / Tip / Icons     布局与小组件
-    EntriesView + entries/EntryCard                 统一内容视图与卡片
-    SettingsView + settings/*                       设置页编排者与八个分区（含 Editor）
-    EntryDetailView / Composer + ComposerDock / MarkdownSurface / SnippetFields / TodoView
-    FilterDialog + FilterRuleEditor / Dialog / HotkeyInput / Lightbox
-  src/lib/                    api（绑定封装）、themes（配色预设与对比度自检）、editorToolbar、images、dates、format、window
-  src/styles/                 按域拆开的样式（fonts/base/layout/entries/controls/settings/picker/snippets/timeline/editor/detail/todo/filter/vditor-theme，共 14 个）
-  src/theme-light.css         主题引擎管不到的浅色补丁
-  bindings/                   wails3 生成的 TS 绑定（改了 Go 导出面要重新生成）
-scripts/make_icon.py          生成 appicon.png 与 windows/icon.ico
-scripts/visual-check/         样式回归：把构建产物 CSS 内联进标本页并截图（改动 CSS 后跑）
-scratch/clipdump/             开发期剪贴板格式转储工具
-scratch/setclip/              开发期投放 RTF / 自定义格式到剪贴板的工具
-scratch/dav/                  一次性 WebDAV 服务器（同步联调）
-scratch/e2e-picker*.ps1       弹窗端到端自动化（回车粘贴 / Esc / Ctrl+Enter）
-scratch/cap.ps1               窗口截图助手（定位、悬停、滚轮、点击）
-docs/ARCHITECTURE.md          分层、文件职责表、扩展点与"怎么验证"
-docs/CAPTURE.md               收集机制、格式覆盖矩阵与已知缺口
-docs/SYNC.md                  WebDAV 同步配置、合并规则与限制
-docs/SNIPPETS.md              片段库/缩写触发/触发选项/同步行为
-docs/FILE-STRATEGY.md         文件复制的方案对比与数据模型
-docs/CHANGELOG.md             从 2.0 到当前版本的精简变更史（每版一行到几行）
-docs/HISTORY.md               审查/审计与设计取舍：为什么这样做、踩过哪些坑
-docs/release-notes-v<版本>.md  各版发布说明（发布页的 --notes-file）
-docs/design/                  仍在生效的设计记录
+main.go / wire.go / tray.go   启动顺序 / 窗口与热键的开关 / 托盘菜单
+internal/clip/                业务层（条目、采集、片段、同步、绑定 API）—— 分文件职责表见 ARCHITECTURE
+internal/winplat/             Win32 输入注入（平台层，零业务知识）
+internal/expand/              缩写展开引擎（只认 Host 接口）
+frontend/src/                 React + TS：App 薄壳 + hooks/ + lib/ + components/ + styles/
+frontend/bindings/            wails3 生成的 TS 绑定（改了 Go 导出面要重新生成）
+scripts/                      图标生成、样式回归、签名、发版
+scratch/                      开发期小工具与 e2e 自动化（不是产品代码）
+docs/                         见下方索引
 ```
+
+**别在这里找文件**：`internal/clip` 与 `frontend/src` 的逐文件职责表在
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)，那里是"去哪找"的唯一答案。
+
+### 文档索引
+
+| 文档 | 内容 |
+| --- | --- |
+| [ARCHITECTURE](docs/ARCHITECTURE.md) | 分层、文件职责表、铁律、平台契约、全部验证命令 |
+| [CAPTURE](docs/CAPTURE.md) | 收集机制、格式覆盖矩阵、已知缺口（诚实清单） |
+| [SYNC](docs/SYNC.md) | WebDAV 同步：远端布局、时序、竞态、限制 |
+| [SNIPPETS](docs/SNIPPETS.md) | 片段库、缩写触发、触发选项 |
+| [FILE-STRATEGY](docs/FILE-STRATEGY.md) | 文件复制的四种方案与数据模型 |
+| [RELEASE](docs/RELEASE.md) | 打包、ed25519 签名、发版清单 |
+| [CHANGELOG](docs/CHANGELOG.md) / [releases/](docs/releases/) | 逐版变更 / 各版发布说明原文 |
+| [HISTORY](docs/HISTORY.md) | 设计取舍、踩过的坑、待办汇总 |
 
 ## 排查：开机启动弹出一个黑框
 
@@ -384,15 +262,15 @@ docs/design/                  仍在生效的设计记录
 
 1. 看现在指向哪里
 
-   ``powershell
+   ```powershell
    (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run').ClipNest
-   ``
+   ```
 
    正常应当是 "C:\Program Files\bbqisbbq\ClipNest\clipnest.exe" --background，
    而这个 exe 是 GUI 子系统（不带控制台）。
 
 2. 让 ClipNest 自己修：用**正确安装的那份**启动一次，它会把启动项重写成自己的路径
-   （日志里有 utostart registered (points at another build): …）。
+   （日志里有 `autostart registered (points at another build): …`）。
 
 3. 或者在托盘菜单里把「开机自动启动」关掉再打开。
 
@@ -402,9 +280,12 @@ docs/design/                  仍在生效的设计记录
   不再显示黑框，也就不存在"关掉窗口把程序关掉"这回事（调试时可用 CLIPNEST_KEEP_CONSOLE=1 保留）
 - 开机启动项指向**已不存在的路径**时不再"沿用"，而是按设置修复或删除
 - 联调/测试可以通过 CLIPNEST_RUN_KEY 指向一个临时注册表子键，绝不碰真实的登录启动项
+
 ## 已知限制
 
-- **只在 Windows 上有意义**：监听、DIB 解码、光标定位、托盘均为 Win32 实现；其它平台编译出的是空壳。
+- **平台**：目前只有 Windows 有完整实现（监听、DIB 解码、光标定位、截图、托盘都是 Win32）。
+  macOS / Linux 现在能编译，但平台层是空实现——见 [ARCHITECTURE 七](docs/ARCHITECTURE.md) 的平台契约矩阵
+  （哪些 seam 待补、怎么验证代码里没有残留的 Windows 专属依赖）。
 - **权限不对等**：如果目标程序以管理员身份运行，而 ClipNest 是普通权限，Windows 的 UIPI 会拦住合成的
   `Ctrl+V`（内容仍在剪贴板里，手动粘贴即可）。需要粘贴进提权窗口时，请以管理员身份运行 ClipNest。
 - **富文本回填**：写回时同时写 `HTML Format`/RTF 与纯文本，个别老旧应用可能只取纯文本。
@@ -424,18 +305,8 @@ docs/design/                  仍在生效的设计记录
 
 ## 路线图
 
-- [ ] 方案 E：条目「归档到库」按钮 + 归档目录配额
-- [x] 同步：删除墓碑（tombstone，0.3.0）
-- [x] 同步：打包传输——每台机器一个 zip 包，写冲突不可能发生（0.4.0）
-- [x] 同步面板：每台设备的包大小/最后更新/本轮拉取明细（0.5.0）
-- [ ] 同步增强：字段级冲突合并、可选 DPAPI 加密密码
-- [x] 弹窗：图片缩略图 + 数字键 1–9 直选（0.5.0）
-- [x] 弹窗：行内置顶 / 归档 / 删除（2.4.0）
-- [x] 时间线：卡片收成固定阅读列、操作按钮悬停才出现、双击直接编辑（2.4.0）
-- [x] 片段：变量占位符（{{date}} / {{clipboard}} / {{cursor}}）、Markdown 预览、从历史存为片段（0.7.0）
-- [ ] 分类规则（按来源程序自动打标签）
-- [ ] 条目内图片压缩 / 缩略图缓存，降低 blob 体积
-
+还没做的事只有一处汇总：[docs/HISTORY.md 四「还没做的事」](docs/HISTORY.md#四还没做的事一处汇总)。
+（已完成的历史不再在 README 里重复一遍——逐版见 [CHANGELOG](docs/CHANGELOG.md)。）
 
 ## 许可
 

@@ -1,9 +1,9 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
-import Picker from "./Picker";
-import Capture from "./Capture";
-import Shot from "./Shot";
+import Picker from "./components/Picker";
+import Capture from "./components/Capture";
+import Shot from "./components/Shot";
 import { ClipService } from "./lib/api";
 
 // 自带字体（SIL OFL / Google Fonts）：

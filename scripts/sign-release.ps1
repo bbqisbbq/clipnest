@@ -38,7 +38,7 @@ try {
   Write-Host "产物：$((Resolve-Path $sigPath).Path)" -ForegroundColor Green
   Write-Host ""
   Write-Host "发布（两个资产都要传）：" -ForegroundColor Yellow
-  Write-Host "  gh release create v<版本> `"$Installer`" `"$sigPath`" --title `"ClipNest <版本>`" --notes-file docs\release-notes-v<版本>.md"
+  Write-Host "  gh release create v<版本> `"$Installer`" `"$sigPath`" --title `"ClipNest <版本>`" --notes-file docs\releases\release-notes-v<版本>.md"
 }
 finally {
   Pop-Location

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Events } from "@wailsio/runtime";
-import { ClipService } from "./lib/api";
+import { ClipService } from "../lib/api";
 
 // 框选截图的遮罩层（Ctrl+Shift+A）。
 //

@@ -3,7 +3,7 @@
 //
 // Layering:
 //
-//	internal/wininput   Win32 input injection, hooks, IME state (no domain logic)
+//	internal/winplat    Win32 input injection, hooks, IME state (no domain logic)
 //	internal/expand     this package: buffer, matching, dispatch (no Win32 detail)
 //	internal/clip       store/service: implements expand.Host
 //
@@ -19,6 +19,10 @@ import (
 	"time"
 	"unicode"
 )
+
+// vkBack 是 VK_BACK（退格）。放在中立文件里而不是 wininput_windows.go：下面 Feed 的
+// switch 要用它，而其它虚拟键码常量是 Windows 专属的，非 Windows 编译时看不见。
+const vkBack = 0x08
 
 // Trigger is one expandable phrase, flattened to what the engine needs.
 type Trigger struct {

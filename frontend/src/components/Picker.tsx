@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Events } from "@wailsio/runtime";
-import { ClipService, EventNames, type Entry, type Snippet } from "./lib/api";
-import { useSettingsTheme } from "./hooks/useTheme";
-import { useMinuteTick } from "./hooks/useClock";
-import { formatBytes, formatRelative } from "./lib/format";
-import { IconPin, IconSearch, IconTrash, IconFolder, kindIcon } from "./components/Icons";
-import { entryClipboardPayload } from "./lib/entryClipboard";
+import { ClipService, EventNames, type Entry, type Snippet } from "../lib/api";
+import { useSettingsTheme } from "../hooks/useTheme";
+import { useMinuteTick } from "../hooks/useClock";
+import { formatBytes, formatRelative } from "../lib/format";
+import { IconPin, IconSearch, IconTrash, IconFolder, kindIcon } from "./Icons";
+import { entryClipboardPayload } from "../lib/entryClipboard";
 
 // 片段在弹窗里的显示名与 Enter 行为（和后端 SnippetAction 对应）
 const SNIPPET_LABEL: Record<string, string> = {

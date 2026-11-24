@@ -23,7 +23,6 @@ const (
 	wmSysKeyDown   = 0x0104
 	wmSysKeyUp     = 0x0105
 	llkhfInjected  = 0x10
-	vkBack         = 0x08
 	vkLeft         = 0x25
 	gcsCompStr     = 0x0008
 	imeCmodeNative = 0x0001

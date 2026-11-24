@@ -228,30 +228,8 @@ func readHDrop() ([]FileRef, bool) {
 
 // ---- capture builders ---------------------------------------------------
 //
-// 三个 hashXxx 是采集侧的唯一哈希口径：Captured.Hash 用它们算，写回剪贴板时
-// （entryEchoHash）也用它们算，这样"自己刚写出去的内容"才能被认出来并丢掉。
-// 千万不要在这里改用 contentHash()：entry 的 hash 列是另一套口径（同步配对用），
-// 两者混用会让手写备忘复制回去时"抑制"失效、凭空多出一条采集条目。
-
-func textHash(text string) string {
-	sum := sha256.Sum256([]byte("text\x00" + text))
-	return hex.EncodeToString(sum[:16])
-}
-
-func htmlHash(plain, fragment string) string {
-	sum := sha256.Sum256([]byte("rich\x00" + plain + "\x00" + fragment))
-	return hex.EncodeToString(sum[:16])
-}
-
-func rtfHash(plain, rtf string) string {
-	sum := sha256.Sum256([]byte("rtf\x00" + plain + "\x00" + rtf))
-	return hex.EncodeToString(sum[:16])
-}
-
-func filesHash(paths []string) string {
-	sum := sha256.Sum256([]byte("files\x00" + strings.Join(paths, "\x00")))
-	return hex.EncodeToString(sum[:16])
-}
+// 哈希口径（textHash / htmlHash / rtfHash / filesHash）在 capture_text.go（中立文件）：
+// 它们是纯字符串运算，entryEchoHash 也要用同一份。
 
 func buildTextCapture(text string) *Captured {
 	kind := KindText

@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Events } from "@wailsio/runtime";
-import MarkdownSurface, { type MarkdownSurfaceHandle, warmUpMarkdown } from "./components/MarkdownSurface";
-import PrivacyToggle from "./components/PrivacyToggle";
-import { ClipService, EventNames } from "./lib/api";
-import { drag, noDrag } from "./lib/window";
-import { useSettingsTheme } from "./hooks/useTheme";
+import MarkdownSurface, { type MarkdownSurfaceHandle, warmUpMarkdown } from "./MarkdownSurface";
+import PrivacyToggle from "./PrivacyToggle";
+import { ClipService, EventNames } from "../lib/api";
+import { drag, noDrag } from "../lib/window";
+import { useSettingsTheme } from "../hooks/useTheme";
 
 // 快速输入窗（Ctrl+Shift+N）：光标处弹出来，写完 Enter 保存、Esc 关闭。
 //

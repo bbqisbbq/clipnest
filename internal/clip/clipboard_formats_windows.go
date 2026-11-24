@@ -5,7 +5,6 @@ package clip
 import (
 	"bytes"
 	"errors"
-	"fmt"
 	"net/url"
 	"strings"
 	"unsafe"
@@ -177,16 +176,7 @@ func rtfToText(rtf string) string {
 	return strings.TrimSpace(b.String())
 }
 
-func humanBytes(n int) string {
-	switch {
-	case n >= 1<<20:
-		return fmt.Sprintf("%.1f MB", float64(n)/(1<<20))
-	case n >= 1<<10:
-		return fmt.Sprintf("%.1f KB", float64(n)/(1<<10))
-	default:
-		return fmt.Sprintf("%d B", n)
-	}
-}
+// humanBytes 在 capture_text.go（中立文件）：设置页/同步面板的文案要用同一份。
 
 // htmlFragment extracts the clipboard HTML fragment using the byte offsets in
 // its header.
@@ -237,20 +227,7 @@ func parseInt(s string) (int, error) {
 
 // ---- small helpers ------------------------------------------------------
 
-func makePreview(s string, limit int) string {
-	s = strings.TrimSpace(s)
-	s = strings.ReplaceAll(s, "\r\n", " ")
-	s = strings.ReplaceAll(s, "\n", " ")
-	s = strings.ReplaceAll(s, "\t", " ")
-	for strings.Contains(s, "  ") {
-		s = strings.ReplaceAll(s, "  ", " ")
-	}
-	r := []rune(s)
-	if len(r) > limit {
-		return string(r[:limit]) + "…"
-	}
-	return string(r)
-}
+// makePreview 在 capture_text.go（中立文件）：网页图片抓取与同步也要用同一条规则。
 
 func isSingleURL(s string) bool {
 	if s == "" || len(s) > 2048 || strings.ContainsAny(s, " \t\r\n") {
