@@ -58,26 +58,3 @@ func revealInExplorer(path string) error {
 	return nil
 }
 
-// clipboardOwnerApp reports the executable that currently owns the clipboard.
-
-var procGetClipboardOwner = user32.NewProc("GetClipboardOwner")
-
-func processNameForWindow(hwnd uintptr) string {
-	var pid uint32
-	procGetWindowThreadProcessID.Call(hwnd, uintptr(unsafe.Pointer(&pid)))
-	if pid == 0 {
-		return ""
-	}
-	h, _, _ := procOpenProcess.Call(processQueryLimitedInformation, 0, uintptr(pid))
-	if h == 0 {
-		return ""
-	}
-	defer procCloseHandle.Call(h)
-	buf := make([]uint16, 1024)
-	size := uint32(len(buf))
-	r, _, _ := procQueryFullProcessImageNameW.Call(h, 0, uintptr(unsafe.Pointer(&buf[0])), uintptr(unsafe.Pointer(&size)))
-	if r == 0 {
-		return ""
-	}
-	return windows.UTF16ToString(buf[:size])
-}

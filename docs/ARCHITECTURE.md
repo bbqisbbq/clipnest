@@ -23,7 +23,10 @@ internal/clip/           业务层：条目、捕获、片段、同步、绑定 
 | --- | --- |
 | `model.go` | `Kind` / `FileRef` / `Captured` —— 纯数据，无依赖 |
 | `settings.go` | `Settings` + 默认值 + 单调时钟 |
-| `store.go` | SQLite 打开/迁移、meta、墓碑、统计、诊断日志 |
+| `store.go` | SQLite 打开、`coreSchema`、设置读写、meta、墓碑、统计（349 行） |
+| `store_migrate.go` | **老库迁移与一次性修复**：`ensureColumn`、墓碑表换主键、`backfillClipboardCapability`、删旧表。任何"老库也要能跑"的结构变更都写在这里，并配一个老 schema 的测试 |
+| `util.go` | 跨文件小工具：`encodeTime`/`decodeTime`（定宽时间戳）、`newID`、`escapeLike`、`encodeFiles`、`hostName`、`placeholderForKind` |
+| `log.go` | 诊断日志 `Logf` / `TrimLog`（写失败一律吞掉，绝不连累调用方） |
 | `entry.go` | `Entry` 类型与派生方法、采集入库、生命周期（`SaveCapture` 等） |
 | `entry_store.go` | entries 表 schema、行映射、`SaveEntry`（含 FTS）、`mergeEntry` |
 | `entry_query.go` | `EntryQuery`、`ListEntries`、日历边界、`EntryStats`、标签/缩写检索 |
@@ -52,7 +55,11 @@ internal/clip/           业务层：条目、捕获、片段、同步、绑定 
 | `entry_ocr.go` | OCR 的存储边：`SetEntryOCR`（写结果 + 重建搜索索引，**不动 updated_at**）、`EntryIDsNeedingOCR`、`OCRStats` |
 | `ocr_engine.go` | 引擎选择：`system`（Windows 自带）↔ `ppocr`（PP-OCR），资源在 `<数据目录>/ocr/`；ppocr 不可用时**退回系统引擎**而不是罢工；`OcrEngineStatus` / `OpenOcrAssetsDir` 给设置页 |
 | `ocr_assets.go` | PP-OCR 资源的一键下载：拉 `ocr-assets-v1`（pre-release，不影响自动更新）→ 校验大小+SHA256 → 白名单解压 4 个文件（`.tmp` + rename）→ 进度走 `ocr:progress` 事件。**换资源包必须同步改 `ocrAssetsSize` / `ocrAssetsSHA`** |
-| `internal/ppocr/` | PP-OCRv5 + onnxruntime（**独立包，cgo 只出现在 `engine_cgo.go`**）。`engine_stub.go`（`!windows \|\| !cgo`）给同签名空实现 —— 没 cgo 也能编译。纯逻辑（CTC 解码 / 连通域成框 / 缩放裁剪）在 `ppocr.go`，能不加载模型直接测 || `syncpanel.go` | 设置页「设备包」面板的数据形状 |
+| `platform.go` | 中立平台契约：`ErrNotSupported`（"这项能力本平台还没实现"，不是 bug） |
+| `capture_text.go` | 中立纯函数：采集侧四个哈希口径（`textHash`/`htmlHash`/`rtfHash`/`filesHash`）、`makePreview`、`humanBytes`。**它们在 Windows 侧也要用，所以不许放回 `*_windows.go`** |
+| `shot.go` | 中立数据类型 `ShotFrame`（冻结的那一帧：PNG + 物理像素矩形），Windows 抓屏与业务层共用 |
+| `internal/ppocr/` | PP-OCRv5 + onnxruntime（**独立包，cgo 只出现在 `engine_cgo.go`**）。`engine_stub.go`（`!windows \|\| !cgo`）给同签名空实现 —— 没 cgo 也能编译。纯逻辑（CTC 解码 / 连通域成框 / 缩放裁剪）在 `ppocr.go`，能不加载模型直接测 |
+| `syncpanel.go` | 设置页「设备包」面板的数据形状 |
 
 ### 同步（WebDAV 打包）
 
@@ -131,9 +138,11 @@ src/components/
                         ※ 内容的 onChange 靠自己在宿主上听的 DOM `input` 事件（见下方经验），
                           不要指望 Vditor 的 `options.input`——IR 模式手打时它不触发
   SnippetFields         片段的额外编辑项（嵌在详情的属性面板里）
-  HotkeyInput / Lightbox / Picker / Capture / Shot
-                        ※ Shot 是框选截图的遮罩层（?mode=shot）：冻结的那一帧由 asset handler
-                          `/shot/current` 直出 PNG，裁切用 canvas 按 naturalWidth/clientWidth 换算
+  HotkeyInput / Lightbox       小部件
+  Picker / Capture / Shot     ※ 三个**窗口级**视图（由 main.tsx 按 ?mode= 挂载）：
+                          Picker 是光标处快速粘贴列表，Capture 是"记一条"浮层，
+                          Shot 是框选截图的遮罩层（冻结的那一帧由 asset handler
+                          `/shot/current` 直出 PNG，裁切用 canvas 按 naturalWidth/clientWidth 换算）
   PrivacyToggle          隐私模式的小眼睛开关（详情 / 记一条 / 快速输入窗各一个）
   ContextMenu            通用右键菜单（自绘，不用系统菜单）：贴边翻转、Esc/点外面关、↑↓ 选
                         ※ 菜单**条目**不在这里，规则在 lib/entryMenu.ts（纯函数，可独立断言）
@@ -256,6 +265,7 @@ meta           键值对（设备 id、一次性标记、filters.hidden、compos
 go build -o bin\clipnest-dev.exe .        # 后端 + 内嵌前端产物
 go test ./internal/...                    # 存储/查询/待办/筛选规则/同步/展开引擎/附件回收（audit_fix_test.go）
 cd frontend; npx tsc --noEmit; npx vite build --mode production
+pwsh -File scripts\check-platforms.ps1    # 多平台门禁：linux/darwin/windows-arm64 上 internal/... 能编译
 node --experimental-strip-types scratch/tag-suggest-check.mjs   # 标签联想：`#` 识别 / 候选过滤（纯逻辑，不需要浏览器）
 node --experimental-strip-types scratch/privacy-mask-check.mjs   # 隐私模式：哪些段落要遮（纯逻辑，不需要浏览器）
 $env:CLIPNEST_OCR_LIVE=1; go test ./internal/clip -run TestSystemOCRLive -v   # 真引擎 OCR 体检（要 Windows + 语言包）
@@ -296,5 +306,73 @@ node scratch\theme-audit.mjs                    # 主题对比度体检（5 预�
    `syncRun` + listPeers / pull / merge / adoptSettings / push / report 六段（顺带修掉"每台设备计数虚高"）。
 2. `store.go` + `entry_store.go` 抽成 `internal/store`，`Entry` 抽成 `internal/model`，
    `clip` 只留 service / sync / snippet（会改绑定路径，一次只动一层并装机验证）。
-3. `*_windows.go` 抽成 `internal/winplat`（同上，注意绑定与构建 tag）。
+3. `*_windows.go` 抽成 `internal/winplat`（同上，注意绑定与构建 tag）。**部分已做**：
+   `internal/winplat` 已经在给输入注入用，且现在有非 Windows 桩；剩下的剪贴板/截图/窗口几何
+   仍在 `clip` 包内（它们要用 `Captured`/`ShotFrame` 这些业务类型，搬包等于先搬模型）。
 4. `Composer.tsx` / `EntryDetailView.tsx` / `Capture.tsx` 已经共用 `MarkdownSurface`（`Picker.tsx` 只是列表，不含编辑器），可以再抽一层 Composer 外壳。
+5. ~~`store.go`（607 行）再切一刀~~ —— 2026-11-24 已拆成 `store.go`(349) / `store_migrate.go`(209) /
+   `util.go`(97) / `log.go`(58)。剩下这几个还可以再切（都在 350–490 行之间，
+   切法以"纯逻辑 vs 编排"或"传输 vs 格式"为准）：`sync_run.go`、`sync_dav.go`、`entry_api.go`、
+   `entry.go`、`entry_query.go`、`entry_store.go`、`snippet.go`、`update.go`、`clipboard_rich.go`。
+
+**单文件行数现状**（>350 行的都是待拆候选，别在新代码里继续长）：
+
+```powershell
+Get-ChildItem -Recurse -File -Filter *.go |
+  Where-Object { $_.FullName -notmatch '\\(bin|scratch)\\' } |
+  ForEach-Object { [pscustomobject]@{ L = (Get-Content $_ | Measure-Object -Line).Lines; P = $_.FullName } } |
+  Where-Object L -gt 350 | Sort-Object L -Descending
+```
+
+## 七、平台契约（多平台）
+
+现状：**只有 Windows 有完整实现**；macOS / Linux **能编译、能跑单测、平台能力是空实现**。
+这一节是加新平台时的唯一入口——好消息是：**改动都落在 `*_other.go` 那一侧，业务层一行不用动**。
+
+### 铁律
+
+1. **纯逻辑不许住在 `*_windows.go` 里**。哈希、预览、格式化、字节解析这些"跟平台无关但
+   恰好先给 Windows 用"的函数，必须放中立文件（`capture_text.go` 就是为此存在的）。
+   违反的代价很直接：整个 `clip` 包在非 Windows 上编不过。
+2. **新增平台文件，不新增平台分支**。别在业务代码里写 `if runtime.GOOS == ...`；
+   要加能力就在 `*_other.go` 里补同签名实现，或新开一个 `*_darwin.go`。
+3. **加了平台函数就要跑门禁**：`pwsh -File scripts\check-platforms.ps1`（见下）。
+
+### 能力矩阵
+
+`桩` = 只有空实现（返回 `ErrNotSupported` 或零值）；`—` = 还没定义任何契约。
+
+| 能力 | 中立契约（谁声明） | Windows 实现 | mac / linux |
+| --- | --- | --- | --- |
+| 剪贴板监听 | `StartWatcher` / `Watcher.Changes` / `Stop`（`platform_other.go`） | `watcher_windows.go`：消息窗 + `WM_CLIPBOARDUPDATE` | 桩 |
+| 剪贴板读取 | `captureClipboard` → `*Captured` | `clipboard_windows.go` + `clipboard_formats_windows.go`（格式知识）+ `dib_windows.go` + `ole_windows.go` | 桩 |
+| 剪贴板写回 | `WriteText/HTML/RTF/Image/Files/Raw/RichToClipboard` | `clipboard_write_windows.go` | 桩 |
+| 回声抑制哈希 | `entryEchoHash`（`platform_other.go`） | 同左，复用 `capture_text.go` 的四个 hash | 桩（返回 `""` ⇒ 抑制失效，见 HISTORY） |
+| 输入注入 | `winplat.SendUnicode/Backspaces/LeftArrows/TapKey/Chord/Paste/ForegroundWindow` | `winplat/input_windows.go`（`SendInput`） | `winplat/input_other.go` 桩 |
+| 缩写展开钩子 | `install/uninstall/placeCursor/vkToRune/imeBusy/foregroundWindow/sendUnicodeText/sendBackspaces/sendLeftArrows`（`expand`） | `expand/wininput_windows.go`（低级键盘钩子 + IME 状态） | `expand/wininput_other.go` 桩 |
+| 快速粘贴窗几何 | `ForegroundWindowHandle` / `CaretAnchor` / `ClampToWorkArea` / `ActivateWindow` / `SendPaste` / `PasteInto` | `picker_windows.go` + `clipboard_windows.go` | 桩 |
+| 截图 | `CaptureCursorMonitor` → `*ShotFrame` / `PlaceOverlayWindow` / `HideOverlayWindow` / `FocusOverlayWindow` | `shot_windows.go`（GDI `BitBlt`） | 桩 |
+| 热键撞车预检 | `HotkeyTaken`（`hotkey.go`，导出给 `wire.go`） | `hotkey_windows.go`（`RegisterHotKey` 试注册） | `hotkey_other.go` 恒 `false` |
+| 窗口背景 | `SetWindowBackdrop`（`backdrop_*.go`） | DWM Acrylic | 恒 `false`（调用方退回不透明） |
+| 开机自启 | `setAutoStart` / `autoStartEnabled` / `autoStartCommand` / `autoStartCommandValue` | `win32_windows.go`（HKCU Run） | 桩 |
+| 外壳打开 | `shellOpen` / `OpenExternal` / `revealInExplorer` | `shell_windows.go`（`ShellExecute`） | 桩 |
+| 片段动作 | `launchProgram` / `runCommand` / `ProcessImageName` / `sendLeftArrows` | `snippet_exec_windows.go`、`picker_windows.go` | 桩 |
+| 来源程序名 | `foregroundAppName` | `win32_windows.go` | 桩（空串） |
+| OCR 引擎 | `ocr.go` 的引擎选择（`system` ↔ `ppocr`） | `ocr.go` 调 `Windows.Media.Ocr`（PowerShell `-EncodedCommand`）；`internal/ppocr` 走 cgo | `ppocr` 编成 stub；`system` 引擎跑不起来 ⇒ 设置页应显示"不可用" |
+| 托盘 / 窗口 / 事件 | Wails v3 自身 | `tray.go` / `wire.go` | Wails 本身支持，但上面那批能力是桩 |
+| 自动更新 | `update.go`（GitHub Releases + ed25519 验签） | 检查 + 下载 + 静默安装（NSIS 包） | 检查逻辑可复用，安装路径要换 |
+
+### 门禁
+
+```powershell
+pwsh -File scripts\check-platforms.ps1                  # linux/amd64 + darwin/arm64 + windows/arm64
+pwsh -File scripts\check-platforms.ps1 -Targets linux/amd64
+```
+
+它只做一件事：对这几个 GOOS 跑 `go vet ./internal/clip ./internal/expand ./internal/winplat ./internal/ppocr`
+（`CGO_ENABLED=0`）。**过了不等于新平台能用**，但过了意味着"没有代码是 Windows 专属"——
+这是加平台前唯一必须满足的硬条件。
+
+> 整包 `go build` 交叉编译不在此列：Wails v3 的 linux/darwin 后端要 cgo 与各平台工具链，
+> 那属于真机 CI。/cmd 层（`main.go`/`wire.go`/`tray.go`）目前也仍按 Windows 假设写。
+

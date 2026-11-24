@@ -28,6 +28,7 @@
 | 2026-11-23 | 同步专项审查 | 真机取证（坚果云 PROPFIND + 本机库）查出：老库墓碑表主键不匹配导致**删除从来不产生墓碑**、PROPFIND 拿不到包大小/时间、坏对端包毒死整轮、失败不退避；修于 2.9.3 |
 | 2026-11-23 | 同步包改全量 | 用户判断"≥500 条只同步最新那批"不可接受。去掉 `syncMaxEntries`、加 `Store.AllEntries()`；附件预算改成可轮转（`sync.blobDeferred`）；间隔默认 120 分钟、上限 1440。同时把"人类可读的文件存储"方案否掉了 —— 属性进 YAML 头这件事可以做，但"文件当真源"会牵动身份（现在是内容哈希）、墓碑键、字段分层与同步增量，见 CHANGELOG 讨论 |
 | 2026-11-24 | 截图 + 网页图片修复 | 新增框选截图（GDI 抓屏 + Win32 摆遮罩 + 前端裁切，`scratch/e2e-shot.ps1` 真键鼠验证尺寸 1:1）；查出"网页复制图片存成链接"的真因是**剪贴板里压根没有位图**（`scratch/clipfmt` 取证），改为按 HTML 里的地址后台下载；顺带发现 Wails 热键注册在 `Run()` 之前是异步的（失败不可见），补了同步预检 |
+| 2026-11-24 | **全量清理瘦身**（多平台前置） | 见下节。磁盘 2005MB→374MB、`.git` 65.7→53.4MB；文档去重（README 442→320 行、8 份 release-notes 归档进 `docs/releases/`、打包/签名独立成 `docs/RELEASE.md`）；`internal/...` 现在**真的**能在 linux/darwin 编译（此前是假的），并加了 `scripts/check-platforms.ps1` 门禁；`store.go` 607 行拆成四个文件 |
 
 > 两个没单独发版的轮次留了 commit 指纹，逐条变更去 `git show`：`b243017`（侧栏「待办」与筛选器不同时高亮、
 > 托盘菜单精简到 6 项、`ui:navigate` 让「打开设置」真跳转）、`11428d3`（复制即见、草稿防抖搬进 Go、
@@ -48,6 +49,36 @@
    删条目先写墓碑后删行（失败就分叉）；`Shutdown` 不等后台循环。
 4. **前后端没接上**：7 个后端事件零监听（设置变更、同步状态、更新可用、删除、粘贴失败…）；
    两处设置只有后端字段没有界面（`captureHotkey`、`expandSuffix`）；两处文案还写着"改完点保存"。
+
+### 2026-11-24 清理瘦身（多平台前置）
+
+目标是"整体瘦身 + 为后续多平台开发铺路"，做法按"先能量化、再动结构"排序：
+
+1. **磁盘**：2005MB → 374MB。清掉 22 个 e2e 沙箱 APPDATA（每个都带着一整套 WebView2 profile：
+   Widevine CDM 22MB、GPUCache、hyphen-data…）、`bin/` 里 30 多个历史安装包（都已在 Releases）、
+   根目录三个临时 exe。`scratch/recovered-*/`（含真实条目）与 `tmp-picker-theme-*/APPDATA`
+   **移出仓库**（`git rm --cached` + gitignore），并在 `.gitignore` 里按"构建产物 / 本机数据 /
+   截图快照"分三段重写（原来是一堆追加式的补丁规则，含重复项）。
+2. **文档**：README 442 → 320 行。删掉与 `ARCHITECTURE` 重复的 68 行目录树、与
+   `FILE-STRATEGY` 重复的文件复制方案表、与 `HISTORY 四` 重复的路线图；把散落四处的
+   打包/签名/发版清单合并成 `docs/RELEASE.md`（原来同一段 `CGO_ENABLED=1` 警告出现两次）；
+   8 份 release-notes 收进 `docs/releases/`。顺手修掉 README 里的一个 **U+0007 控制字符**
+   （把 `autostart` 显示成 `utostart`）和两处残缺的代码围栏。
+3. **多平台**：这是最实质的一块。此前 `GOOS=linux go build ./internal/clip` 直接红 ——
+   纯函数（四个 hash、`makePreview`、`humanBytes`）、`ErrNotSupported`、`ShotFrame`
+   都住在 `*_windows.go` 里，`internal/winplat` 连非 Windows 文件都没有。
+   现在这些搬进中立文件（`capture_text.go` / `platform.go` / `shot.go`），桩补齐，
+   并加了 `scripts/check-platforms.ps1` 对 linux/amd64、darwin/arm64、windows/arm64 跑 `go vet`。
+   平台契约矩阵写在 [ARCHITECTURE 七](ARCHITECTURE.md#七平台契约多平台)。
+4. **代码结构**：`store.go` 607 行拆成 `store.go`(349) + `store_migrate.go`(209) +
+   `util.go`(97) + `log.go`(58)；前端三个窗口级视图（`Picker`/`Capture`/`Shot`）从 `src/` 根
+   挪进 `src/components/`（ARCHITECTURE 里本来就是这么写的，只是文件没跟上）；
+   删掉一处死代码 `processNameForWindow`（被 `ProcessImageName` 取代后没人用，还留着一个
+   从未使用的 `procGetClipboardOwner`）。
+
+**教训**：`_windows.go` 是**编译期**的边界，不是"先这么放着"的便利贴。任何一个纯函数写进去，
+非 Windows 的整包就编不过 —— 而这种断裂在 Windows 上永远暴露不出来，必须靠门禁命令发现。
+同类的还有 `gitignore`：靠一次次往后追加规则，最后自己都读不懂哪条在管什么。
 
 ## 三、踩过的坑（踩过一次就别再踩）
 
@@ -337,3 +368,9 @@
 - 注入通道回退链（`WM_CHAR` 直投）与"按程序指定通道"；片段填参 `{{ask:标题}}`、撤销上次替换。
 - 待办到期/提醒/重复任务/子任务树；筛选器拖拽排序、导出导入。
 - 拆包：`internal/store` + `internal/model`，`*_windows.go` 全量进 `internal/winplat`（会动绑定路径，一次一层）。
+  **2026-11-24 已做一半**：`store.go` 内部拆成四个文件、`winplat` 有了非 Windows 桩、纯函数已挪出
+  `_windows.go`；真正的搬包（改绑定路径）还没动。
+- **多平台落地**：mac / linux 的平台层目前全是桩，逐个补实现（清单见 ARCHITECTURE 七的能力矩阵）。
+  优先级建议：剪贴板读写 + 监听 → 输入注入（粘贴）→ 热键 → 托盘；截图与 OCR 可以最后做。
+  注意 `update.go` 的自动更新要换安装器（mac 是 `.app`/Sparkle、linux 是 AppImage/deb），
+  以及 `settings.json` 里的密码现在是明文（DPAPI/Keychain 加密一并做）。
