@@ -75,6 +75,15 @@ type Props = {
   preset: SurfacePreset;
   onSave?: () => void;
   onEscape?: () => void;
+  /**
+   * 编辑器就绪后回报一次它**自己**的规范化值（dehydrate 后的、即写回库里那种形态）。
+   *
+   * 为什么需要：Vditor 载入内容时会按自己的规范整理一次（行尾换行、表格对齐、`[X]`→`[x]`…），
+   * 所以「编辑器里的值」和「库里的值」可能天然差几个字符。上层若直接拿库里的原值当基线比，
+   * 一进详情页就会被判成「有未保存修改」。用这个回调把基线换成编辑器的口径，两边同源，
+   * 之后只有真人改动才算改动。
+   */
+  onReady?: (canonical: string) => void;
   /** 粘贴/拖入图片：收到 data URL，调用方存进附件并返回正文里要写的 token */
   onImageFile?: (dataUrl: string) => Promise<string | null>;
   placeholder?: string;
@@ -395,10 +404,12 @@ const MarkdownSurface = forwardRef<MarkdownSurfaceHandle, Props>(function Markdo
   const onSaveRef = useRef(props.onSave);
   const onEscapeRef = useRef(props.onEscape);
   const onImageFileRef = useRef(props.onImageFile);
+  const onReadyRef = useRef(props.onReady);
   onChangeRef.current = props.onChange;
   onSaveRef.current = props.onSave;
   onEscapeRef.current = props.onEscape;
   onImageFileRef.current = props.onImageFile;
+  onReadyRef.current = props.onReady;
 
   const initialValue = useRef(props.value);
   // 工具栏配置变了要重建实例（Vditor 只在 new 时读 toolbar），重建前把内容捞出来
@@ -481,6 +492,15 @@ const MarkdownSurface = forwardRef<MarkdownSurfaceHandle, Props>(function Markdo
             vditorRef.current = instance;
             setReady(true);
             repaintAll();
+            // 记下编辑器自己的规范化值：既是"上一次上报过的值"（onDomInput 用它去抖），
+            // 也是上层判脏的基线（见 Props.onReady 的说明）。
+            try {
+              const canonical = dehydrateImages(instance?.getValue() ?? "").replace(/\r\n/g, "\n");
+              lastValueRef.current = canonical;
+              onReadyRef.current?.(canonical);
+            } catch {
+              /* 取不到就退化成旧行为：上层仍按库里的原值比 */
+            }
             if (props.autoFocus) safeFocus(instance);
           },
         });
@@ -496,11 +516,24 @@ const MarkdownSurface = forwardRef<MarkdownSurfaceHandle, Props>(function Markdo
           if (disposed) return;
           const v = vditorRef.current;
           if (!v) return;
+          let next: string;
           try {
-            onChangeRef.current(dehydrateImages(v.getValue()).replace(/\r\n/g, "\n"));
+            next = dehydrateImages(v.getValue()).replace(/\r\n/g, "\n");
           } catch {
             /* 实例正在销毁：取不到内容就跳过，下一次输入会再来 */
+            return;
           }
+          // 与上一次的值一模一样就别上报。这条不是优化而是**正确性**：这个监听同时挂在
+          // `blur` 上（兜住"敲完立刻点别处"的最后一次改动），而点「返回」按钮本身就会让
+          // 编辑器失焦 —— 不比对的话，编辑器一失焦就把值重新上报一遍，上层判脏立刻变 true，
+          // 于是"什么都没改，返回却问你有没有未保存的修改"。
+          if (next === lastValueRef.current) {
+            repaintAll();
+            refreshSuggestRef.current();
+            return;
+          }
+          lastValueRef.current = next;
+          onChangeRef.current(next);
           // 每一次真实输入之后：重绘标签高亮 + 看一眼光标是不是刚停在一个 `#后面
           repaintAll();
           refreshSuggestRef.current();

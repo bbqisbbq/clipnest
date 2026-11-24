@@ -292,6 +292,11 @@ func buildImageCapture(img image.Image) (*Captured, error) {
 }
 
 func buildFilesCapture(files []FileRef) *Captured {
+	// 单张图片文件：把图本体存进条目（一行 `D:\…\DSC01.jpg` 对用户没意义）。
+	// 其余情况（多文件、文件夹、解码不了的格式、超大文件）仍按引用记，见 FILE-STRATEGY。
+	if img := imageFileCapture(files); img != nil {
+		return img
+	}
 	names := make([]string, 0, len(files))
 	paths := make([]string, 0, len(files))
 	var total int64

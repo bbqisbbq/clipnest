@@ -58,6 +58,7 @@ internal/clip/           业务层：条目、捕获、片段、同步、绑定 
 | `ocr_assets.go` | PP-OCR 资源的一键下载：拉 `ocr-assets-v1`（pre-release，不影响自动更新）→ 校验大小+SHA256 → 白名单解压 4 个文件（`.tmp` + rename）→ 进度走 `ocr:progress` 事件。**换资源包必须同步改 `ocrAssetsSize` / `ocrAssetsSHA`** |
 | `platform.go` | 中立平台契约：`ErrNotSupported`（"这项能力本平台还没实现"，不是 bug） |
 | `capture_text.go` | 中立纯函数：采集侧四个哈希口径（`textHash`/`htmlHash`/`rtfHash`/`filesHash`）、`makePreview`、`humanBytes`。**它们在 Windows 侧也要用，所以不许放回 `*_windows.go`** |
+| `capture_imagefile.go` | 复制**图片文件**时把图本体存进条目（`imageFileCapture`）：只认单个文件 + png/jpeg/gif + ≤24 MB，存原始字节不重编码；其余情况仍按文件引用记。边界规则与单元测试都在这里 |
 | `shot.go` | 中立数据类型 `ShotFrame`（冻结的那一帧：PNG + 物理像素矩形），Windows 抓屏与业务层共用 |
 | `internal/ppocr/` | PP-OCRv5 + onnxruntime（**独立包，cgo 只出现在 `engine_cgo.go`**）。`engine_stub.go`（`!windows \|\| !cgo`）给同签名空实现 —— 没 cgo 也能编译。纯逻辑（CTC 解码 / 连通域成框 / 缩放裁剪）在 `ppocr.go`，能不加载模型直接测 |
 | `syncpanel.go` | 设置页「设备包」面板的数据形状 |

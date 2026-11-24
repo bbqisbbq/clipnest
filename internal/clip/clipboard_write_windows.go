@@ -7,7 +7,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"image/png"
+	"image"
 )
 
 // 写剪贴板：文本/HTML/RTF/图片/文件列表/自定义格式的回填，以及它们需要的
@@ -105,10 +105,13 @@ func WriteHTMLToClipboard(fragment, plain string) error {
 	return setClipboardBytes(cfUnicodeText, utf16Bytes(plain))
 }
 
-// WriteImageToClipboard puts a PNG on the clipboard as CF_DIB (+ native PNG
-// for apps that prefer it).
-func WriteImageToClipboard(pngData []byte) error {
-	img, err := png.Decode(bytes.NewReader(pngData))
+// WriteImageToClipboard puts an image on the clipboard as CF_DIB, plus the
+// native "PNG" format when the payload already is a PNG (apps like Chrome prefer it).
+//
+// 用 image.Decode 而不是 png.Decode：条目里的图片未必是 PNG —— 复制一个 .jpg 文件
+// 时我们存的是**原始字节**（不重编码、不掉画质），这里得能认出 jpeg/gif。
+func WriteImageToClipboard(imgData []byte) error {
+	img, format, err := image.Decode(bytes.NewReader(imgData))
 	if err != nil {
 		return err
 	}
@@ -123,8 +126,8 @@ func WriteImageToClipboard(pngData []byte) error {
 	if err := setClipboardBytes(cfDIB, dib); err != nil {
 		return err
 	}
-	if formats.png != 0 {
-		_ = setClipboardBytes(formats.png, pngData)
+	if format == "png" && formats.png != 0 {
+		_ = setClipboardBytes(formats.png, imgData)
 	}
 	return nil
 }

@@ -31,7 +31,7 @@ type Captured struct {
 	Text      string
 	HTML      string
 	RTF       string
-	PNG       []byte // encoded PNG for image entries
+	PNG       []byte // encoded image bytes for image entries (png/jpeg/gif — original bytes, MIME sniffed on the way out)
 	Binary    []byte // raw payload for custom formats
 	Width     int
 	Height    int

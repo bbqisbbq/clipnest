@@ -46,6 +46,10 @@ export default function EntryDetailView(props: Props) {
   const editorRef = useRef<MarkdownSurfaceHandle | null>(null);
 
   const [draft, setDraft] = useState(entry.content);
+  // base 是"判脏的基线"，默认是库里的原值；编辑器就绪后立刻换成**编辑器自己的规范化值**
+  // （Vditor 载入时会整理一次行尾/表格/`[X]`，与库里的字节可能不同）。
+  // 不做这一步的话：什么都没改，点返回也会被判成「有未保存修改」。
+  const [base, setBase] = useState(entry.content);
   const [actions, setActions] = useState<string[]>(entry.actions ?? []);
   const [trigger, setTrigger] = useState(entry.triggerKey ?? "");
   // 标题：后台从正文的 `# 一级标题` 自动派生；这里只负责"手写覆盖"或"清空退回自动"
@@ -59,6 +63,7 @@ export default function EntryDetailView(props: Props) {
   // 切换条目时重置草稿
   useEffect(() => {
     setDraft(entry.content);
+    setBase(entry.content);
     setActions(entry.actions ?? []);
     setTrigger(entry.triggerKey ?? "");
     setTitle(entry.title ?? "");
@@ -70,12 +75,23 @@ export default function EntryDetailView(props: Props) {
     const sameActions =
       JSON.stringify([...actions].sort()) === JSON.stringify([...(entry.actions ?? [])].sort());
     return (
-      draft !== entry.content ||
+      draft !== base ||
       trigger !== (entry.triggerKey ?? "") ||
       title !== (entry.title ?? "") ||
       !sameActions
     );
-  }, [draft, actions, trigger, title, entry]);
+  }, [draft, base, actions, trigger, title, entry]);
+
+  // 编辑器重建（工具栏设置变了会重建）时也会回调 onReady，这时**只有还干净**才刷新基线，
+  // 否则会把用户正在编辑的内容当成"已保存"抹掉脏标记。
+  const pristine = useRef({ draft, base });
+  pristine.current = { draft, base };
+  const onEditorReady = useCallback((canonical: string) => {
+    const p = pristine.current;
+    if (p.draft !== p.base) return;
+    setBase(canonical);
+    setDraft(canonical);
+  }, []);
 
   // 脏标记回调放进 ref：props 是每次父组件渲染新建的对象，直接进依赖会每帧都调一次
   const dirtyCb = useRef(props.onDirtyChange);
@@ -109,6 +125,7 @@ export default function EntryDetailView(props: Props) {
         titleSource: titleChanged ? (nextTitle ? "user" : "") : (fresh.titleSource ?? ""),
       } as never);
       setDraft(saved.content);
+      setBase(saved.content);
       setActions(saved.actions ?? []);
       setTrigger(saved.triggerKey ?? "");
       setTitle(saved.title ?? "");
@@ -264,6 +281,7 @@ export default function EntryDetailView(props: Props) {
             preset="detail"
             value={draft}
             onChange={setDraft}
+            onReady={onEditorReady}
             onSave={() => void save()}
             onEscape={requestBack}
             onImageFile={pasteImage}

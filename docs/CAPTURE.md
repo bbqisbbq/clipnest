@@ -26,7 +26,7 @@ WM_CLIPBOARDUPDATE  ──►  消息窗口(专用线程)  ──►  channel  �
 
 | 优先级 | 来源格式 | 归类 | 存储 | 粘回方式 |
 | --- | --- | --- | --- | --- |
-| 1 | `CF_HDROP` | 文件 | 路径引用 + 元信息（见 FILE-STRATEGY.md） | 重建 `DROPFILES` |
+| 1 | `CF_HDROP` | 文件 | 路径引用 + 元信息；**单张 png/jpeg/gif（≤24 MB）连图一起存**（见 FILE-STRATEGY.md 的例外） | 重建 `DROPFILES` |
 | 2 | `PNG` / `CF_DIBV5` / `CF_DIB` | 图片 | 解码为 PNG 存 blob | `CF_DIB`(+`PNG`) |
 | 3 | `HTML Format`，且片段里**只有一张 `<img>`** | 图片（下载） | 按 `<img src>` 把图抓回来，转 PNG 存 blob；抓不到就退回第 4 条 | 同第 2 条 |
 | 4 | `HTML Format` | 富文本 | HTML 片段 + 纯文本 | `HTML Format` + 纯文本 |

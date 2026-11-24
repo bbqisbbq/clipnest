@@ -249,10 +249,12 @@ func (s *Store) SaveCapture(c Captured) (*Entry, bool, error) {
 
 	content := strings.TrimSpace(c.Text)
 	if len(c.PNG) > 0 {
-		if token, err := s.SaveEntryBlob(c.PNG, "png"); err == nil {
+		// PNG 这个名字是历史包袱：字段里装的是"受支持格式的原始字节"（png/jpeg/gif）。
+		// 扩展名按嗅探结果写，别一律当成 .png（库里会留下 .png 里装着 jpeg 的怪文件）。
+		if token, err := s.SaveEntryBlob(c.PNG, extForMime(sniffImageMime(c.PNG))); err == nil {
 			content = "![](" + token + ")"
 		} else {
-			Logf(s.dir, "save capture png failed: %v", err)
+			Logf(s.dir, "save capture image failed: %v", err)
 		}
 	}
 	// 私有格式（Excel 区间、颜色、音频…）的正文只有一个格式名，字节必须单独落库，
