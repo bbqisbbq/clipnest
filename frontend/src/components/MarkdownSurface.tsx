@@ -15,6 +15,33 @@ function repaintAll(): void {
   repaintTags();
 }
 
+// safeFocus 是**唯一**允许调用 Vditor.focus() 的入口。
+//
+// 为什么需要它：Vditor 的 focus() 读的是内部状态 `this.vditor.currentMode`，而
+// `new Vditor(...)` 返回之后、`init()` 真正跑起来之前，`this.vditor` 还是 undefined ——
+// 这个窗口期内调 focus() 就是 "Cannot read properties of undefined (reading 'currentMode')"。
+// 记一条窗口（Capture.tsx）挂载即抢焦点，正好踩在这个窗口期上，而且时快时慢（热身是否完成、
+// StrictMode 双挂载都会影响），所以表现为"偶发一条 ui error 日志"。
+// 处理：先试一次，失败就等一帧再试一次；仍失败就放弃（用户点一下编辑器也能拿回焦点），
+// 绝不把异常抛给调用方 —— 这里的失败不值得让整个窗口的操作链路中断。
+function safeFocus(v: Vditor | null | undefined): void {
+  if (!v) return;
+  const attempt = () => {
+    try {
+      v.focus();
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  if (attempt()) return;
+  requestAnimationFrame(() => {
+    if (!attempt()) {
+      requestAnimationFrame(() => void attempt());
+    }
+  });
+}
+
 // 全应用唯一的 Markdown 编辑器：Vditor（IR 即时渲染）。
 //
 // 为什么只有这一层：应用里「写字」的地方有三个（详情视图 / 底部记一条 /
@@ -454,7 +481,7 @@ const MarkdownSurface = forwardRef<MarkdownSurfaceHandle, Props>(function Markdo
             vditorRef.current = instance;
             setReady(true);
             repaintAll();
-            if (props.autoFocus) instance?.focus();
+            if (props.autoFocus) safeFocus(instance);
           },
         });
         // 只在没被卸载的时候登记句柄：否则 ref 会指向一个已经废掉的实例，
@@ -653,7 +680,7 @@ const MarkdownSurface = forwardRef<MarkdownSurfaceHandle, Props>(function Markdo
           vditorRef.current?.setValue(hydrated, true);
         });
       },
-      focus: () => vditorRef.current?.focus(),
+      focus: () => safeFocus(vditorRef.current),
       insert: (text: string) => vditorRef.current?.insertValue(text),
       wrap: (before: string, after: string) => {
         const v = vditorRef.current;

@@ -44,7 +44,8 @@ internal/clip/           业务层：条目、捕获、片段、同步、绑定 
 | `service_paste.go` | 条目 → 系统：复制回剪贴板、打开、picker 弹窗三件套 |
 | `service_settings.go` | 设置保存与副作用（自启、展开器、两个后台循环） |
 | `draft.go` | 快捷输入框的未保存草稿（meta 键 `composer.draft`，跟着 clipnest.db 走）。**写库防抖在 Go 侧**（前端每键送一次，内存立即更新 + 400ms 合并写），`FlushComposerDraft`（前端在收起窗口/退出前调）与 `Shutdown` 兜底 |
-| `entry_api.go` | 绑定给前端的条目 API + 筛选器 CRUD |
+| `entry_api.go` | 绑定给前端的条目 API（读写、置顶/归档、片段升降级、待办勾选） |
+| `filter_api.go` | 筛选器 API：保存/删除/恢复、内置筛选器的覆盖、`filters.hidden` 隐藏位、`GetFilterFields` |
 | `service_shot.go` | 截图的业务面：拍帧 → 交给遮罩窗 → 收回裁好的 PNG → 落库 →（可选）进剪贴板。裁切在前端做，这里不做几何计算 |
 | `shot_windows.go` | 截图的平台面：GDI `BitBlt` 拍光标所在显示器、`SetWindowPos` 按物理像素摆遮罩窗、把焦点交给 WebView 子窗口 |
 | `hotkey.go` / `hotkey_windows.go` | 加速键的"撞车预检"：注册前用 Win32 `RegisterHotKey` 试一次再注销。Wails 在 `Run()` 之前的 Register 是排队的、失败拿不到，见 HISTORY「热键注册成功可能是假的」 |
@@ -66,7 +67,8 @@ internal/clip/           业务层：条目、捕获、片段、同步、绑定 
 | 文件 | 职责 |
 | --- | --- |
 | `sync.go` | 门面：远端布局说明、常量、`SyncStatus`、`SyncNow`/`TestSync`、定时循环 |
-| `sync_dav.go` | 传输层：URL/鉴权/`GET`/`PUT`/`MKCOL`/列包、设备 id 与包名 |
+| `sync_dav.go` | 传输层：URL/鉴权/`GET`/`PUT`/`MKCOL`、设备 id 与包名 |
+| `sync_dav_list.go` | 目录发现：`PROPFIND` 解析、列包、兄弟目录探测（WebDAV 方言与服务器怪癖都在这） |
 | `sync_package.go` | 包格式：索引/记录结构、`buildPackage`/`parsePackage`、指纹、`buildOwnPackage`（全量条目 + 附件挑选入口） |
 | `sync_blobplan.go` | 纯函数：附件按预算挑选与挂账轮转（`planBlobUpload`）；96 MiB 预算在单测里造不出来，用几十字节测 |
 | `sync_run.go` | 一次同步的编排：列包 → 并行拉取 → 合并 → 采纳设置 → 上传 → 状态 |
@@ -311,9 +313,10 @@ node scratch\theme-audit.mjs                    # 主题对比度体检（5 预�
    仍在 `clip` 包内（它们要用 `Captured`/`ShotFrame` 这些业务类型，搬包等于先搬模型）。
 4. `Composer.tsx` / `EntryDetailView.tsx` / `Capture.tsx` 已经共用 `MarkdownSurface`（`Picker.tsx` 只是列表，不含编辑器），可以再抽一层 Composer 外壳。
 5. ~~`store.go`（607 行）再切一刀~~ —— 2026-11-24 已拆成 `store.go`(349) / `store_migrate.go`(209) /
-   `util.go`(97) / `log.go`(58)。剩下这几个还可以再切（都在 350–490 行之间，
-   切法以"纯逻辑 vs 编排"或"传输 vs 格式"为准）：`sync_run.go`、`sync_dav.go`、`entry_api.go`、
-   `entry.go`、`entry_query.go`、`entry_store.go`、`snippet.go`、`update.go`、`clipboard_rich.go`。
+   `util.go`(97) / `log.go`(58)；同轮 `sync_dav.go`(255)+`sync_dav_list.go`(232)、
+   `entry_api.go`(241)+`filter_api.go`(208)。剩下这几个还在 350 行以上，切法按"纯逻辑 vs 编排"：
+   `sync_run.go`(489)、`entry.go`(417)、`expand.go`(411)、`snippet.go`(409)、`entry_query.go`(398)、
+   `ppocr.go`(398)、`entry_store.go`(383)、`update.go`(376)、`clipboard_rich.go`(372)。
 
 **单文件行数现状**（>350 行的都是待拆候选，别在新代码里继续长）：
 
