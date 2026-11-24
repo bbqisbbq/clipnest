@@ -10,9 +10,9 @@ import (
 //
 // 2.8.2 起写库是防抖的（前端每敲一个字送过来，后端合并成一次 SQLite 写），
 // 所以"落库"有三个入口，三个都要测：
-//   1. 静默期到了自己写（draftFlushDelay）；
-//   2. 前端在收起窗口/退出前显式 Flush；
-//   3. Shutdown 时兜底再写一次（强杀前唯一能保证的那一步）。
+//  1. 静默期到了自己写（draftFlushDelay）；
+//  2. 前端在收起窗口/退出前显式 Flush；
+//  3. Shutdown 时兜底再写一次（强杀前唯一能保证的那一步）。
 func TestComposerDraftPersists(t *testing.T) {
 	dir := t.TempDir()
 	svc := newTestService(t, dir)

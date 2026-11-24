@@ -27,6 +27,13 @@ export function AutoStartTarget(): $CancellablePromise<string> {
 }
 
 /**
+ * CancelShot drops the frame and hides the overlay (Esc, or a click without a drag).
+ */
+export function CancelShot(): $CancellablePromise<void> {
+    return $Call.ByID(359404707);
+}
+
+/**
  * CaptureSize returns the size the quick-capture window opens at: whatever the
  * user dragged it to last time, or the default.
  */
@@ -80,6 +87,16 @@ export function CopyPlainText(text: string): $CancellablePromise<void> {
  */
 export function CountEntriesWith(q: $models.EntryQuery): $CancellablePromise<number> {
     return $Call.ByID(4162576268, q);
+}
+
+/**
+ * CurrentShotPNG hands the frozen frame to the overlay's <img> tag.
+ * 
+ * 走 asset handler（/shot/current）而不是绑定方法：一张 4K 截图 base64 之后是几 MB
+ * 的字符串，塞进 JSON 里传一次要几十毫秒，而且这段字符串会一直躺在 JS 堆里。
+ */
+export function CurrentShotPNG(): $CancellablePromise<string | null> {
+    return $Call.ByID(2049436133);
 }
 
 /**
@@ -137,6 +154,19 @@ export function DownloadUpdate(): $CancellablePromise<string> {
  */
 export function EnsureCaptureHotkey(): $CancellablePromise<void> {
     return $Call.ByID(3754874877);
+}
+
+/**
+ * EnsureShotDefaults repairs a profile whose settings.json was written before
+ * screenshots existed: those blobs simply have no shotHotkey (解出来是空串 = 不注册)
+ * and copyShotToClipboard 也会是 false。只跑一次（meta 标记），用户之后主动清空热键
+ * 或关掉"复制到剪贴板"都仍然作数。
+ * 
+ * 修完必须走 hooks.OnSettings 重新注册热键——和 EnsureCaptureHotkey 一样，
+ * 只写库不注册的话，这次启动里 Ctrl+Shift+A 依然是空的。
+ */
+export function EnsureShotDefaults(): $CancellablePromise<void> {
+    return $Call.ByID(2187077681);
 }
 
 /**
@@ -256,6 +286,13 @@ export function GetImageData(id: string): $CancellablePromise<string> {
  */
 export function GetSettings(): $CancellablePromise<$models.Settings> {
     return $Call.ByID(4165251554);
+}
+
+/**
+ * GetShotInfo is the bound view of the pending frame.
+ */
+export function GetShotInfo(): $CancellablePromise<$models.ShotInfo> {
+    return $Call.ByID(2842802203);
 }
 
 /**
@@ -520,6 +557,14 @@ export function SaveSettings(st: $models.Settings): $CancellablePromise<$models.
 }
 
 /**
+ * SaveShot stores the cropped region as an image entry (and copies it to the
+ * clipboard when the setting says so).
+ */
+export function SaveShot(dataURL: string): $CancellablePromise<$models.Entry> {
+    return $Call.ByID(4266040592, dataURL);
+}
+
+/**
  * SaveSnippet creates or updates a snippet. Image snippets carry their PNG in
  * imageDataB64 (base64), because the webview cannot hand us a file handle.
  * 片段表已废弃：片段就是带 snippet 能力的条目，这里做一次形状转换。
@@ -615,6 +660,13 @@ export function SetWindowChrome(dark: boolean, borderHex: string): $CancellableP
 }
 
 /**
+ * ShotBounds reports where the overlay window must go (physical pixels).
+ */
+export function ShotBounds(): $CancellablePromise<[number, number, number, number]> {
+    return $Call.ByID(724855520);
+}
+
+/**
  * ShowCapture pops the quick-capture window at the caret so a memo can be typed
  * without leaving whatever you were doing.
  */
@@ -648,6 +700,16 @@ export function Shutdown(): $CancellablePromise<void> {
  */
 export function Start(): $CancellablePromise<void> {
     return $Call.ByID(2502949559);
+}
+
+/**
+ * StartShot freezes the screen and opens the selection overlay.
+ * 
+ * 顺序很重要：**先拍、再显示窗口**。反过来的话遮罩会把自己截进图里，
+ * 用户看到的是一张"带半透明黑色遮罩的桌面"。
+ */
+export function StartShot(): $CancellablePromise<void> {
+    return $Call.ByID(3321878551);
 }
 
 /**

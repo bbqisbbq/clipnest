@@ -19,21 +19,21 @@ func (w *Watcher) Changes() <-chan struct{} {
 }
 func (w *Watcher) Stop() {}
 
-func captureClipboard() (*Captured, error)             { return nil, ErrNotSupported }
-func WriteTextToClipboard(string) error                { return ErrNotSupported }
-func WriteHTMLToClipboard(string, string) error        { return ErrNotSupported }
-func WriteRTFToClipboard(string, string) error         { return ErrNotSupported }
-func WriteImageToClipboard([]byte) error               { return ErrNotSupported }
-func WriteFilesToClipboard([]string) error             { return ErrNotSupported }
-func WriteRawToClipboard(uint32, string, []byte) error { return ErrNotSupported }
+func captureClipboard() (*Captured, error)              { return nil, ErrNotSupported }
+func WriteTextToClipboard(string) error                 { return ErrNotSupported }
+func WriteHTMLToClipboard(string, string) error         { return ErrNotSupported }
+func WriteRTFToClipboard(string, string) error          { return ErrNotSupported }
+func WriteImageToClipboard([]byte) error                { return ErrNotSupported }
+func WriteFilesToClipboard([]string) error              { return ErrNotSupported }
+func WriteRawToClipboard(uint32, string, []byte) error  { return ErrNotSupported }
 func WriteRichToClipboard(string, string, string) error { return ErrNotSupported }
-func foregroundAppName() string                        { return "" }
-func setAutoStart(bool, string) error                  { return ErrNotSupported }
-func autoStartEnabled() bool                           { return false }
-func autoStartCommandValue() string                    { return "" }
-func shellOpen(string) error                           { return ErrNotSupported }
-func OpenExternal(string) error                        { return ErrNotSupported }
-func revealInExplorer(string) error                    { return ErrNotSupported }
+func foregroundAppName() string                         { return "" }
+func setAutoStart(bool, string) error                   { return ErrNotSupported }
+func autoStartEnabled() bool                            { return false }
+func autoStartCommandValue() string                     { return "" }
+func shellOpen(string) error                            { return ErrNotSupported }
+func OpenExternal(string) error                         { return ErrNotSupported }
+func revealInExplorer(string) error                     { return ErrNotSupported }
 
 // entryEchoHash is Win32-only (it mirrors the clipboard capture hashes).
 func entryEchoHash(Entry) string { return "" }
@@ -46,3 +46,9 @@ func ClampToWorkArea(x, y, w, h int) (int, int) { return x, y }
 func ActivateWindow(uintptr)  {}
 func SendPaste() error        { return ErrNotSupported }
 func PasteInto(uintptr) error { return ErrNotSupported }
+
+// 截图（GDI 抓屏 + 遮罩窗摆放）只有 Windows 有实现。
+func CaptureCursorMonitor() (*ShotFrame, error)      { return nil, ErrNotSupported }
+func PlaceOverlayWindow(uintptr, int, int, int, int) {}
+func HideOverlayWindow(uintptr)                      {}
+func FocusOverlayWindow(uintptr)                     {}

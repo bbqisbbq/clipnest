@@ -9,9 +9,10 @@ import (
 // buildTray builds the tray icon and its menu.
 //
 // 菜单只放"托盘上干、在主窗口里干不方便"的动作，一共三条思路：
-//   1. 快捷动作（快速粘贴、暂停收集）——不用切窗口；
-//   2. 常用开关/入口（开机自启、打开设置、打开数据目录）；
-//   3. 退出。
+//  1. 快捷动作（快速粘贴、暂停收集）——不用切窗口；
+//  2. 常用开关/入口（开机自启、打开设置、打开数据目录）；
+//  3. 退出。
+//
 // 有主窗口就能做的事（显示窗口、检查更新、清空历史）不在这里重复：
 // 左键点图标就是"显示/聚焦窗口"，其余都在设置页里，并且带确认。
 //
@@ -29,6 +30,12 @@ func (w *wiring) buildTray(preSettings clip.Settings) {
 	menu.Add("快速粘贴（光标处）").OnClick(func(_ *application.Context) {
 		if err := w.svc.ShowPicker(); err != nil {
 			clip.Logf(w.dataDir, "打开快速粘贴窗失败: %v", err)
+		}
+	})
+	// 截图热键撞了别的软件时（或者干脆没设），托盘要有入口——否则这个功能等于不存在。
+	menu.Add("截图（框选）").OnClick(func(_ *application.Context) {
+		if err := w.svc.StartShot(); err != nil {
+			clip.Logf(w.dataDir, "托盘截图失败: %v", err)
 		}
 	})
 

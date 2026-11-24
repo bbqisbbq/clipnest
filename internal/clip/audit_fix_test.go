@@ -94,7 +94,7 @@ func TestSyncPackageCarriesEveryEntry(t *testing.T) {
 	var hasNewest, hasOldest bool
 	for _, e := range parsed.entries {
 		switch e.Content {
-		case "entry-" + pad(total - 1):
+		case "entry-" + pad(total-1):
 			hasNewest = true
 		case "entry-" + pad(0):
 			hasOldest = true

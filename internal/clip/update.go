@@ -31,17 +31,17 @@ const (
 
 // UpdateInfo is what the UI shows about the update check.
 type UpdateInfo struct {
-	Checked   bool   `json:"checked"`
-	Available bool   `json:"available"`
-	Current   string `json:"current"`
-	Version   string `json:"version"`
-	Notes     string `json:"notes"`
-	AssetName string `json:"assetName"`
-	AssetSize int64  `json:"assetSize"`
-	AssetURL  string `json:"assetUrl"`
+	Checked     bool   `json:"checked"`
+	Available   bool   `json:"available"`
+	Current     string `json:"current"`
+	Version     string `json:"version"`
+	Notes       string `json:"notes"`
+	AssetName   string `json:"assetName"`
+	AssetSize   int64  `json:"assetSize"`
+	AssetURL    string `json:"assetUrl"`
 	AssetSigURL string `json:"assetSigUrl"`
-	Published string `json:"published"`
-	Error     string `json:"error,omitempty"`
+	Published   string `json:"published"`
+	Error       string `json:"error,omitempty"`
 }
 
 type ghRelease struct {

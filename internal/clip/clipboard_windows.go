@@ -70,6 +70,20 @@ func captureClipboard() (*Captured, error) {
 	if formats.html != 0 && has(formats.html) {
 		if b, err := readFormat(formats.html); err == nil {
 			if frag := htmlFragment(b); frag != "" {
+				// 先看它是不是"就一张网页图片"：浏览器的「复制图片」经常只给一段
+				// <img src>、不给位图（详见 capture_imgfetch.go）。这种条目用户要的
+				// 显然是图片本身，不是一条指向图片地址的富文本。
+				if src, ok := imageOnlyFragment(frag); ok {
+					return &Captured{
+						Kind:           KindImage,
+						RemoteImageURL: src,
+						HTML:           frag,
+						Text:           text,
+						Preview:        previewForRemote(src),
+						Size:           len(frag),
+						SourceApp:      foregroundAppName(),
+					}, nil
+				}
 				plain := text
 				if plain == "" {
 					plain = stripTags(frag)

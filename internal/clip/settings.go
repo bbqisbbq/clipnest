@@ -22,6 +22,11 @@ type Settings struct {
 	// they can be put back untouched.
 	CaptureCustom bool `json:"captureCustom"`
 
+	// CaptureRemoteImage：网页上「复制图片」时剪贴板里常常只有一段 <img src>、
+	// 没有位图（见 capture_imgfetch.go）。开着就去把那张图下载回来存成图片条目，
+	// 关掉则只记一条带地址的富文本。要联网，所以做成开关。
+	CaptureRemoteImage bool `json:"captureRemoteImage"`
+
 	// MaxTextLength skips text entries longer than this many characters (0 =
 	// unlimited). Guards against pasting whole documents into the history.
 	MaxTextLength int `json:"maxTextLength"`
@@ -32,6 +37,12 @@ type Settings struct {
 	Hotkey string `json:"hotkey"`
 	// CaptureHotkey opens the quick-capture popup (a memo in one keystroke).
 	CaptureHotkey string `json:"captureHotkey"`
+	// ShotHotkey opens the region-screenshot overlay (Ctrl+Shift+A by default).
+	// Empty disables it.
+	ShotHotkey string `json:"shotHotkey"`
+	// CopyShotToClipboard puts the finished screenshot on the clipboard as well,
+	// so it can be pasted straight away. Off = only the history entry.
+	CopyShotToClipboard bool `json:"copyShotToClipboard"`
 	// PasteOnPick synthesises Ctrl+V after the picker writes the entry to the
 	// clipboard. Turning it off makes the picker copy-only.
 	PasteOnPick bool `json:"pasteOnPick"`
@@ -116,13 +127,18 @@ func DefaultSettings() Settings {
 		CaptureFiles:  true,
 		CaptureRich:   true,
 		CaptureCustom: true,
-		MaxTextLength: 100_000,
-		Hotkey:        "Ctrl+Shift+V",
-		CaptureHotkey: "Ctrl+Shift+N",
-		PasteOnPick:   true,
-		ShowOnLaunch:  false,
-		AutoStart:     false,
-		Theme:         "system",
+		// 网页图片自动下载：默认开。浏览器复制图片时经常不给位图，关掉就只能存地址。
+		CaptureRemoteImage: true,
+		MaxTextLength:      100_000,
+		Hotkey:             "Ctrl+Shift+V",
+		CaptureHotkey:      "Ctrl+Shift+N",
+		ShotHotkey:         DefaultShotHotkey,
+		// 截完顺手进剪贴板：截图这个动作 90% 是为了马上用掉它。
+		CopyShotToClipboard: true,
+		PasteOnPick:         true,
+		ShowOnLaunch:        false,
+		AutoStart:           false,
+		Theme:               "system",
 
 		SyncEnabled:      false,
 		SyncURL:          "",

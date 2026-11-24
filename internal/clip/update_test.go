@@ -6,14 +6,14 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"time"
-	"io"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestVersionLess(t *testing.T) {

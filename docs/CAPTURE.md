@@ -28,14 +28,21 @@ WM_CLIPBOARDUPDATE  ──►  消息窗口(专用线程)  ──►  channel  �
 | --- | --- | --- | --- | --- |
 | 1 | `CF_HDROP` | 文件 | 路径引用 + 元信息（见 FILE-STRATEGY.md） | 重建 `DROPFILES` |
 | 2 | `PNG` / `CF_DIBV5` / `CF_DIB` | 图片 | 解码为 PNG 存 blob | `CF_DIB`(+`PNG`) |
-| 3 | `HTML Format` | 富文本 | HTML 片段 + 纯文本 | `HTML Format` + 纯文本 |
-| 4 | `Rich Text Format` | 富文本 | RTF + 纯文本（内置轻量 RTF→文本） | RTF + 纯文本 |
-| 5 | `text/uri-list` | 链接 | 第一行非注释 URI | 文本 |
-| 6 | `CF_UNICODETEXT` / `CF_TEXT` | 文本（若是单个 URL 则归为链接） | 原样文本 | `CF_UNICODETEXT` |
-| 7 | 只有 OLE `DataObject`（延迟渲染） | 按 1/6 回退 | `OleGetClipboard` + `IDataObject::GetData` | 同上 |
-| 8 | **其它任何私有格式** | 「其它格式」 | 原始字节（≤1 MiB）+ 格式名与格式 ID | 按原名重新注册后原样写回 |
+| 3 | `HTML Format`，且片段里**只有一张 `<img>`** | 图片（下载） | 按 `<img src>` 把图抓回来，转 PNG 存 blob；抓不到就退回第 4 条 | 同第 2 条 |
+| 4 | `HTML Format` | 富文本 | HTML 片段 + 纯文本 | `HTML Format` + 纯文本 |
+| 5 | `Rich Text Format` | 富文本 | RTF + 纯文本（内置轻量 RTF→文本） | RTF + 纯文本 |
+| 6 | `text/uri-list` | 链接 | 第一行非注释 URI | 文本 |
+| 7 | `CF_UNICODETEXT` / `CF_TEXT` | 文本（若是单个 URL 则归为链接） | 原样文本 | `CF_UNICODETEXT` |
+| 8 | 只有 OLE `DataObject`（延迟渲染） | 按 1/7 回退 | `OleGetClipboard` + `IDataObject::GetData` | 同上 |
+| 9 | **其它任何私有格式** | 「其它格式」 | 原始字节（≤1 MiB）+ 格式名与格式 ID | 按原名重新注册后原样写回 |
 
-第 8 条就是"滴水不漏"的兜底：Excel 单元格区间、颜色选择器、音频片段、各种私有结构，
+**第 3 条为什么存在**：Chrome / Edge 的「复制图片」**不往剪贴板放位图**（真机取证见下），
+只放一个 `<img src="https://…">` 和一段 alt 文字。按老规则会归成富文本，历史里就剩一条"图片的
+链接"。现在由 `capture_imgfetch.go` 认出来并**在后台**把图下载回来（单张 ≤24 MiB、超时 8 秒、
+浏览器 UA 应对防盗链），下载失败则退回富文本条目（内容不丢）。设置 →「采集」→
+「网页图片自动下载」可关掉这条路径。
+
+第 9 条就是"滴水不漏"的兜底：Excel 单元格区间、颜色选择器、音频片段、各种私有结构，
 都会以「其它格式」入账，点「复制」能**原样**还回剪贴板，目标程序仍认得。
 
 枚举里属于剪贴板管线本身的格式会被跳过（`DataObject`、`Ole Private Data`、`Shell IDList Array`、
@@ -61,6 +68,8 @@ WM_CLIPBOARDUPDATE  ──►  消息窗口(专用线程)  ──►  channel  �
 | 剪贴板被写入后**立即清空** | 若 owner 在 45ms 内退出且未渲染数据，读到的就是空 |
 | 超过 1 MiB 的私有格式 | 跳过（避免把历史撑爆），可在设置里关掉「其它格式」采集 |
 | `CF_BITMAP` 等 GDI 句柄格式 | 只认 `CF_DIB`/`CF_DIBV5`/`PNG`；用 GDI 句柄传图的程序需要另做 `GetDIBits`（未实现） |
+| 网页图片下载 | 只解得了 PNG / JPEG / GIF（WebP、AVIF 目前解不了，会退回富文本）；单张 >24 MiB 或不带 `http(s)` 地址（如 `blob:`）的不抓 |
+| 截图 | 一次只截**光标所在的那块显示器**（多屏不分屏拼接）；遮罩期间屏幕是**冻结的那一帧**，背后在动的窗口不会进图 |
 | 密码管理器 | 通常用私有加密格式或设置了"禁止剪贴板监听"，属于系统/应用层保护，不强行绕过；从密码管理器复制过的内容请手动删除（程序不做自动清理） |
 | 虚拟文件（Outlook 附件拖拽） | `FileGroupDescriptorW` 是虚拟流，当前不解析，会落成「其它格式」或跳过 |
 
@@ -69,6 +78,8 @@ WM_CLIPBOARDUPDATE  ──►  消息窗口(专用线程)  ──►  channel  �
 ```powershell
 # 1) 看剪贴板里到底有哪些格式（含名字、大小）
 go run ./scratch/clipdump
+# 1b) 同上，外加文本/HTML/RTF 的头几个字与 DIB 头（查"存错了"最直接）
+go run ./scratch/clipfmt
 
 # 2) 造一条 RTF / 自定义格式，观察是否被收录
 go run ./scratch/setclip -rtf "{\rtf1\ansi Hello \b ClipNest\b0}"
@@ -77,6 +88,7 @@ go run ./scratch/setclip -custom ExcelClipRange -payload 01000000deadbeef
 # 3) 自动化回归：快捷键弹窗 → 回车粘贴到目标窗口
 pwsh -File scratch\e2e-picker.ps1     # Enter 直接粘贴
 pwsh -File scratch\e2e-picker2.ps1    # Esc 关闭 / Ctrl+Enter 只复制
+pwsh -File scratch\e2e-webimg.ps1     # 网页复制图片 → 图片条目（真 Chrome + 本地页面）
 
 # 4) 单元测试（真实读写剪贴板 + DIB 互转 + 存储）
 go test ./internal/clip/ -v

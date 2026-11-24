@@ -24,6 +24,18 @@ export default function InteractionSection({ draft, patch, appInfo }: Props) {
       >
         <HotkeyInput value={draft.captureHotkey} onChange={(v) => patch({ captureHotkey: v })} />
       </Row>
+      <Row
+        label="截图快捷键"
+        tip="按下后整屏冻结、拖动框选，松开就存成一条图片条目（顺手进剪贴板）。Esc 取消；留空表示不注册。"
+      >
+        <HotkeyInput value={draft.shotHotkey} onChange={(v) => patch({ shotHotkey: v })} />
+      </Row>
+      <Row
+        label="截图后复制到剪贴板"
+        tip="截完立刻能 Ctrl+V 粘出去。关掉则只存进历史，需要时在列表里点复制。"
+      >
+        <Switch checked={draft.copyShotToClipboard} onChange={(v) => patch({ copyShotToClipboard: v })} />
+      </Row>
       {/* 窗口四角本来就是透明（圆角外侧透出桌面），这一项调的是卡片底色的 alpha。
           「关」= 实心卡片；拉到 100% = 卡片完全透掉，只剩文字和一圈细边。 */}
       <Row

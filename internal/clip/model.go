@@ -43,4 +43,9 @@ type Captured struct {
 
 	FormatName string
 	FormatID   uint32
+
+	// RemoteImageURL 非空表示"这次剪贴板里只有一张网页图片的地址"（浏览器复制图片
+	// 的常见形状：HTML 里就一个 <img src>，没有位图）。这时 PNG 还是空的，真正的
+	// 字节由 service_capture.go 在后台下载后补上；HTML/Text 留着做失败时的降级。
+	RemoteImageURL string
 }

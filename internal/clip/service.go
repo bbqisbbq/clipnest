@@ -16,7 +16,7 @@ import (
 // 设置与开机自启（service_settings.go）。
 
 // Version is shown in the UI and written to the log on start.
-const Version = "2.9.5"
+const Version = "2.10.0"
 
 // AppInfo is static information the frontend needs for the about/settings view.
 type AppInfo struct {
@@ -53,6 +53,11 @@ type Hooks struct {
 	ShowCaptureAt func(x, y int) bool
 	// HideCapture hides the quick-capture popup.
 	HideCapture func()
+	// ShowShotWindow shows the screenshot overlay window over the frozen frame and
+	// reports whether it could be shown. Implemented by main.go (it owns the window).
+	ShowShotWindow func() bool
+	// HideShotWindow hides the screenshot overlay window.
+	HideShotWindow func()
 	// ApplyChrome paints the native window parts (borders, caption) to match the
 	// current theme. Implemented by main.go because only it knows the window handles.
 	ApplyChrome func(dark bool, borderHex string)
@@ -95,6 +100,12 @@ type ClipService struct {
 	// targetHwnd is the window that had focus when the picker was opened; it is
 	// where the pasted content must land.
 	targetHwnd uintptr
+
+	// 截图（见 service_shot.go）：shot 是"已经拍好、等着被裁"的那一帧（nil = 没有待裁的帧），
+	// shotSourceApp 是按快捷键时前台程序的 exe 名（截图条目的来源）。
+	// 两者都由 mu 保护。
+	shot          *ShotFrame
+	shotSourceApp string
 
 	// engine is the inline-trigger engine (internal/expand); it owns the keyboard
 	// hook and asks this service for content through expand.Host.
@@ -150,6 +161,8 @@ func (s *ClipService) spawn(fn func()) {
 func (s *ClipService) Start() error {
 	// 老 profile 的「记一笔」热键自愈（修完会重新注册，见 EnsureCaptureHotkey）
 	s.EnsureCaptureHotkey()
+	// 同理：截图是后加的功能，老 profile 里没有 shotHotkey，补上默认值并注册
+	s.EnsureShotDefaults()
 	// 后台循环先起来：剪贴板监听失败（消息窗被别的程序挡住这类极端情况）不该
 	// 连带把同步、更新检查、缩写展开一起掐掉 —— 那会让程序"看起来正常但什么都不做"。
 	s.spawn(s.refreshFilesLoop)

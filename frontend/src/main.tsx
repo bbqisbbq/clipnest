@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import Picker from "./Picker";
 import Capture from "./Capture";
+import Shot from "./Shot";
 import { ClipService } from "./lib/api";
 
 // 自带字体（SIL OFL / Google Fonts）：
@@ -36,6 +37,8 @@ import "./styles/suggest.css";
 import "./styles/contextmenu.css";
 // 隐私模式：::highlight(clipnest-mask) 与开关按钮
 import "./styles/privacy.css";
+// 截图遮罩层（?mode=shot）：自己的 .shot-* 命名空间，不参与主题 token
+import "./styles/shot.css";
 import "./theme-light.css";
 import { applyTheme, storedTheme } from "./lib/themes";
 import { warmUpMarkdown } from "./components/MarkdownSurface";
@@ -48,11 +51,13 @@ import { DialogProvider } from "./components/Dialog";
 const mode = new URLSearchParams(window.location.search).get("mode");
 const isPicker = mode === "picker";
 const isCapture = mode === "capture";
+const isShot = mode === "shot";
 // Apply the theme as early as possible so the first paint is not the wrong colour.
 const boot = storedTheme();
 applyTheme(boot.scheme, boot.presetID);
 document.body.classList.toggle("is-picker", isPicker);
 document.body.classList.toggle("is-capture", isCapture);
+document.body.classList.toggle("is-shot", isShot);
 // 工具栏配置：capture 窗不跑 useAppData，所以在这里也取一次（异步，取不到就用默认）
 void ClipService.GetSettings()
   .then((st) => applyToolbarSettings(st.editorToolbar, st.composerToolbar))
@@ -83,8 +88,8 @@ window.addEventListener("unhandledrejection", (e) => report("unhandledrejection"
 // （实测：首实例 250ms，后续实例 10~19ms）。热键窗本来就随应用一起创建，
 // 空闲时先烧热，按下热键时就不会卡在解析上。
 //
-// picker 是搜索列表，不需要 Markdown 引擎，别在那儿白烧一遍。
-const usesEditor = !isPicker;
+// picker 是搜索列表、shot 是框选遮罩，都不需要 Markdown 引擎，别在那儿白烧一遍。
+const usesEditor = !isPicker && !isShot;
 const whenIdle = (cb: () => void) => {
   if (typeof window.requestIdleCallback === "function") {
     window.requestIdleCallback(cb, { timeout: 1200 });
@@ -97,7 +102,9 @@ if (usesEditor) whenIdle(() => void warmUpMarkdown());
 try {
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>
-      <DialogProvider>{isPicker ? <Picker /> : isCapture ? <Capture /> : <App />}</DialogProvider>
+      <DialogProvider>
+        {isPicker ? <Picker /> : isCapture ? <Capture /> : isShot ? <Shot /> : <App />}
+      </DialogProvider>
     </React.StrictMode>,
   );
 } catch (err) {

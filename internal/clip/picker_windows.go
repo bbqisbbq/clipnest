@@ -298,6 +298,7 @@ func parseHexColor(hex string) (uint32, bool) {
 	}
 	return uint32(b)<<16 | uint32(g)<<8 | uint32(r), true
 }
+
 // SendPaste synthesises Ctrl+V into whatever window currently has focus.
 // 实现搬到了 internal/winplat（那边还有 expand 用的 Unicode 注入，共用同一份
 // INPUT 结构体与批处理）。

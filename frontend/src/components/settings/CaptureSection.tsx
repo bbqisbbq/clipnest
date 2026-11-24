@@ -24,6 +24,12 @@ export default function CaptureSection({ draft, patch }: Props) {
       <Row label="图片" tip="支持 PNG、CF_DIB、CF_DIBV5 三种来源，截图工具与浏览器复制的图片都能收录。">
         <Switch checked={draft.captureImage} onChange={(v) => patch({ captureImage: v })} />
       </Row>
+      <Row
+        label="网页图片自动下载"
+        tip="浏览器「复制图片」时经常只把 <img src> 塞进剪贴板、不给位图。开着就去把那张图下载回来存成图片条目（要联网，单张上限 24 MB，超时 8 秒）；关掉则只记一条带图片地址的富文本。"
+      >
+        <Switch checked={draft.captureRemoteImage} onChange={(v) => patch({ captureRemoteImage: v })} />
+      </Row>
       <Row label="文件（仅路径引用）" tip="只记录路径与元信息，不复制实体文件；原文件被移动或删除后会标记为失效。">
         <Switch checked={draft.captureFiles} onChange={(v) => patch({ captureFiles: v })} />
       </Row>

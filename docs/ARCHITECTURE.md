@@ -42,6 +42,10 @@ internal/clip/           业务层：条目、捕获、片段、同步、绑定 
 | `service_settings.go` | 设置保存与副作用（自启、展开器、两个后台循环） |
 | `draft.go` | 快捷输入框的未保存草稿（meta 键 `composer.draft`，跟着 clipnest.db 走）。**写库防抖在 Go 侧**（前端每键送一次，内存立即更新 + 400ms 合并写），`FlushComposerDraft`（前端在收起窗口/退出前调）与 `Shutdown` 兜底 |
 | `entry_api.go` | 绑定给前端的条目 API + 筛选器 CRUD |
+| `service_shot.go` | 截图的业务面：拍帧 → 交给遮罩窗 → 收回裁好的 PNG → 落库 →（可选）进剪贴板。裁切在前端做，这里不做几何计算 |
+| `shot_windows.go` | 截图的平台面：GDI `BitBlt` 拍光标所在显示器、`SetWindowPos` 按物理像素摆遮罩窗、把焦点交给 WebView 子窗口 |
+| `hotkey.go` / `hotkey_windows.go` | 加速键的"撞车预检"：注册前用 Win32 `RegisterHotKey` 试一次再注销。Wails 在 `Run()` 之前的 Register 是排队的、失败拿不到，见 HISTORY「热键注册成功可能是假的」 |
+| `capture_imgfetch.go` | 网页「复制图片」的补丁：认出"整段只有一个 `<img>`"的 HTML 片段，按地址把图下载回来（后台跑，失败降级成富文本） |
 | `entry_title.go` | 标题：从正文第一个 `# 一级标题` 派生 + `normalizeTitle`（手写锁定 / 自动跟随 / 清空退回）。规则都在这里，别在 UI 里重算 |
 | `ocr.go` | 图片 OCR 引擎：Windows 自带 `Windows.Media.Ocr`，经 PowerShell `-EncodedCommand` 调用（脚本纯 ASCII）；外加识别结果的后处理（CJK 空格合并、协议头纠错） |
 | `ocr_worker.go` | OCR 队列与 worker（单个串行）+ 启动补扫 + 手动触发 `OcrEntry`。慢（约 0.5~1.2 秒/张），所以绝不挡采集 |
@@ -127,13 +131,15 @@ src/components/
                         ※ 内容的 onChange 靠自己在宿主上听的 DOM `input` 事件（见下方经验），
                           不要指望 Vditor 的 `options.input`——IR 模式手打时它不触发
   SnippetFields         片段的额外编辑项（嵌在详情的属性面板里）
-  HotkeyInput / Lightbox / Picker / Capture
+  HotkeyInput / Lightbox / Picker / Capture / Shot
+                        ※ Shot 是框选截图的遮罩层（?mode=shot）：冻结的那一帧由 asset handler
+                          `/shot/current` 直出 PNG，裁切用 canvas 按 naturalWidth/clientWidth 换算
   PrivacyToggle          隐私模式的小眼睛开关（详情 / 记一条 / 快速输入窗各一个）
   ContextMenu            通用右键菜单（自绘，不用系统菜单）：贴边翻转、Esc/点外面关、↑↓ 选
                         ※ 菜单**条目**不在这里，规则在 lib/entryMenu.ts（纯函数，可独立断言）
 src/styles/vditor-theme.css  Vditor 的 token 映射 + 三条硬编码浅色补丁（深色主题必需）
 src/styles/
-  fonts → base → layout → entries → controls → settings → picker → snippets → timeline → editor → vditor-theme → detail → todo → filter
+  fonts → base → layout → entries → controls → settings → picker → snippets → timeline → editor → vditor-theme → detail → todo → filter → shot
   （fonts.css 里是 @font-face：自带 Maple Mono NF CN 单 400 字重，字体文件在 src/assets/fonts/）
 src/theme-light.css      主题引擎管不到的浅色补丁（--k-* / --shadow-pop / 原生控件）
 ```
@@ -261,6 +267,10 @@ go run ./scratch/ocrcmp <数据目录> <png>                   # 两个引擎并
 go run ./scratch/ocrdownload <数据目录>                    # 一键下载全链路（下载→校验→解压→引擎能起；要 HTTPS_PROXY）
 pwsh -File scripts\visual-check\check-css.ps1   # 样式回归截图（改 CSS 后跑）
 pwsh -STA -File scratch\e2e-capture-resize.ps1  # 记一笔浮层：拖动/拉伸/尺寸记忆（真鼠标事件）
+pwsh -File scratch\e2e-shot.ps1                  # 截图：热键 → 遮罩铺满显示器 → 拖动 → 条目尺寸与拖动一致 → 剪贴板有图 → Esc 不多出条目
+pwsh -File scratch\e2e-webimg.ps1                # 网页「复制图片」：真 Chrome 复制 → 存成图片条目；服务器停掉 → 退回富文本
+go run ./scratch/clipfmt                        # 剪贴板取证：格式名 + 文本/HTML/DIB 头（查"某类内容存错了"先跑它）
+pwsh -File scratch\shot-settings-check.ps1       # 设置页新增几行的外观：截图快捷键 / 截图后复制到剪贴板 / 网页图片自动下载
 pwsh -File scratch\e2e-capture-transparency.ps1 # 记一笔浮层：圆角真透明 + 卡片半透明（按像素量；浅色主题要加 -Preset default-light -Backdrop '#1e6fd9'）
 pwsh -STA -File scratch\check-theme-sync.ps1          # 两个弹窗真的收到 settings:changed（托盘「暂停收集」触发一次）
 pwsh -STA -File scratch\check-sidebar-active.ps1 # 侧栏高亮：待办 ⇄ 内容不同时点亮两行（真鼠标点击）

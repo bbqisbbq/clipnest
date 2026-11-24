@@ -25,6 +25,7 @@ export type {
     FilterGroup,
     OCRProgress,
     Settings,
+    ShotInfo,
     Snippet,
     SnippetFields,
     Stats,

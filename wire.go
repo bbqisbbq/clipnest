@@ -1,7 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"log"
+	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
@@ -27,12 +29,20 @@ type wiring struct {
 	win     *application.WebviewWindow
 	picker  *application.WebviewWindow
 	capture *application.WebviewWindow
+	// shot 是全屏框选截图的遮罩窗：位置与尺寸由 clip.PlaceOverlayWindow 用物理像素
+	// 直接摆（Wails 的 SetPosition/SetSize 走 DIP，缩放屏上会差一圈）。
+	shot *application.WebviewWindow
 
 	pauseItem     *application.MenuItem
 	autoStartItem *application.MenuItem
 
 	hotkey        string
 	captureHotkey string
+	shotHotkey    string
+	// shotHotkeyBlocked 记下"启动时就被别的程序占用、已经报过一次"的那个组合键。
+	// 它不是"永远不报错"：用户主动在设置页选一个被占用的键，照样当场报错——只是别让
+	// 一把抢不到的默认键把**所有**设置的保存都卡死（改个主题都弹"截图快捷键注册失败"）。
+	shotHotkeyBlocked string
 }
 
 func (w *wiring) showWindow() {
@@ -113,6 +123,60 @@ func (w *wiring) hideCapture() {
 	}
 }
 
+// showShotWindow 把遮罩窗精确铺在"按下快捷键时鼠标所在那块显示器"上。
+//
+// 桌面截图的两条硬要求：① 必须在**已经在内存里的那一帧**上铺开（截图先拍好了，
+// 见 service_shot.go）；② 位置尺寸按物理像素给（monitor rect 就是物理像素），
+// 所以走 Win32 SetWindowPos，不用 Wails 的 DIP 接口。
+func (w *wiring) showShotWindow() bool {
+	if w.shot == nil {
+		return false
+	}
+	left, top, sw, sh := w.svc.ShotBounds()
+	if sw <= 0 || sh <= 0 {
+		return false
+	}
+	// Show 必须走主线程；隐藏窗的 WebView2 controller 是第一次 Show 时才嵌进来的，
+	// 所以窗口句柄要等一会儿才有（见下面的轮询）。
+	application.InvokeSync(func() { w.shot.Show() })
+
+	go func() {
+		var hwnd uintptr
+		// 第一次唤起实测要 ~100ms 才拿到句柄；之后都是立即有。
+		for i := 0; i < 60; i++ {
+			if h := uintptr(w.shot.NativeWindow()); h != 0 {
+				hwnd = h
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		if hwnd == 0 {
+			clip.Logf(w.dataDir, "shot window: 句柄迟迟没建出来，遮罩可能没铺满")
+			return
+		}
+		// 用物理像素把遮罩精确铺在显示器上（Wails 的 SetSize/SetPosition 走 DIP，
+		// 缩放屏上会差一圈）。然后抢前台、把焦点交给 WebView 子窗口，Esc 才能生效。
+		clip.PlaceOverlayWindow(hwnd, left, top, sw, sh)
+		clip.ActivateWindow(hwnd)
+		clip.FocusOverlayWindow(hwnd)
+		clip.Logf(w.dataDir, "shot window: pos=(%d,%d) size=(%dx%d) hwnd=%#x", left, top, sw, sh, hwnd)
+		// 铺好之后再让前端换帧：这时窗口已经是最终尺寸，用户看到的第一眼就是对的。
+		if w.app != nil {
+			w.app.Event.Emit("shot:opened", "")
+		}
+	}()
+	return true
+}
+
+func (w *wiring) hideShotWindow() {
+	if w.shot == nil {
+		return
+	}
+	application.InvokeSync(func() {
+		clip.HideOverlayWindow(uintptr(w.shot.NativeWindow()))
+	})
+}
+
 // applyChrome 把 DWM 的系统边框/标题区刷成当前配色。
 //
 // picker 有意不设：它是透明窗口上的圆角卡片，DWM 的 1px 边框会沿着方形窗口
@@ -154,6 +218,9 @@ func (w *wiring) applyHotkey(accel string) error {
 	if accel == "" {
 		return nil
 	}
+	if clip.HotkeyTaken(accel) {
+		return fmt.Errorf("快捷键 %s 已被其它程序占用", accel)
+	}
 	if err := w.app.GlobalShortcut.Register(accel, func() {
 		if err := w.svc.ShowPicker(); err != nil {
 			log.Printf("打开快速粘贴窗失败: %v", err)
@@ -177,6 +244,9 @@ func (w *wiring) applyCaptureHotkey(accel string) error {
 	if accel == "" {
 		return nil
 	}
+	if clip.HotkeyTaken(accel) {
+		return fmt.Errorf("快捷键 %s 已被其它程序占用", accel)
+	}
 	if err := w.app.GlobalShortcut.Register(accel, func() {
 		if err := w.svc.ShowCapture(); err != nil {
 			clip.Logf(w.dataDir, "open capture window failed: %v", err)
@@ -187,6 +257,41 @@ func (w *wiring) applyCaptureHotkey(accel string) error {
 	}
 	w.captureHotkey = accel
 	clip.Logf(w.dataDir, "capture hotkey registered: %s", accel)
+	return nil
+}
+
+// applyShotHotkey 同上，作用于框选截图。
+func (w *wiring) applyShotHotkey(accel string) error {
+	if accel == w.shotHotkey {
+		return nil
+	}
+	if w.shotHotkey != "" && w.app.GlobalShortcut.IsRegistered(w.shotHotkey) {
+		_ = w.app.GlobalShortcut.Unregister(w.shotHotkey)
+	}
+	w.shotHotkey = ""
+	if accel == "" {
+		return nil
+	}
+	// 先同步探一次：Wails 在 Run() 之前只排队，撞车要等启动后才会经由错误处理器报出来，
+	// 那时用户早就以为"设置保存成功了"（见 internal/clip/hotkey_windows.go）。
+	if clip.HotkeyTaken(accel) {
+		if accel == w.shotHotkeyBlocked {
+			clip.Logf(w.dataDir, "shot hotkey still owned by another app: %s（不阻塞其它设置保存）", accel)
+			return nil
+		}
+		return fmt.Errorf("快捷键 %s 已被其它程序占用", accel)
+	}
+	if err := w.app.GlobalShortcut.Register(accel, func() {
+		if err := w.svc.StartShot(); err != nil {
+			clip.Logf(w.dataDir, "screenshot start failed: %v", err)
+		}
+	}); err != nil {
+		clip.Logf(w.dataDir, "shot hotkey register failed: %q: %v", accel, err)
+		return err
+	}
+	w.shotHotkey = accel
+	w.shotHotkeyBlocked = ""
+	clip.Logf(w.dataDir, "shot hotkey registered: %s", accel)
 	return nil
 }
 
@@ -205,7 +310,7 @@ func (w *wiring) ownWindow() bool {
 	if fg == 0 {
 		return false
 	}
-	for _, win := range []*application.WebviewWindow{w.win, w.picker, w.capture} {
+	for _, win := range []*application.WebviewWindow{w.win, w.picker, w.capture, w.shot} {
 		if win != nil && fg == uintptr(win.NativeWindow()) {
 			return true
 		}
@@ -322,5 +427,32 @@ func (w *wiring) createWindows(preSettings clip.Settings, hidden bool) {
 		if cw, ch := w.capture.Size(); cw > 0 && ch > 0 {
 			w.svc.SaveCaptureSize(cw, ch)
 		}
+	})
+
+	// 框选截图的遮罩窗。
+	//
+	// 建的时候给个小尺寸并隐藏：真正的铺满由 ShowShotWindow 用 SetWindowPos 按显示器
+	// 物理像素摆（见 internal/clip/shot_windows.go）。不要开 HideOnFocusLost ——
+	// 截图的整个过程里它就该一直是前台窗；也不要用透明背景：遮罩自己会画半透明黑，
+	// 窗口透明只会让 WebView2 后面露出桌面，边缘还会带一圈脏像素。
+	w.shot = w.app.Window.NewWithOptions(application.WebviewWindowOptions{
+		Name:          "shot",
+		Title:         "ClipNest 截图",
+		Width:         320,
+		Height:        240,
+		Frameless:     true,
+		AlwaysOnTop:   true,
+		Hidden:        true,
+		DisableResize: true,
+		Windows: application.WindowsWindow{
+			Theme: application.SystemDefault,
+		},
+		BackgroundColour: application.NewRGB(8, 9, 12),
+		URL:              "/?mode=shot",
+	})
+	// Esc / 点完立刻切走：遮罩窗不该被当成"用户手上的工作窗口"。
+	w.shot.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
+		e.Cancel()
+		w.hideShotWindow()
 	})
 }

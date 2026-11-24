@@ -27,6 +27,7 @@
 | 2026-11-20 | 快速输入窗透明 | 窗口改真透明（圆角透桌面）+ 可选的卡片半透明；发现 WebView2 半透明必须配 DWM backdrop（见"踩过的坑"） |
 | 2026-11-23 | 同步专项审查 | 真机取证（坚果云 PROPFIND + 本机库）查出：老库墓碑表主键不匹配导致**删除从来不产生墓碑**、PROPFIND 拿不到包大小/时间、坏对端包毒死整轮、失败不退避；修于 2.9.3 |
 | 2026-11-23 | 同步包改全量 | 用户判断"≥500 条只同步最新那批"不可接受。去掉 `syncMaxEntries`、加 `Store.AllEntries()`；附件预算改成可轮转（`sync.blobDeferred`）；间隔默认 120 分钟、上限 1440。同时把"人类可读的文件存储"方案否掉了 —— 属性进 YAML 头这件事可以做，但"文件当真源"会牵动身份（现在是内容哈希）、墓碑键、字段分层与同步增量，见 CHANGELOG 讨论 |
+| 2026-11-24 | 截图 + 网页图片修复 | 新增框选截图（GDI 抓屏 + Win32 摆遮罩 + 前端裁切，`scratch/e2e-shot.ps1` 真键鼠验证尺寸 1:1）；查出"网页复制图片存成链接"的真因是**剪贴板里压根没有位图**（`scratch/clipfmt` 取证），改为按 HTML 里的地址后台下载；顺带发现 Wails 热键注册在 `Run()` 之前是异步的（失败不可见），补了同步预检 |
 
 > 两个没单独发版的轮次留了 commit 指纹，逐条变更去 `git show`：`b243017`（侧栏「待办」与筛选器不同时高亮、
 > 托盘菜单精简到 6 项、`ui:navigate` 让「打开设置」真跳转）、`11428d3`（复制即见、草稿防抖搬进 Go、
@@ -49,6 +50,29 @@
    两处设置只有后端字段没有界面（`captureHotkey`、`expandSuffix`）；两处文案还写着"改完点保存"。
 
 ## 三、踩过的坑（踩过一次就别再踩）
+
+**采集 / 截图（2.10.0）**
+
+- **浏览器「复制图片」根本没有位图**：Chrome/Edge 复制一张网页图片时，剪贴板里只有
+  `HTML Format`（内容是一个 `<img src="https://…">`）加一段 alt 文字，**没有 CF_DIB / PNG**。
+  真机取证：`go run ./scratch/clipfmt` 在页面里选中图片按 Ctrl+C，看到的格式清单里连 `CF_DIB`
+  的影子都没有。所以"图片被存成了链接"不是读图失败，而是**从来就没有图可读** ——
+  只能按 HTML 里的地址去下载（`capture_imgfetch.go`）。别再用"再多读一种位图格式"去解释这个 bug。
+- **抓图不能挡在采集线程上**：一次 GET 最坏 8 秒，而采集是单协程 + 45ms 合并窗口 —— 同步写在
+  管线里等于"这 8 秒内你复制的东西全丢"。所以剪辑出一个"待下载"的采集值（`RemoteImageURL`），
+  由后台 goroutine 补完再落库，落库尾巴与剪贴板路径共用 `saveCaptured`。
+- **截图的 PNG 必须过一遍 Go 的编码器**：浏览器 canvas 编码出来的 PNG 与采集侧"读回同一张图再
+  重编码"的字节不同，而回声抑制靠的正是字节哈希（`entryEchoHash`）——不过一遍，截图后自动复制到
+  剪贴板会立刻被自己再收一条（实测：一次截图变两条条目）。
+- **隐藏窗第一次 `Show()` 之前没有窗口句柄**：`w.shot.NativeWindow()` 返回 0，
+  而 `w.shot.Focus()` 会在 Wails 内部 `Chromium.GetController` 上**空指针崩溃**（panic 把整个
+  应用带崩，日志里是一段 FATAL）。现在的顺序是：主线程 `Show()` → 后台轮询句柄（~100ms）→
+  `SetWindowPos` 摆到物理像素 → `ActivateWindow` → `FocusOverlayWindow`（找 WebView 的
+  `Chrome_WidgetWin*` 子窗口 `SetFocus`，否则 Esc 会落到上一个前台程序里）。
+- **热键"注册成功"可能是假的**：Wails 的 `GlobalShortcut.Register` 在 `app.Run()` 之前只是
+  排队（`pending`），真正的 `RegisterHotKey` 启动后才 flush，失败只经由错误处理器上报，
+  调用方拿到 nil。要真答案就自己先探一次（`hotkey_windows.go` 的 `RegisterHotKey`+`UnregisterHotKey`）。
+  另外：抢不到的默认键**不该**把之后每次保存设置都拦下来（改个主题就弹"截图快捷键注册失败"）。
 
 **编辑器 / 前端**
 

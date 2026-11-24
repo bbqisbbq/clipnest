@@ -19,12 +19,12 @@ import (
 // 参考实测记录：docs/HISTORY.md「2026-11-20 快速输入窗透明」。
 
 const (
-	dwmwaSystemBackdropType = 38
-	dwmSystemBackdropNone   int32 = 1
+	dwmwaSystemBackdropType        = 38
+	dwmSystemBackdropNone    int32 = 1
 	dwmSystemBackdropAcrylic int32 = 3 // DWMSBT_TRANSIENTWINDOW
 
 	// Windows 10 1803+ 的退路：SetWindowCompositionAttribute + ACCENT_POLICY。
-	wcaAccentPolicy        = 19
+	wcaAccentPolicy         = 19
 	accentEnableAcrylicBlur = 4
 )
 

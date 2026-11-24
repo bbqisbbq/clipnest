@@ -1,6 +1,7 @@
 package clip
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -122,10 +123,53 @@ func (s *ClipService) handleClipboardChange() {
 		}
 	}
 
-	entry, isNew, err := s.store.SaveCapture(*cap)
+	// 只拿到地址的网页图片：真正的字节要去下载，绝不能挡在采集路径上
+	// （下一次复制会被 45ms 合并窗口吃掉）。下载完自己落库、自己发事件。
+	if cap.Kind == KindImage && len(cap.PNG) == 0 && cap.RemoteImageURL != "" {
+		s.captureRemoteImage(*cap, st)
+		return
+	}
+
+	s.saveCaptured(*cap)
+}
+
+// captureRemoteImage 把"只有 <img src> 的一条复制"补成真正的图片条目。
+//
+// 三条出口：① 下载成功 → 存图片（顺带进 OCR 队列）；② 用户关掉了自动下载 →
+// 立刻降级成富文本，不让人等；③ 下载失败（超时/防盗链/不是图片）→ 也降级成富文本，
+// 并记一行日志说明为什么。无论哪条，这次复制都不会凭空消失。
+func (s *ClipService) captureRemoteImage(cap Captured, st Settings) {
+	if !st.CaptureRemoteImage {
+		s.saveCaptured(richFallbackFromRemote(cap))
+		return
+	}
+	src := cap.RemoteImageURL
+	sourceApp := cap.SourceApp
+	s.bg.Add(1)
+	go func() {
+		defer s.bg.Done()
+		ctx, cancel := context.WithTimeout(s.bgCtx, remoteImageTimeout)
+		defer cancel()
+		img, err := fetchRemoteImage(ctx, src)
+		if err != nil {
+			Logf(s.store.Dir(), "remote image fetch failed (%s): %v —— 退回富文本", src, err)
+			s.saveCaptured(richFallbackFromRemote(cap))
+			return
+		}
+		img.SourceApp = sourceApp
+		Logf(s.store.Dir(), "remote image fetched: %s (%dx%d, %s)", src, img.Width, img.Height, humanBytes(len(img.PNG)))
+		s.saveCaptured(*img)
+	}()
+}
+
+// saveCaptured 是采集管线的尾巴：落库 → 通知界面 → 统计 → 图片排 OCR。
+// 剪贴板同步路径、「网页图片后台下载」与截图共用这一份，别在两处各写一遍。
+// 返回落库后的条目（失败时 nil）；第二个返回值表示是"新条目"还是"又见了一次"。
+func (s *ClipService) saveCaptured(cap Captured) (*Entry, bool) {
+	entry, isNew, err := s.store.SaveCapture(cap)
 	if err != nil {
 		Logf(s.store.Dir(), "save capture failed (kind=%s, format=%q): %v", cap.Kind, cap.FormatName, err)
-		return
+		return nil, false
 	}
 
 	if isNew {
@@ -138,6 +182,7 @@ func (s *ClipService) handleClipboardChange() {
 	if entry.Kind == KindImage {
 		s.enqueueOCR(entry.ID)
 	}
+	return entry, isNew
 }
 
 // The quick-capture popup: a one-box editor for a memo.
