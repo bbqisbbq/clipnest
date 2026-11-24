@@ -1,73 +1,49 @@
-.task
-bin
-frontend/dist
-frontend/node_modules
-# vditor 运行时资源：由 scripts/sync-vditor.ps1 从 node_modules 拷到 public（22MB 的包拷贝，不入库）
-frontend/public/vditor
-build/linux/appimage/build
-build/windows/nsis/MicrosoftEdgeWebview2Setup.exe
-# Mobile generated (per-machine; overlays hold absolute paths)
-build/ios/xcode/overlay.json
-build/ios/xcode/gen/
-build/android/overlay.json
-build/android/gen/
-# local dev artifacts
-scratch/*.png
-scratch/*.exe
-
-
-# local WebDAV test directory (sync playground)
-scratch/davroot/
-bin/*.exe
-
-
-# throwaway APPDATA sandboxes used to test sync against a local WebDAV
-scratch/appdata-*/
-scratch/dev-*/
-
-scratch/probe.txt
-
-
-# 签名用的自签名证书与私钥（绝不入库）
-build/signing/
-
-
-# wails3 生成绑定时产生的临时目录
-frontend/.bindings-tmp-*/
-
-# 升级前的本地数据备份（含真实历史，别进仓库）
-scratch/backup-*/
-
+# ── 构建产物 ─────────────────────────────────────────────
 # 根目录别再放构建产物：go build 不带 -o 会在这里掉一个 clipnest.exe
 /*.exe
+/bin/
+/frontend/dist/
+/frontend/node_modules/
+/task/
+# vditor 运行时资源：由 scripts/sync-vditor.ps1 从 node_modules 拷到 public（22MB 拷贝，不入库）
+/frontend/public/vditor
+# wails3 生成绑定时产生的临时目录
+/frontend/.bindings-tmp-*/
 
-# 布局对比截图（本地看效果用，只入库脚本）
-scratch/layout-preview/*.png
+# Wails 打包中间产物
+/build/linux/appimage/build/
+/build/windows/nsis/MicrosoftEdgeWebview2Setup.exe
 
-# 审查/对照用的截图与改造前的 CSS 快照（本地复现用，只入库脚本）
-scratch/ui-review/*.png
-scratch/ui-review/dist-before.css
+# 移动端生成物（每台机器的覆盖层里带绝对路径）
+/build/ios/xcode/overlay.json
+/build/ios/xcode/gen/
+/build/android/overlay.json
+/build/android/gen/
 
-# 端到端截图（本地看效果用，只入库脚本）
-scratch/e2e-shots/
+# 签名用的自签名证书与私钥（绝不入库）
+/build/signing/
 
-# 抓下来的远端包样本（含真实条目，别进仓库）
-scratch/*.zip
+# ── 本机数据：绝不该进仓库 ───────────────────────────────
+# 沙箱 APPDATA（e2e 脚本自己建，含 WebView2 缓存与真实条目）
+/scratch/appdata-*/
+/scratch/tmp-profile-*/
+/scratch/tmp-*/
+# 升级/迁移前的真实数据备份、故障恢复留档
+/scratch/backup-*/
+/scratch/recovered-*/
+# 抓下来的远端包样本、本地 WebDAV 测试目录
+/scratch/*.zip
+/scratch/davroot/
+# PP-OCR 引擎资产（onnxruntime.dll + 约 21MB 模型，本地下载）
+/scratch/ppocr-assets/
 
-# 透明弹窗实测的截图与沙箱 APPDATA（本地复现用，只入库脚本）
-scratch/transparency-shots/
-scratch/tmp-profile-transparency/
-
-
-# 沙箱 APPDATA（各 e2e 脚本自己建，含 WebView2 缓存与真实条目）
-scratch/tmp-profile-*/
-
-
-# PP-OCR 引擎资产（onnxruntime.dll + 约 21MB 模型，本地下载，不入库）
-scratch/ppocr-assets/
-# 沙箱数据目录与截图
-scratch/appdata-*/
-scratch/ocr-shots/
-scratch/title-shots/
-scratch/e2e-tags-shots/
-scratch/privacy-shots*/
+# ── 本机看效果用的截图与快照（脚本入库，产物不入库）──────
+/scratch/*.png
+/scratch/*.exe
+/scratch/*-shots/
+/scratch/ui-review/*.png
+/scratch/ui-review/dist-before.css
+/scratch/layout-preview/*.png
+/scratch/ocr-shots/
+/scratch/ocr-spike/out.txt
+/scratch/probe.txt
