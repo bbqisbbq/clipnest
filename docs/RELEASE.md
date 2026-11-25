@@ -104,3 +104,36 @@ powershell -File scripts\sign.ps1 -Path "bin\*.exe" -Timestamp http://timestamp.
 
    每个版本都保留自己的安装包与 `.sig`；旧 release 的**资产**清掉、release 本身留着当变更记录。
 8. 收尾：`bin\` 里历史安装包可以删（都已在 Releases），只留当前版本。
+
+## 五、MyGo 构建（分支 mygo-shell 起）
+
+宿主换成 MyGo 之后，**打包链一行没换**：仍是 NSIS 全用户安装包 + ed25519 签名 + 可选 Authenticode，
+只有"Go 那边谁来 build"变了（`wails3 task windows:package` 会重编成 Wails 版，不能用）。
+
+```powershell
+# 一条命令走完：版本号 → 前端 vite build → syso 资源 → CGO go build → NSIS → ed25519 签名 → 自检
+pwsh -File scripts\package-mygo.ps1 -Version 2.12.0
+# 产物：bin\clipnest-2.12.0-amd64-setup.exe（+ .sig）
+```
+
+脚本做的事与 `windows:package` 的差别只有第 4 步：
+
+```
+wails3 generate syso -arch amd64 -icon windows/icon.ico -manifest windows/wails.exe.manifest -info windows/info.json
+$env:CGO_ENABLED=1; go build -tags production -trimpath -buildvcs=false -ldflags="-w -s -H windowsgui -linkmode=internal" -o bin/clipnest.exe .
+makensis -DARG_WAILS_AMD64_BINARY=<绝对路径>\bin\clipnest.exe project.nsi
+```
+
+坑（都写进脚本的自检里了）：
+
+- **安装包版本号来自 `build/windows/nsis/wails_tools.nsh`**，不是 `info.json`。漏改会出现
+  "exe 里是 2.12.0、安装包属性还是 2.11.0"。要么跑 `wails3 task common:update:build-assets`，
+  要么像脚本里那样直接同步那个 define。
+- `build/windows/nsis/MicrosoftEdgeWebview2Setup.exe` 是 **gitignore 的**（1.7MB），
+  新 clone/worktree 里没有它，`makensis` 会报 `File: "MicrosoftEdgeWebview2Setup.exe" -> no files found`。
+  从已有 checkout 拷过来，或 `wails3 generate webview2bootstrapper -dir build\windows\nsis`。
+- **先 Authenticode、后 ed25519**：Authenticode 会改文件字节，先算的 `.sig` 立刻失效
+  （脚本里两步顺序固定，改了记得重跑签名）。
+- 打包完自查两条：`bin\clipnest.exe` 的时间戳是刚才；`Select-String -Path bin\clipnest.exe -Pattern 'releases/download/ocr-assets-v1'`
+  有命中（否则 ppocr 被编成了 stub）。
+  换壳后的产物还能用 `Select-String -Path bin\clipnest.exe -Pattern 'ClipService.GetEntries'` 确认前端是 MyGo 适配层。
