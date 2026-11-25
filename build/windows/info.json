@@ -1,10 +1,10 @@
 {
 	"fixed": {
-		"file_version": "2.12.0"
+		"file_version": "2.12.1"
 	},
 	"info": {
 		"0409": {
-			"ProductVersion": "2.12.0",
+			"ProductVersion": "2.12.1",
 			"CompanyName": "bbqisbbq",
 			"FileDescription": "ClipNest — 常驻托盘的 Windows 剪贴板管理器",
 			"LegalCopyright": "(c) 2026 bbqisbbq",
@@ -13,5 +13,7 @@
 		}
 	}
 }
+
+
 
 

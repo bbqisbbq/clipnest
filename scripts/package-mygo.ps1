@@ -21,6 +21,9 @@ try {
     (Get-Content $svc -Raw) -replace 'const Version = "[^"]+"', "const Version = `"$Version`"" | Set-Content $svc -Encoding utf8
     $cfg = "build\config.yml"
     (Get-Content $cfg -Raw) -replace "(?m)^version: `"[^`"]+`"", "version: `"$Version`"" | Set-Content $cfg -Encoding utf8
+    # 安装包的版本号只认这个（wails3 task common:update:build-assets 生成的）
+    $nsh = "build\windows\nsis\wails_tools.nsh"
+    (Get-Content $nsh -Raw) -replace '!define INFO_PRODUCTVERSION "[^"]+"', "!define INFO_PRODUCTVERSION `"$Version`"" | Set-Content $nsh -Encoding utf8
     $info = Get-Content "build\windows\info.json" -Raw
     $info = $info -replace '("file_version": ")2\.[0-9.]+(")', "`${1}$Version`${2}" -replace '("ProductVersion": ")2\.[0-9.]+(")', "`${1}$Version`${2}"
     Set-Content "build\windows\info.json" $info -Encoding utf8
@@ -91,4 +94,5 @@ finally {
     Remove-Item Env:\CGO_ENABLED, Env:\GOOS, Env:\GOARCH -ErrorAction SilentlyContinue
     Pop-Location
 }
+
 

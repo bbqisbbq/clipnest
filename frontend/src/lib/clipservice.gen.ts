@@ -1,12 +1,15 @@
-// 由 bindings/.../clipservice.ts 机械生成的 MyGo 适配层（scripts/gen-mygo-bindings.ps1）。
-// 方法名保持 Go 的 PascalCase，和 Wails 生成的一致 —— 组件一行都不用改。
+// 由 scripts/gen-mygo-clipservice.ps1 从 bindings/.../clipservice.ts 生成，别手改。
+// 方法名保持 Go 的 PascalCase，Wails 版组件因此一行都不用改。
 import { call } from "mygo-runtime";
 import type * as Models from "../../bindings/github.com/bbqisbbq/clipnest/internal/clip/models";
-import type * as Expand from "../../bindings/github.com/bbqisbbq/clipnest/internal/expand/models";
 
 export const AutoStartTarget = (...args: any[]): Promise<string> => call<string>("ClipService.AutoStartTarget", ...args);
 export const CancelShot = (...args: any[]): Promise<void> => call<void>("ClipService.CancelShot", ...args);
-export const CaptureSize = (...args: any[]): Promise<[number, number]> => call<[number, number]>("ClipService.CaptureSize", ...args);
+export const CaptureSize = async (..._args: any[]): Promise<[number, number]> => {
+  const r: any = await call("ClipService.CaptureSize", ..._args);
+  // 运行时按 Go 结构体的字段名取值，形状再断言回元组（类型由上面的 fields 保证）
+  return [r?.W, r?.H] as [number, number];
+};
 export const CheckUpdate = (...args: any[]): Promise<Models.UpdateInfo> => call<Models.UpdateInfo>("ClipService.CheckUpdate", ...args);
 export const CloseCapture = (...args: any[]): Promise<void> => call<void>("ClipService.CloseCapture", ...args);
 export const CommandOutput = (...args: any[]): Promise<string> => call<string>("ClipService.CommandOutput", ...args);
@@ -49,9 +52,17 @@ export const IsAutoStartEnabled = (...args: any[]): Promise<boolean> => call<boo
 export const IsOwnWindow = (...args: any[]): Promise<boolean> => call<boolean>("ClipService.IsOwnWindow", ...args);
 export const LaunchApp = (...args: any[]): Promise<void> => call<void>("ClipService.LaunchApp", ...args);
 export const LogClient = (...args: any[]): Promise<void> => call<void>("ClipService.LogClient", ...args);
-export const Match = (...args: any[]): Promise<[Expand.Trigger, number, boolean]> => call<[Expand.Trigger, number, boolean]>("ClipService.Match", ...args);
+export const Match = async (..._args: any[]): Promise<[any, number, boolean]> => {
+  const r: any = await call("ClipService.Match", ..._args);
+  // 运行时按 Go 结构体的字段名取值，形状再断言回元组（类型由上面的 fields 保证）
+  return [r?.Trigger, r?.ConsumedLen, r?.Ok] as [any, number, boolean];
+};
 export const OcrAssetsDir = (...args: any[]): Promise<string> => call<string>("ClipService.OcrAssetsDir", ...args);
-export const OcrEngineStatus = (...args: any[]): Promise<[string, boolean, string]> => call<[string, boolean, string]>("ClipService.OcrEngineStatus", ...args);
+export const OcrEngineStatus = async (..._args: any[]): Promise<[string, boolean, string]> => {
+  const r: any = await call("ClipService.OcrEngineStatus", ..._args);
+  // 运行时按 Go 结构体的字段名取值，形状再断言回元组（类型由上面的 fields 保证）
+  return [r?.Chosen, r?.PPOCRReady, r?.Reason] as [string, boolean, string];
+};
 export const OcrEntry = (...args: any[]): Promise<string> => call<string>("ClipService.OcrEntry", ...args);
 export const OpenDataDir = (...args: any[]): Promise<void> => call<void>("ClipService.OpenDataDir", ...args);
 export const OpenEntry = (...args: any[]): Promise<void> => call<void>("ClipService.OpenEntry", ...args);
@@ -64,7 +75,11 @@ export const PickerSnippets = (...args: any[]): Promise<Models.Snippet[] | null>
 export const PromoteToSnippet = (...args: any[]): Promise<Models.Entry> => call<Models.Entry>("ClipService.PromoteToSnippet", ...args);
 export const Quit = (...args: any[]): Promise<void> => call<void>("ClipService.Quit", ...args);
 export const ReconcileAutoStart = (...args: any[]): Promise<void> => call<void>("ClipService.ReconcileAutoStart", ...args);
-export const Render = (...args: any[]): Promise<[string, number]> => call<[string, number]>("ClipService.Render", ...args);
+export const Render = async (..._args: any[]): Promise<[string, number]> => {
+  const r: any = await call("ClipService.Render", ..._args);
+  // 运行时按 Go 结构体的字段名取值，形状再断言回元组（类型由上面的 fields 保证）
+  return [r?.Text, r?.Caret] as [string, number];
+};
 export const RestoreFilters = (...args: any[]): Promise<Models.EntryFilter[] | null> => call<Models.EntryFilter[] | null>("ClipService.RestoreFilters", ...args);
 export const SaveCaptureSize = (...args: any[]): Promise<void> => call<void>("ClipService.SaveCaptureSize", ...args);
 export const SaveEntry = (...args: any[]): Promise<Models.Entry> => call<Models.Entry>("ClipService.SaveEntry", ...args);
@@ -83,7 +98,11 @@ export const SetOwnWindowCheck = (...args: any[]): Promise<void> => call<void>("
 export const SetSnippetFields = (...args: any[]): Promise<Models.Entry> => call<Models.Entry>("ClipService.SetSnippetFields", ...args);
 export const SetTodoDone = (...args: any[]): Promise<Models.Entry> => call<Models.Entry>("ClipService.SetTodoDone", ...args);
 export const SetWindowChrome = (...args: any[]): Promise<void> => call<void>("ClipService.SetWindowChrome", ...args);
-export const ShotBounds = (...args: any[]): Promise<[number, number, number, number]> => call<[number, number, number, number]>("ClipService.ShotBounds", ...args);
+export const ShotBounds = async (..._args: any[]): Promise<[number, number, number, number]> => {
+  const r: any = await call("ClipService.ShotBounds", ..._args);
+  // 运行时按 Go 结构体的字段名取值，形状再断言回元组（类型由上面的 fields 保证）
+  return [r?.Left, r?.Top, r?.Width, r?.Height] as [number, number, number, number];
+};
 export const ShowCapture = (...args: any[]): Promise<void> => call<void>("ClipService.ShowCapture", ...args);
 export const ShowPicker = (...args: any[]): Promise<void> => call<void>("ClipService.ShowPicker", ...args);
 export const ShowWindow = (...args: any[]): Promise<void> => call<void>("ClipService.ShowWindow", ...args);
@@ -183,4 +202,3 @@ export const ClipService = {
   SyncNow,
   TestSync,
 };
-

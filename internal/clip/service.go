@@ -16,7 +16,7 @@ import (
 // 设置与开机自启（service_settings.go）。
 
 // Version is shown in the UI and written to the log on start.
-const Version = "2.12.0"
+const Version = "2.12.1"
 
 // AppInfo is static information the frontend needs for the about/settings view.
 type AppInfo struct {
@@ -330,6 +330,8 @@ func (s *ClipService) SetCaptureBackdrop(enabled bool) bool {
 	}
 	return s.hooks.ApplyBackdrop(enabled)
 }
+
+
 
 
 

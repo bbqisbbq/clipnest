@@ -72,9 +72,15 @@ func (c clipAPI) Match(buf string) (TriggerMatch, error) {
 	return TriggerMatch{Trigger: t, ConsumedLen: n, Ok: ok}, nil
 }
 
-func (c clipAPI) Render(t expand.Trigger) (string, error) {
-	s, _ := c.ClipService.Render(t)
-	return s, nil
+// RenderResult 对应原来的 (string, int)：文本 + 光标偏移（-1 表示"别管光标"）。
+type RenderResult struct {
+	Text  string
+	Caret int
+}
+
+func (c clipAPI) Render(t expand.Trigger) (RenderResult, error) {
+	s, n := c.ClipService.Render(t)
+	return RenderResult{Text: s, Caret: n}, nil
 }
 // SetOwnWindowCheck 是宿主注入"前台窗口是不是自己"的判断，参数是 func——MyGo 没法
 // 绑定（JSON 编码不了函数）。真服务上由 main 直接调用，页面这边遮蔽成一个会报错的
@@ -82,3 +88,4 @@ func (c clipAPI) Render(t expand.Trigger) (string, error) {
 func (c clipAPI) SetOwnWindowCheck() error {
 	return errors.New("SetOwnWindowCheck 只能在 Go 侧调用")
 }
+
