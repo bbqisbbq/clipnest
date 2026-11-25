@@ -75,3 +75,16 @@
 - OCR 一轮（装 ppocr 资产后）。
 - `docs/RELEASE.md` 的打包/签名：仍走 Wails 的 NSIS 流程，**迁移到 MyGo 打包器是单独一步**。
 - README / CI 的 Go 版本、`ARCHITECTURE.md` 的验证命令、`HISTORY.md` 都要同步。
+
+## 7. 发布记录
+
+| 项 | 值 |
+| --- | --- |
+| 版本 | 2.12.1（2.12.0 仅本机自测，未发布） |
+| tag / 提交 | `v2.12.1` / `a1b859b`（main 已快进合并 `mygo-shell`） |
+| Release | https://github.com/bbqisbbq/clipnest/releases/tag/v2.12.1 |
+| 资产 | `clipnest-2.12.1-amd64-setup.exe`（25.03 MB）+ `.sig`（ed25519，`verify` 通过） |
+| 签名 | Authenticode 自签名（`build/signing/clipnest-selfsigned.cer`）+ ed25519 |
+| 打包链 | `scripts/package-mygo.ps1`：go-winres → CGO go build → makensis → ed25519；不再需要 wails3 |
+
+发布后仍需人工确认的三项（与框架无关）：托盘菜单手点一遍、真账号 WebDAV 一轮、装 ppocr 资产跑一轮 OCR。
