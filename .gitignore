@@ -48,3 +48,6 @@
 /scratch/ocr-shots/
 /scratch/ocr-spike/out.txt
 /scratch/probe.txt
+# 脚本调试时误落的 stderr 日志
+*.err.log
+
