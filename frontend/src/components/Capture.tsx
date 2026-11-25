@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Events } from "@wailsio/runtime";
+import { Events } from "../lib/runtime";
 import MarkdownSurface, { type MarkdownSurfaceHandle, warmUpMarkdown } from "./MarkdownSurface";
 import PrivacyToggle from "./PrivacyToggle";
 import { ClipService, EventNames } from "../lib/api";
@@ -181,6 +181,7 @@ export default function Capture() {
     </div>
   );
 }
+
 
 
 

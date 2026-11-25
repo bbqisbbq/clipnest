@@ -29,6 +29,9 @@ public class Pk {
   public struct RECT{public int L,T,R,B;}
   public static IntPtr FindByPid(uint pid, string contains){ IntPtr f=IntPtr.Zero;
     EnumWindows((h,l)=>{uint p;GetWindowThreadProcessId(h,out p);if(p==pid){var sb=new StringBuilder(256);GetWindowText(h,sb,256);if(sb.ToString().Contains(contains)){f=h;return false;}}return true;},IntPtr.Zero);return f; }
+  // 三个窗口的页面标题都一样（ClipNest · 剪贴板），按尺寸挑主窗最稳。
+  public static IntPtr MainWindow(uint pid, int minW){ IntPtr f=IntPtr.Zero;
+    EnumWindows((h,l)=>{uint p;GetWindowThreadProcessId(h,out p);if(p==pid){RECT r; if(GetWindowRect(h,out r) && (r.R-r.L) >= minW){ f=h; return false; }}return true;},IntPtr.Zero);return f; }
   public static IntPtr FindByTitleContains(string contains){ IntPtr f=IntPtr.Zero;
     EnumWindows((h,l)=>{var sb=new StringBuilder(256);GetWindowText(h,sb,256);if(sb.ToString().Contains(contains) && IsWindowVisible(h)){f=h;return false;}return true;},IntPtr.Zero);return f; }
   public static void Key(byte vk, bool up){ keybd_event(vk,0,up?2u:0u,UIntPtr.Zero); }
@@ -71,7 +74,7 @@ try {
     Say ("目标窗口：$([Pk]::Rect($npHwnd))")
 
     # 唤起 picker
-    $appH = [Pk]::FindByPid([uint32]$p.Id, "ClipNest")
+    $appH = [Pk]::MainWindow([uint32]$p.Id, 900)
     $before = (Get-Content $log).Count
     [Pk]::SetForegroundWindow($npHwnd) | Out-Null
     Start-Sleep -Milliseconds 400
@@ -108,7 +111,7 @@ try {
     $p2.Refresh()
     if ($p2.HasExited) { Say "PASS 第二个实例立刻退出（单实例锁生效）" } else { Say "FAIL 第二个实例还在跑"; Stop-Process -Id $p2.Id -Force }
     $fg = [Pk]::GetForegroundWindow()
-    if ($fg -eq $appH -or [Pk]::FindByPid([uint32]$p.Id, "ClipNest") -eq $fg) { Say "PASS 第一个实例的主窗被唤到前台" }
+    if ($fg -eq $appH -or [Pk]::MainWindow([uint32]$p.Id, 900) -eq $fg) { Say "PASS 第一个实例的主窗被唤到前台" }
     else { Say "WARN 前台不是主窗（可能被记事本挡住）：fg=$fg app=$appH" }
 
     # 托盘区域截图（右下角）
@@ -128,6 +131,7 @@ finally {
 }
 Write-Host "`n===== summary ====="
 $results | ForEach-Object { Write-Host $_ }
+
 
 
 

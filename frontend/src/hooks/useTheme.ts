@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Events } from "@wailsio/runtime";
+import { Events } from "../lib/runtime";
 import { ClipService, EventNames } from "../lib/api";
 import { DEFAULT_PRESET_ID, THEME_PRESETS, applyCustomCSS, applyTheme, rememberTheme, type ThemeScheme } from "../lib/themes";
 
@@ -66,4 +66,5 @@ export function useSettingsTheme() {
     };
   }, []);
 }
+
 

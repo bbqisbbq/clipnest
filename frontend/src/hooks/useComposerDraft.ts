@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Events } from "@wailsio/runtime";
+import { Events } from "../lib/runtime";
 import { ClipService } from "../lib/api";
 
 // 快捷输入框的草稿：输入框在哪个视图都要保持同一份内容，关掉应用再打开也要还在。
@@ -102,3 +102,4 @@ export function useComposerDraft(onError: (message: string) => void): ComposerDr
 
   return { text, setText: setTextValue, reset, restored };
 }
+

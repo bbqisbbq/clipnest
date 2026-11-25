@@ -48,7 +48,7 @@ internal/clip/           业务层：条目、捕获、片段、同步、绑定 
 | `filter_api.go` | 筛选器 API：保存/删除/恢复、内置筛选器的覆盖、`filters.hidden` 隐藏位、`GetFilterFields` |
 | `service_shot.go` | 截图的业务面：拍帧 → 交给遮罩窗 → 收回裁好的 PNG → 落库 →（可选）进剪贴板。裁切在前端做，这里不做几何计算 |
 | `shot_windows.go` | 截图的平台面：GDI `BitBlt` 拍光标所在显示器、`SetWindowPos` 按物理像素摆遮罩窗、把焦点交给 WebView 子窗口 |
-| `hotkey.go` / `hotkey_windows.go` | 加速键的"撞车预检"：注册前用 Win32 `RegisterHotKey` 试一次再注销。Wails 在 `Run()` 之前的 Register 是排队的、失败拿不到，见 HISTORY「热键注册成功可能是假的」 |
+| `hotkey.go` / `hotkey_windows.go` | 加速键的"撞车预检"：注册前用 Win32 `RegisterHotKey` 试一次再注销。宿主的 Register 在 `Run()` 之前是排队的、失败拿不到，见 HISTORY「热键注册成功可能是假的」 |
 | `capture_imgfetch.go` | 网页「复制图片」的补丁：认出"整段只有一个 `<img>`"的 HTML 片段，按地址把图下载回来（后台跑，失败降级成富文本） |
 | `entry_title.go` | 标题：从正文第一个 `# 一级标题` 派生 + `normalizeTitle`（手写锁定 / 自动跟随 / 清空退回）。规则都在这里，别在 UI 里重算 |
 | `ocr.go` | 图片 OCR 引擎：Windows 自带 `Windows.Media.Ocr`，经 PowerShell `-EncodedCommand` 调用（脚本纯 ASCII）；外加识别结果的后处理（CJK 空格合并、协议头纠错） |
@@ -98,11 +98,16 @@ internal/clip/           业务层：条目、捕获、片段、同步、绑定 
 | `snippet_exec_windows.go` | 片段动作的 Windows 实现（粘贴 / 启动程序 / 打开网址） |
 | `update.go` | 自动更新：GitHub Release 检查、下载、静默安装 |
 
-**两条铁律**：
+**三条铁律**：
 
 1. `*_windows.go` 不许 import 业务概念；业务层不许直接调 Win32。
-2. package 归属会影响 Wails 绑定路径（`frontend/bindings/...`）。**拆文件是安全的，挪包不是**：
-   要把 `Entry` 或 `Store` 挪去新包，必须同时重新生成绑定并装机验证。
+2. `internal/clip` **不许 import 宿主框架**（换壳前是 Wails，现在是 MyGo）。宿主只出现在
+   `main.go`/`wire.go`/`tray.go`/`events.go`/`bindings.go`；业务层通过 `clip.Hooks` 反向调用宿主。
+3. 前端的方法表是**快照**：`scripts/mygo-bindings/clipservice.signatures.txt` 决定
+   `frontend/src/lib/clipservice.gen.ts` 生成什么。新增/删除绑定方法要同时改快照并重跑
+   `scripts/gen-mygo-clipservice.ps1`；**多返回值方法**（`CaptureSize`/`ShotBounds`/
+   `OcrEngineStatus`/`Match`/`Render`）必须在生成器的 tuple 表里登记，否则前端解构会报
+   `TypeError: (intermediate value) is not iterable`（2.12.0 就踩过这个）。
 
 ## 二、前端（React + TS）
 
@@ -262,10 +267,38 @@ meta           键值对（设备 id、一次性标记、filters.hidden、compos
 - **筛选器不跨端同步**（`entry_filters` 不进包），所以指针类设置也不能跨端：
   `Settings.DefaultFilterID` 在 `localSettingsFields` 里，对端带来的值一律丢掉。
 
-## 五、怎么验证
+## 五、宿主契约（MyGo）
+
+窗口/托盘/热键/事件全由 `github.com/egoist/mygo` 提供。它和换壳前的 Wails 有 6 处语义差异，
+每一条都是实测踩出来的，改 `wire.go`/`tray.go` 之前先看完：
+
+| 差异 | 表现 | 我们怎么处理 |
+| --- | --- | --- |
+| **页面 `<title>` 覆盖窗口标题** | 三个弹窗共用一个 SPA，标题全变成「ClipNest · 剪贴板」，任务栏/e2e 分不清 | `retitle()`：建窗后与每次 show 后各设一次（300ms / 1200ms） |
+| **没有 `WindowEndResize`** | 只有连续的 `OnResize`，拉伸结束存不了尺寸 | `OnResize` + 350ms 去抖 → `SaveCaptureSize` |
+| **双击拖动区 = 系统"标题栏双击"** | 弹窗会被最大化 | 三个弹窗 `DisableMaximize: true` |
+| **`Focus()` 只是请求焦点** | 前台是别的程序时请求被丢掉（单实例唤回、托盘唤回都会踩） | `showWindow` 里补 `clip.ActivateWindow(NativeHandle)` |
+| **绑定只接受 `(T, error)`** | `(A,B,C)` 多返回值、`func` 参数都会 panic 在绑定阶段 | `bindings.go` 的 `clipAPI` 外观 + 前端 tuple 还原 |
+| **`DisableMove: true` 会让 `SetPosition` 静默失效** | 窗口卡在 (0,0) | 永远传 `DisableMove: false`，靠 `--app-region: drag` 拖动 |
+
+另外两条与原生 UI 无关但同源的坑（`ui` 包，Gate 3 若做自绘会遇到）：`Box` 的子元素是**顺序排布**
+（第二个 `.Fill()` 拿到 0 高），`DrawOver` 是独立图层（图像和蒙版必须在同一个 `root.Draw` 里画）。
+
+**调试口**（生产默认关闭，靠环境变量开）：
+
+| 变量 | 作用 |
+| --- | --- |
+| `CLIPNEST_CAPTURE_PAGE=<png>` | 用 `win.CapturePage()` 抓一帧。无边框窗抢不到前台时，外部截屏拍到的是别的程序 |
+| `CLIPNEST_EVAL_JS=<js>` | 启动 3s 后在主窗执行 JS，结果写进应用日志（`_JS2` 是 9s 后的第二段，用来验"先订阅、再从外面触发"的时序） |
+| `CLIPNEST_LOG_TRAY=1` | 打印托盘图标 Bounds（自动化没法"看见"托盘） |
+| `CLIPNEST_IDLE_DESTROY=0` / `CLIPNEST_IDLE_MS` | 关掉/调整闲置销毁（e2e 脚本必须关，否则窗口会被收掉） |
+## 六、怎么验证
 
 ```powershell
-go build -o bin\clipnest-dev.exe .        # 后端 + 内嵌前端产物
+go build -tags production -ldflags="-w -s -H windowsgui" -o bin\clipnest.exe .   # 生产构建（内嵌前端产物）
+pwsh -File scripts\gen-mygo-clipservice.ps1   # 改了绑定方法/返回值：重生成前端 call 适配层
+pwsh -File scripts\package-mygo.ps1 -Version <版本>   # 本地打安装包（go-winres 资源 + NSIS + 签名）
+pwsh -STA -File scratch\e2e-picker-single.ps1  # 快速粘贴：贴插入符 + 回车直粘 + 单实例 + 托盘 boundsgo build -o bin\clipnest-dev.exe .        # 开发构建（同样的代码，文件名区分开）
 go test ./internal/...                    # 存储/查询/待办/筛选规则/同步/展开引擎/附件回收（audit_fix_test.go）
 cd frontend; npx tsc --noEmit; npx vite build --mode production
 pwsh -File scripts\check-platforms.ps1    # 多平台门禁：linux/darwin/windows-arm64 上 internal/... 能编译
@@ -303,7 +336,7 @@ node scratch\theme-audit.mjs                    # 主题对比度体检（5 预�
 `expand/wininput_windows.go` 的 `hookParamPtr` 两个 shim 已经把 `unsafe.Pointer`
 指针算术的误报绕开了（早先那 4 条告警已经不存在，别再照着忽略）。
 
-## 六、后续可以继续拆的地方
+## 七、后续可以继续拆的地方
 
 1. ~~`sync_run.go` 的 `syncOnce`（300+ 行单函数）拆成 pull / merge / push~~ —— 2026-11-19 已拆：
    `syncRun` + listPeers / pull / merge / adoptSettings / push / report 六段（顺带修掉"每台设备计数虚高"）。
@@ -328,7 +361,7 @@ Get-ChildItem -Recurse -File -Filter *.go |
   Where-Object L -gt 350 | Sort-Object L -Descending
 ```
 
-## 七、平台契约（多平台）
+## 八、平台契约（多平台）
 
 现状：**只有 Windows 有完整实现**；macOS / Linux **能编译、能跑单测、平台能力是空实现**。
 这一节是加新平台时的唯一入口——好消息是：**改动都落在 `*_other.go` 那一侧，业务层一行不用动**。
@@ -363,7 +396,7 @@ Get-ChildItem -Recurse -File -Filter *.go |
 | 片段动作 | `launchProgram` / `runCommand` / `ProcessImageName` / `sendLeftArrows` | `snippet_exec_windows.go`、`picker_windows.go` | 桩 |
 | 来源程序名 | `foregroundAppName` | `win32_windows.go` | 桩（空串） |
 | OCR 引擎 | `ocr.go` 的引擎选择（`system` ↔ `ppocr`） | `ocr.go` 调 `Windows.Media.Ocr`（PowerShell `-EncodedCommand`）；`internal/ppocr` 走 cgo | `ppocr` 编成 stub；`system` 引擎跑不起来 ⇒ 设置页应显示"不可用" |
-| 托盘 / 窗口 / 事件 | Wails v3 自身 | `tray.go` / `wire.go` | Wails 本身支持，但上面那批能力是桩 |
+| 托盘 / 窗口 / 事件 | MyGo（`github.com/egoist/mygo`） | `tray.go` / `wire.go` / `events.go` | MyGo 本身支持，但上面那批能力是桩 |
 | 自动更新 | `update.go`（GitHub Releases + ed25519 验签） | 检查 + 下载 + 静默安装（NSIS 包） | 检查逻辑可复用，安装路径要换 |
 
 ### 门禁
@@ -377,6 +410,11 @@ pwsh -File scripts\check-platforms.ps1 -Targets linux/amd64
 （`CGO_ENABLED=0`）。**过了不等于新平台能用**，但过了意味着"没有代码是 Windows 专属"——
 这是加平台前唯一必须满足的硬条件。
 
-> 整包 `go build` 交叉编译不在此列：Wails v3 的 linux/darwin 后端要 cgo 与各平台工具链，
+> 整包 `go build` 交叉编译不在此列：宿主的 linux/darwin 后端要 cgo 与各平台工具链，
 > 那属于真机 CI。/cmd 层（`main.go`/`wire.go`/`tray.go`）目前也仍按 Windows 假设写。
+
+
+
+
+
 

@@ -1,7 +1,7 @@
-// 由 scripts/gen-mygo-clipservice.ps1 从 bindings/.../clipservice.ts 生成，别手改。
+// 由 scripts/gen-mygo-clipservice.ps1 从 scripts/mygo-bindings/clipservice.signatures.txt 生成，别手改。
 // 方法名保持 Go 的 PascalCase，Wails 版组件因此一行都不用改。
 import { call } from "mygo-runtime";
-import type * as Models from "../../bindings/github.com/bbqisbbq/clipnest/internal/clip/models";
+import type * as Models from "./models";
 
 export const AutoStartTarget = (...args: any[]): Promise<string> => call<string>("ClipService.AutoStartTarget", ...args);
 export const CancelShot = (...args: any[]): Promise<void> => call<void>("ClipService.CancelShot", ...args);

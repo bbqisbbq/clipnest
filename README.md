@@ -2,7 +2,7 @@
 
 [![下载量](https://img.shields.io/github/downloads/bbqisbbq/clipnest/total)](https://github.com/bbqisbbq/clipnest/releases) [![最新版本](https://img.shields.io/github/v/release/bbqisbbq/clipnest)](https://github.com/bbqisbbq/clipnest/releases/latest) [![License](https://img.shields.io/github/license/bbqisbbq/clipnest)](LICENSE)
 
-> 常驻托盘的 Windows 剪贴板管理器 · [Wails v3](https://v3.wails.io) + Go + React + TypeScript
+> 常驻托盘的 Windows 剪贴板管理器 · [MyGo](https://mygo.egoist.dev) + Go + React + TypeScript
 
 ClipNest 在你使用电脑时安静地记录进入过系统剪贴板的一切——文本、链接、图片、富文本、文件（只记引用），
 连 Excel 区间、颜色、音频这类私有格式也原样留底。按一次快捷键，列表就在**光标旁边**弹出来，
@@ -137,9 +137,9 @@ ClipNest 在你使用电脑时安静地记录进入过系统剪贴板的一切�
 
 | 依赖 | 版本 | 说明 |
 | --- | --- | --- |
-| Go | 1.26+ | `go.mod` 声明 `go 1.26.0`，低版本会自动尝试下载工具链 |
+| Go | 1.27.3+ | `go.mod` 声明 `go 1.27.3` + `toolchain go1.27.4`（MyGo 的要求），低版本会自动下载工具链 |
 | Node.js | 20+ | 构建前端（Vite 8） |
-| Wails v3 CLI | `v3.0.0` | `go install github.com/wailsapp/wails/v3/cmd/wails3@latest` |
+| go-winres | 任意 | `go install github.com/tc-hib/go-winres@latest`（打 Windows 资源：图标/清单/版本号） |
 | WebView2 Runtime | 任意新版本 | Windows 10/11 一般已内置 |
 
 ### 构建与运行
@@ -148,11 +148,15 @@ ClipNest 在你使用电脑时安静地记录进入过系统剪贴板的一切�
 # 依赖（首次）
 npm install --prefix frontend
 
-# 开发模式（前端热更新 + Go 自动重启）
-wails3 dev
+# 开发：一个终端跑前端热更，另一个跑后端
+cd frontend; npx vite dev
+#   Go 那边：go build -o bin\clipnest.exe . && .\bin\clipnest.exe --show
 
-# 生产构建，产物在 bin/clipnest.exe
-wails3 build
+# 生产构建（把前端产物内嵌进去）
+go build -tags production -ldflags="-w -s -H windowsgui" -o bin\clipnest.exe .
+
+# 或者一步到位打安装包（资源 + NSIS + 签名，见 docs/RELEASE.md）
+pwsh -File scripts\package-mygo.ps1 -Version <版本号>
 
 # 运行已构建的程序（--show 强制打开窗口）
 .\bin\clipnest.exe --show
@@ -168,7 +172,7 @@ pwsh -File scripts\visual-check\check-css.ps1       # 改了 CSS 就跑一次，
 ```
 
 改了 Go 的导出面（`ClipService` 的方法、模型字段）要重新生成绑定：
-`wails3 generate bindings -clean=true -ts -i`，并确认 `git diff frontend/bindings` 只有预期的改动。
+`scripts\gen-mygo-clipservice.ps1`（改的是 `frontend/src/lib/clipservice.gen.ts`）。前端的类型定义在 `frontend/src/lib/models.ts`，Go 结构体改字段时手工同步。
 
 打包安装包、签名与发版清单见 **[docs/RELEASE.md](docs/RELEASE.md)**。
 
@@ -237,7 +241,7 @@ internal/clip/                业务层（条目、采集、片段、同步、�
 internal/winplat/             Win32 输入注入（平台层，零业务知识）
 internal/expand/              缩写展开引擎（只认 Host 接口）
 frontend/src/                 React + TS：App 薄壳 + hooks/ + lib/ + components/ + styles/
-frontend/bindings/            wails3 生成的 TS 绑定（改了 Go 导出面要重新生成）
+frontend/src/lib/            api.ts（call 适配层）/ models.ts（类型）/ runtime.ts（事件与窗口）/ *.gen.ts
 scripts/                      图标生成、样式回归、签名、发版
 scratch/                      开发期小工具与 e2e 自动化（不是产品代码）
 docs/                         见下方索引
@@ -296,7 +300,7 @@ docs/                         见下方索引
 - **OLE 延迟渲染**：已做 `IDataObject` 回退（文件、文本），图片仍依赖原生 `PNG`/`DIB`。
 - **GDI 图片格式**：只认 `CF_DIB`/`CF_DIBV5`/`PNG`，用 `CF_BITMAP` 句柄传图的程序需要 `GetDIBits`（未实现）。
 - **自定义格式上限 1 MiB**：超出的私有格式会被跳过，避免撑爆历史。
-- **不做跨屏 DPI 特调**：窗口按系统 DPI 缩放，多屏不同缩放下位置由 Wails/WebView2 决定。
+- **不做跨屏 DPI 特调**：窗口按系统 DPI 缩放，多屏不同缩放下位置由 MyGo/WebView2 决定。
 - **删除靠墓碑传播**：删除标记保留 180 天；超出期限或离线太久的机器可能仍留有旧条目（见 [docs/SYNC.md](docs/SYNC.md)）。
 - **更新需要联网**：GitHub Releases 检查在无网络或 API 限流时会失败，日志里有原始原因，不影响其它功能。
 
@@ -315,3 +319,5 @@ docs/                         见下方索引
 ## 许可
 
 MIT，见 [LICENSE](LICENSE)。没有附加条款：拿去用、改、商用、闭源分发都行，保留版权声明即可。
+
+

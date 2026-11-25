@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Events } from "@wailsio/runtime";
+import { Events } from "../lib/runtime";
 import { ClipService, EventNames, type Entry, type Snippet } from "../lib/api";
 import { useSettingsTheme } from "../hooks/useTheme";
 import { useMinuteTick } from "../hooks/useClock";
@@ -418,3 +418,4 @@ export default function Picker() {
     </div>
   );
 }
+

@@ -13,7 +13,7 @@ param(
     [string]$Root = (Split-Path -Parent $PSScriptRoot)
 )
 $ErrorActionPreference = "Stop"
-$src = Join-Path $Root "frontend\bindings\github.com\bbqisbbq\clipnest\internal\clip\clipservice.ts"
+$src = Join-Path $Root "scripts\mygo-bindings\clipservice.signatures.txt"
 $out = Join-Path $Root "frontend\src\lib\clipservice.gen.ts"
 $lines = Get-Content $src
 
@@ -27,18 +27,20 @@ $tuples = @{
 }
 
 $emit = New-Object System.Collections.Generic.List[string]
-$emit.Add("// 由 scripts/gen-mygo-clipservice.ps1 从 bindings/.../clipservice.ts 生成，别手改。")
+$emit.Add("// 由 scripts/gen-mygo-clipservice.ps1 从 scripts/mygo-bindings/clipservice.signatures.txt 生成，别手改。")
 $emit.Add("// 方法名保持 Go 的 PascalCase，Wails 版组件因此一行都不用改。")
 $emit.Add('import { call } from "mygo-runtime";')
-$emit.Add('import type * as Models from "../../bindings/github.com/bbqisbbq/clipnest/internal/clip/models";')
+$emit.Add('import type * as Models from "./models";')
 $emit.Add("")
 
 $names = New-Object System.Collections.Generic.List[string]
 foreach ($line in $lines) {
-    $m = [regex]::Match($line, '^export function (\w+)\(([^)]*)\): \$CancellablePromise<(.*)> \{$')
+    if ($line -match '^\s*#' -or $line -notmatch "`t") { continue }
+    $parts = $line.Split("`t")
+    $m = [regex]::Match("export function $($parts[0])(): `$CancellablePromise<$($parts[1])> {", '^export function (\w+)\(([^)]*)\): \$CancellablePromise<(.*)> \{$')
     if (-not $m.Success) { continue }
     $name = $m.Groups[1].Value
-    $ret = $m.Groups[3].Value -replace '\$models\.', 'Models.' -replace 'expand\$0\.', 'Expand.'
+    $ret = $m.Groups[3].Value -replace '\$models\.', 'Models.' -replace 'expand\$0\.', 'any'
     $names.Add($name)
 
     if ($tuples.ContainsKey($name)) {
@@ -62,5 +64,6 @@ $emit.Add("};")
 
 Set-Content $out -Value $emit -Encoding utf8
 Write-Host ("生成 {0} 个方法（其中 {1} 个元组还原）→ {2}" -f $names.Count, $tuples.Count, $out)
+
 
 

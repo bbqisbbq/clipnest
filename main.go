@@ -6,7 +6,7 @@
 //	main.go    启动顺序：路径、设置预读、服务、App、窗口、托盘、监听
 //	wire.go    窗口与热键的开关（wiring 结构体）
 //	tray.go    托盘图标与菜单
-//	events.go  Go → 页面的事件（名字与载荷与 Wails 版完全一致）
+//	events.go  Go → 页面的事件（名字与载荷与 换壳前的 Wails 版完全一致）
 package main
 
 import (
@@ -103,16 +103,19 @@ func main() {
 	}
 	mygo.SetFrontend(dist)
 	// shot 遮罩窗要拿"按下快捷键时拍到的那一帧"：`<img src="/shot/current">`。
-	// MyGo 的自定义协议就是个 http.Handler，包装逻辑与 Wails 版一模一样。
+	// MyGo 的自定义协议就是个 http.Handler，包装逻辑与 换壳前的 Wails 版一模一样。
 	mygo.Protocol.Handle("mygo", shotAwareAssets(mygo.FileServer(dist), svc))
 
 	mygo.App.SetName("ClipNest")
 	// 托盘应用：关掉窗口不等于退出。
 	mygo.App.OnWindowAllClosed(func() {})
-	mygo.App.OnSecondInstance(func([]string, string) { w.showWindow() })
+	mygo.App.OnSecondInstance(func(args []string, wd string) {
+		clip.Logf(dataDir, "second instance: args=%v wd=%s", args, wd)
+		w.showWindow()
+	})
 	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) { svc.Shutdown() })
 
-	// 前端用 call("ClipService.GetEntries", …) 调过来，名字要和 Wails 版一致。
+	// 前端用 call("ClipService.GetEntries", …) 调过来，名字要和 换壳前的 Wails 版一致。
 	mygo.BindAs("ClipService", clipAPI{svc})
 
 	mygo.App.WhenReady(func() {
@@ -202,6 +205,8 @@ func shotAwareAssets(base http.Handler, svc *clip.ClipService) http.Handler {
 
 // 让 log 的默认输出走文件（GUI 构建没有控制台）。
 var _ = slog.LevelWarn
+
+
 
 
 

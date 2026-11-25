@@ -442,6 +442,7 @@ func (w *wiring) ensurePicker() *mygo.Window {
 			}
 		})
 	})
+	retitle(p, "ClipNest")
 	w.picker = p
 	return p
 }
@@ -484,7 +485,7 @@ func (w *wiring) ensureCapture() *mygo.Window {
 			}
 		})
 	})
-	// 拉伸结束时把尺寸记下来（Wails 版用的是 WindowEndResize 钩子）。MyGo 只有
+	// 拉伸结束时把尺寸记下来（换壳前的 Wails 版用的是 WindowEndResize 钩子）。MyGo 只有
 	// 连续的 OnResize，所以这里做 350ms 去抖：用户松手后才写一次库。
 	var resizeTimer *time.Timer
 	c.OnResize(func() {
@@ -503,6 +504,7 @@ func (w *wiring) ensureCapture() *mygo.Window {
 			}
 		})
 	})
+	retitle(c, "记一笔")
 	w.capture = c
 	// 重建的窗口把上一次的配色/材质补回去（这两样原本只在设置变化时才刷）。
 	if w.hasChrome {
@@ -544,9 +546,12 @@ func (w *wiring) ensureShot() *mygo.Window {
 		e.PreventDefault()
 		w.hideShotWindow()
 	})
+	retitle(s, "ClipNest 截图")
 	w.shot = s
 	return s
 }
+
+
 
 
 

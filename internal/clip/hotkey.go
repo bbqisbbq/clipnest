@@ -6,7 +6,8 @@ package clip
 
 // HotkeyTaken reports whether the accelerator is already owned by another program.
 //
-// 拿它把"设置页说保存成功、按键却毫无反应"挡在注册之前：Wails 的 GlobalShortcut
+// 拿它把"设置页说保存成功、按键却毫无反应"挡在注册之前：换壳前 Wails 的 GlobalShortcut
 // 在 app.Run() 之前只是排队，真正的 RegisterHotKey 在启动后 flush，失败只走错误处理器，
 // 调用方拿到的是 nil（见 hotkey_windows.go 的说明）。
 func HotkeyTaken(accel string) bool { return hotkeyTaken(accel) }
+

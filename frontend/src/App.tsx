@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Events } from "@wailsio/runtime";
+import { Events } from "./lib/runtime";
 import { useToast } from "./hooks/useToast";
 import { useTheme } from "./hooks/useTheme";
 import { useAppData } from "./hooks/useAppData";
@@ -487,3 +487,4 @@ export default function App() {
     </div>
   );
 }
+

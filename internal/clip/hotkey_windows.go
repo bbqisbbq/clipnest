@@ -8,7 +8,7 @@ import (
 
 // 热键"撞车"的同步预检。
 //
-// 为什么要自己探一遍：Wails 的 GlobalShortcut 在 app.Run() 之前注册只是**排队**
+// 为什么要自己探一遍：换壳前 Wails 的 GlobalShortcut 在 app.Run() 之前注册只是**排队**
 // （global_shortcut_manager.go 的 pending），真正的 RegisterHotKey 在启动后 flush，
 // 失败只能经由 app 的错误处理器报出来——调用方拿到的永远是 nil。于是"设置页说保存成功、
 // 按下去却没有任何反应"这种最难查的故障就出现了。这里在注册前先用 Win32 试一次
@@ -86,7 +86,7 @@ func parseAccelerator(accel string) (mods uint32, vk uint32, ok bool) {
 	return 0, 0, false
 }
 
-// namedVirtualKeys 与 Wails 的 winKeyCodes 保持同一套取值（两边对不上就会出现
+// namedVirtualKeys 与 换壳前 Wails 的 winKeyCodes 保持同一套取值（两边对不上就会出现
 // "预检说空闲、实际注册失败"的假阴性）。
 var namedVirtualKeys = map[string]uint32{
 	"backspace": 0x08, "tab": 0x09, "return": 0x0D, "enter": 0x0D,
@@ -101,3 +101,4 @@ var namedVirtualKeys = map[string]uint32{
 	"f13": 0x7C, "f14": 0x7D, "f15": 0x7E, "f16": 0x7F, "f17": 0x80, "f18": 0x81,
 	"f19": 0x82, "f20": 0x83, "f21": 0x84, "f22": 0x85, "f23": 0x86, "f24": 0x87,
 }
+

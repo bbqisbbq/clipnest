@@ -17,7 +17,7 @@ import (
 // 屏幕取图（GDI BitBlt）与全屏遮罩窗的摆放。
 //
 // 只做两件底层的事：把"光标所在那块显示器"拍成一张 PNG，以及把 Wails 建的遮罩窗
-// 摆到那块显示器上（用 SetWindowPos 走物理像素，绕开 Wails 的 DIP 换算——否则
+// 摆到那块显示器上（用 SetWindowPos 走物理像素，绕开 换壳前 Wails 的 DIP 换算——否则
 // 缩放 150% 的屏幕上遮罩会比屏幕小一圈，截出来的图就会错位）。
 // 不负责：选区交互（前端 Shot.tsx）、条目的落库（service_shot.go）。
 
@@ -179,7 +179,7 @@ func createDisplayDC() (uintptr, error) {
 
 // HideOverlayWindow hides the overlay again.
 //
-// 用 Win32 隐藏（而不是 wails 的 Hide）：窗口本来就是用 SetWindowPos 摆到物理像素
+// 用 Win32 隐藏（而不是 换壳前 Wails 的 Hide）：窗口本来就是用 SetWindowPos 摆到物理像素
 // 上的，Wails 对它的尺寸/位置并不知情，让两边各管一半只会互相打架。
 func HideOverlayWindow(hwnd uintptr) {
 	if hwnd == 0 {
@@ -251,3 +251,4 @@ func PlaceOverlayWindow(hwnd uintptr, left, top, width, height int) {
 		uintptr(int32(width)), uintptr(int32(height)),
 		swpShowWindow)
 }
+

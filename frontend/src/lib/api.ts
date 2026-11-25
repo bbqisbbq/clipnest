@@ -1,11 +1,11 @@
 import { ClipService as ClipServiceNS } from "./clipservice.gen";
-import type * as Models from "../../bindings/github.com/bbqisbbq/clipnest/internal/clip/models";
+import type * as Models from "./models";
 import * as EventNames from "./eventnames.gen";
 
 // 换壳（Wails → MyGo）后，这一层是唯一需要动的地方：
 //   · ClipService 从"Wails 生成的 $Call.ByID(...)"换成 call("ClipService.X")；
 //   · 方法名保持 Go 的 PascalCase，所以 40 多个组件一行都不用改；
-//   · 模型类型继续复用 bindings 里生成的 models.ts（纯类型，不含运行时）。
+//   · 模型类型在 ./models.ts（纯 TS 类型，不含运行时）。
 export const ClipService = ClipServiceNS;
 export { Models, EventNames };
 
@@ -31,3 +31,4 @@ export type Snippet = Models.Snippet;
 export type SnippetKind = Models.SnippetKind;
 export type SyncDeviceInfo = Models.SyncDeviceInfo;
 export type SyncDetail = Models.SyncDetail;
+

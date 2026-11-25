@@ -8,7 +8,7 @@ import (
 	"github.com/bbqisbbq/clipnest/internal/clip"
 )
 
-// 事件从 Wails 的 application.RegisterEvent[T] 换成 MyGo 的包级带类型事件。
+// 事件从 换壳前 Wails 的 application.RegisterEvent[T] 换成 MyGo 的包级带类型事件。
 //
 // 名字与载荷**一字不改**：前端的 EventNames 表、订阅点、以及 e2e 脚本里对日志/行为的
 // 断言都依赖这些名字（`clip:new`、`settings:changed`…）。改壳不改契约。
@@ -84,4 +84,5 @@ func as[T any](v any) T {
 	typed, _ := v.(T)
 	return typed
 }
+
 

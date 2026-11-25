@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Events } from "@wailsio/runtime";
+import { Events } from "../lib/runtime";
 import { ClipService } from "../lib/api";
 
 // 框选截图的遮罩层（Ctrl+Shift+A）。
@@ -189,3 +189,4 @@ export default function Shot() {
     </div>
   );
 }
+

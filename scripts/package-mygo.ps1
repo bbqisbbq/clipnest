@@ -16,18 +16,19 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 Push-Location $root
 try {
-    Write-Host "=== 1. 版本号 → $Version（service.go / config.yml / windows/info.json）==="
+    Write-Host "=== 1. 版本号 → $Version（三处都要，漏一处就出现"exe 新、安装包旧"）==="
+    # ① 应用自报的版本（关于页、更新检查都看它）
     $svc = "internal\clip\service.go"
     (Get-Content $svc -Raw) -replace 'const Version = "[^"]+"', "const Version = `"$Version`"" | Set-Content $svc -Encoding utf8
-    $cfg = "build\config.yml"
-    (Get-Content $cfg -Raw) -replace "(?m)^version: `"[^`"]+`"", "version: `"$Version`"" | Set-Content $cfg -Encoding utf8
-    # 安装包的版本号只认这个（wails3 task common:update:build-assets 生成的）
-    $nsh = "build\windows\nsis\wails_tools.nsh"
+    # ② exe 的资源版本（任务管理器/属性页）
+    $winres = "build\windows\winres.json"
+    $w = Get-Content $winres -Raw
+    $w = $w -replace '("name": "com\.bbqisbbq\.clipnest", "version": ")[0-9.]+(")', "`${1}$Version.0`${2}"
+    Set-Content $winres $w -Encoding utf8
+    # ③ 安装包自己的版本（控制面板"应用"里显示的那个）
+    $nsh = "build\windows\nsis\installer.nsh"
     (Get-Content $nsh -Raw) -replace '!define INFO_PRODUCTVERSION "[^"]+"', "!define INFO_PRODUCTVERSION `"$Version`"" | Set-Content $nsh -Encoding utf8
-    $info = Get-Content "build\windows\info.json" -Raw
-    $info = $info -replace '("file_version": ")2\.[0-9.]+(")', "`${1}$Version`${2}" -replace '("ProductVersion": ")2\.[0-9.]+(")', "`${1}$Version`${2}"
-    Set-Content "build\windows\info.json" $info -Encoding utf8
-    Select-String -Path $svc -Pattern "const Version" | ForEach-Object { Write-Host "   $($_.Line.Trim())" }
+    Write-Host "   ① service.go / ② winres.json / ③ installer.nsh 已同步为 $Version"
 
     if (-not $SkipFrontend) {
         Write-Host "=== 2. 前端产物（vite build）==="
@@ -35,12 +36,17 @@ try {
         try { npm run build 2>&1 | Select-Object -Last 3 | ForEach-Object { Write-Host "   $_" } } finally { Pop-Location }
     }
 
-    Write-Host "=== 3. Windows 资源（wails3 generate syso：图标/manifest/版本）==="
-    Push-Location build
+    Write-Host "=== 3. Windows 资源（go-winres：图标 / manifest / 版本信息）==="
+    $goWinres = (Get-Command go-winres -ErrorAction SilentlyContinue).Source
+    if (-not $goWinres) {
+        throw "缺少 go-winres（装一次：go install github.com/tc-hib/go-winres@latest）"
+    }
+    Push-Location build\windows
     try {
-        & wails3 generate syso -arch amd64 -icon windows/icon.ico -manifest windows/wails.exe.manifest -info windows/info.json -out ../wails_windows_amd64.syso
-        if ($LASTEXITCODE -ne 0) { throw "wails3 generate syso 失败" }
+        & $goWinres make --in winres.json --out $root\rsrc --arch amd64 --file-version $Version --product-version $Version
+        if ($LASTEXITCODE -ne 0) { throw "go-winres make 失败" }
     } finally { Pop-Location }
+    Write-Host "   rsrc_windows_amd64.syso 已生成（图标 + per-monitor-v2 DPI manifest + 版本信息）"
 
     Write-Host "=== 4. go build（MyGo 宿主，CGO_ENABLED=1 才有 ppocr）==="
     $env:CGO_ENABLED = "1"
@@ -49,7 +55,7 @@ try {
     & go build -tags production -trimpath -buildvcs=false `
         -ldflags="-w -s -H windowsgui -linkmode=internal" -o bin/clipnest.exe .
     if ($LASTEXITCODE -ne 0) { throw "go build 失败" }
-    Remove-Item wails_windows_amd64.syso -ErrorAction SilentlyContinue
+    Remove-Item rsrc_windows_amd64.syso -ErrorAction SilentlyContinue
     $exe = Get-Item bin\clipnest.exe
     Write-Host ("   bin\clipnest.exe  {0:N1} MB  {1}" -f ($exe.Length / 1MB), $exe.LastWriteTime)
     if ($exe.LastWriteTime -lt (Get-Date).AddMinutes(-5)) { throw "exe 不是刚构建出来的" }
@@ -60,7 +66,7 @@ try {
     Write-Host "=== 5. NSIS 安装包 ==="
     Push-Location build\windows\nsis
     try {
-        & makensis -DARG_WAILS_AMD64_BINARY="$root\bin\clipnest.exe" project.nsi | Select-Object -Last 6 | ForEach-Object { Write-Host "   $_" }
+        & makensis -DARG_APP_AMD64_BINARY="$root\bin\clipnest.exe" project.nsi | Select-Object -Last 6 | ForEach-Object { Write-Host "   $_" }
         if ($LASTEXITCODE -ne 0) { throw "makensis 失败" }
     } finally { Pop-Location }
 
@@ -94,5 +100,7 @@ finally {
     Remove-Item Env:\CGO_ENABLED, Env:\GOOS, Env:\GOARCH -ErrorAction SilentlyContinue
     Pop-Location
 }
+
+
 
 

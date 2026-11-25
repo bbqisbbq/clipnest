@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { Events } from "@wailsio/runtime";
+import { Events } from "./runtime";
 import { ClipService, EventNames } from "./api";
 import { repaintPrivacy, setPrivacyEnabled } from "./privacyMask";
 
@@ -82,3 +82,4 @@ export function watchPrivacyMode(): void {
     /* 事件桥没起来也不影响开关本身 */
   }
 }
+

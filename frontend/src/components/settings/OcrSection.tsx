@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Events } from "@wailsio/runtime";
+import { Events } from "../../lib/runtime";
 import type { OCRProgress, Settings } from "../../lib/api";
 import { ClipService, EventNames } from "../../lib/api";
 import { Row, Section, type SettingsPatch } from "./ui";
@@ -145,3 +145,4 @@ export default function OcrSection({ draft, patch }: Props) {
     </Section>
   );
 }
+

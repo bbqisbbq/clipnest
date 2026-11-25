@@ -1,0 +1,91 @@
+# Go 侧 ClipService 的方法签名快照（名字 + 返回类型）。
+# 换壳后不再有 Wails 的 bindings 生成器，这个文件就是 src/lib/clipservice.gen.ts 的输入；
+# 加了/删了绑定方法就改这里，然后跑 scripts/gen-mygo-clipservice.ps1。
+AutoStartTarget	string
+CancelShot	void
+CaptureSize	[number, number]
+CheckUpdate	$models.UpdateInfo
+CloseCapture	void
+CommandOutput	string
+CopyEntry	void
+CopyPlainText	void
+CountEntriesWith	number
+CurrentShotPNG	string | null
+DeleteAll	number
+DeleteEntry	void
+DeleteFilter	void
+DemoteFromSnippet	$models.Entry
+DownloadOCRAssets	string
+DownloadUpdate	string
+EnsureCaptureHotkey	void
+EnsureShotDefaults	void
+FallbackPaste	void
+FlushComposerDraft	void
+ForegroundProcess	string
+GetAppInfo	$models.AppInfo
+GetComposerDraft	string
+GetEntries	$models.Entry[] | null
+GetEntry	$models.Entry
+GetEntryCalendar	$models.DayCount[] | null
+GetEntryStats	$models.EntryStats
+GetEntryTags	string[] | null
+GetFilterFields	$models.FilterFieldSpec[] | null
+GetFilters	$models.EntryFilter[] | null
+GetImage	string
+GetImageData	string
+GetSettings	$models.Settings
+GetShotInfo	$models.ShotInfo
+GetStats	$models.Stats
+GetSyncPanel	$models.SyncPanel
+GetSyncStatus	$models.SyncStatus
+GetTodos	$models.TodoRef[] | null
+HidePicker	void
+HideWindow	void
+InstallUpdate	void
+IsAutoStartEnabled	boolean
+IsOwnWindow	boolean
+LaunchApp	void
+LogClient	void
+Match	[expand$0.Trigger, number, boolean]
+OcrAssetsDir	string
+OcrEngineStatus	[string, boolean, string]
+OcrEntry	string
+OpenDataDir	void
+OpenEntry	void
+OpenOcrAssetsDir	void
+OpenReleasePage	void
+PasteImage	void
+PickEntry	string
+PickSnippet	string
+PickerSnippets	$models.Snippet[] | null
+PromoteToSnippet	$models.Entry
+Quit	void
+ReconcileAutoStart	void
+Render	[string, number]
+RestoreFilters	$models.EntryFilter[] | null
+SaveCaptureSize	void
+SaveEntry	$models.Entry
+SaveFilter	$models.EntryFilter
+SaveImage	string
+SaveSettings	$models.Settings
+SaveShot	$models.Entry
+SaveSnippet	$models.Snippet
+SetAutoStart	$models.Settings
+SetCapture	$models.Settings
+SetCaptureBackdrop	boolean
+SetComposerDraft	void
+SetEntryArchived	$models.Entry
+SetEntryPinned	$models.Entry
+SetOwnWindowCheck	void
+SetSnippetFields	$models.Entry
+SetTodoDone	$models.Entry
+SetWindowChrome	void
+ShotBounds	[number, number, number, number]
+ShowCapture	void
+ShowPicker	void
+ShowWindow	void
+Shutdown	void
+Start	void
+StartShot	void
+SyncNow	$models.SyncStatus
+TestSync	string

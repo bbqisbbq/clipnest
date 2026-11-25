@@ -7,13 +7,15 @@ import (
 	"time"
 )
 
-// idleWindows 是 Gate 2.5 的实验开关：让 picker / capture / shot 这三个弹窗
-// "用完就销毁、下次用到再建"，而不是像现在这样常驻隐藏。
+// idleWindows：让 picker / capture / shot 这三个弹窗"用完就销毁、下次用到再建"，
+// 而不是像换壳前那样常驻隐藏。
 //
-// 为什么是实验（默认关）：Wails v3 里一个隐藏窗口仍然养着一个 WebView2 文档，
-// 实测 ClipNest 11 个进程 724MB，其中 4 个 renderer 占 369MB、均值 92MB——
-// 3 个空闲弹窗就是约 280MB。但销毁也意味着下次唤起要重新加载页面（React 冷启动），
-// 热路径（picker）的延迟会变差。所以先做成开关，量完再决定要不要默认开。
+// 为什么需要它：一个隐藏窗口仍然养着一个 WebView2 文档。换壳前实测 ClipNest
+// 11 个进程 724MB，其中 4 个 renderer 占 369MB、均值 92MB——3 个空闲弹窗就是约 280MB。
+// 代价是下次唤起要重新加载页面（React 冷启动），所以有闲置宽限期与 skip 列表。
+// 换壳（MyGo）后实测：常驻 533–575MB → 448MB（全销毁）/ 销毁 capture+shot、留 picker
+// 且 picker 热键 10–25ms；最终默认值是"三个都参与销毁，picker 跳过 1.5s 宽限"，
+// 见 docs/design/MYGO-GATE2-REPORT.md。
 //
 //	CLIPNEST_IDLE_DESTROY=0     关闭（默认开）
 //	CLIPNEST_IDLE_MS=1500       闲置多久后销毁（默认 1500ms，够接住"连按两次"）

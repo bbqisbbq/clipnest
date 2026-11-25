@@ -14,7 +14,8 @@
 | **WebDAV 打包同步：一台机器一个 zip** | 只写自己的文件 ⇒ 写冲突不可能发生；请求数与条目数无关；包内是**全量条目**（2.9.4 起，早先只带最新 500 条） | 每轮整包 PUT/GET（无增量），包大小靠 deflate、附件 96 MiB 预算、指纹跳过兜着；字段级冲突合并没做（整条按 `updated_at` 谁新谁赢） |
 | **纯本地 + 可选同步**，没有账号与服务端 | 隐私边界清楚：不配 WebDAV 就一个网络请求都不发（除了更新检查） | 跨设备要靠用户自备 WebDAV；密码明文存 `settings.json`（DPAPI 在 backlog） |
 | **界面自己做**（无边框、自绘标题栏、自带字体） | 和内容同一套 token，125%/150% 缩放不发虚 | Win32 边框/圆角要自己补，主题切换要重画 `ApplyChrome` |
-| **一个 Wails 服务 + 40 个文件的单包** | 绑定路径稳定（挪包就要重生成绑定并装机验证），文件边界替代目录边界 | `internal/clip` 已经很大，拆 `internal/store` / `internal/model` 在 backlog |
+| **一个服务 + 40 个文件的单包** | 前端方法表只从一处生成（现在是 `scripts/mygo-bindings/clipservice.signatures.txt`），文件边界替代目录边界 | `internal/clip` 已经很大，拆 `internal/store` / `internal/model` 在 backlog |
+| **宿主从 Wails v3 换成 MyGo**（2.12.1） | Wails v3 的 WebView2 常驻成本高（753MB / 11 进程），且它把"原生自绘 UI"这条路堵死了；MyGo 既能托管现有 webview 页面（等价迁移），又能用它的 `ui` 包做原生窗口（后续按窗口重写） | 换的是整个壳：一个进程只能有一个消息泵，所以"部分替换"只能是"先整壳换、再逐窗原生化"；MyGo 仍是 pre-1.0（211 个未关 issue），踩到的 6 处语义差异记在 ARCHITECTURE 五 |
 
 ## 二、审查与审计记录
 
@@ -27,6 +28,7 @@
 | 2026-11-20 | 快速输入窗透明 | 窗口改真透明（圆角透桌面）+ 可选的卡片半透明；发现 WebView2 半透明必须配 DWM backdrop（见"踩过的坑"） |
 | 2026-11-23 | 同步专项审查 | 真机取证（坚果云 PROPFIND + 本机库）查出：老库墓碑表主键不匹配导致**删除从来不产生墓碑**、PROPFIND 拿不到包大小/时间、坏对端包毒死整轮、失败不退避；修于 2.9.3 |
 | 2026-11-23 | 同步包改全量 | 用户判断"≥500 条只同步最新那批"不可接受。去掉 `syncMaxEntries`、加 `Store.AllEntries()`；附件预算改成可轮转（`sync.blobDeferred`）；间隔默认 120 分钟、上限 1440。同时把"人类可读的文件存储"方案否掉了 —— 属性进 YAML 头这件事可以做，但"文件当真源"会牵动身份（现在是内容哈希）、墓碑键、字段分层与同步增量，见 CHANGELOG 讨论 |
+| 2026-11-25 | **宿主迁移（Wails → MyGo）** | 先做可行性评估再动手：`internal/*` 零框架 import（13k 行只认 `clip.Hooks`），所以换壳只动 cmd 层 730 行。实测：MyGo 快速粘贴窗 48MB/热键 10–25ms、截图遮罩 118–138ms（Wails 183ms）。等价迁移（Gate 2）后跑四套 e2e + 15 条验收，修出 6 处 Wails/MyGo 语义差异与 1 个前端元组 bug，全部记进 ARCHITECTURE 五 |
 | 2026-11-24 | 截图 + 网页图片修复 | 新增框选截图（GDI 抓屏 + Win32 摆遮罩 + 前端裁切，`scratch/e2e-shot.ps1` 真键鼠验证尺寸 1:1）；查出"网页复制图片存成链接"的真因是**剪贴板里压根没有位图**（`scratch/clipfmt` 取证），改为按 HTML 里的地址后台下载；顺带发现 Wails 热键注册在 `Run()` 之前是异步的（失败不可见），补了同步预检 |
 | 2026-11-24 | **全量清理瘦身**（多平台前置） | 见下节。磁盘 2005MB→374MB、`.git` 65.7→53.4MB；文档去重（README 442→320 行、8 份 release-notes 归档进 `docs/releases/`、打包/签名独立成 `docs/RELEASE.md`）；`internal/...` 现在**真的**能在 linux/darwin 编译（此前是假的），并加了 `scripts/check-platforms.ps1` 门禁；`store.go` 607 行拆成四个文件 |
 
@@ -111,7 +113,8 @@
   应用带崩，日志里是一段 FATAL）。现在的顺序是：主线程 `Show()` → 后台轮询句柄（~100ms）→
   `SetWindowPos` 摆到物理像素 → `ActivateWindow` → `FocusOverlayWindow`（找 WebView 的
   `Chrome_WidgetWin*` 子窗口 `SetFocus`，否则 Esc 会落到上一个前台程序里）。
-- **热键"注册成功"可能是假的**：Wails 的 `GlobalShortcut.Register` 在 `app.Run()` 之前只是
+- **热键"注册成功"可能是假的**：Wails 的 `GlobalShortcut.Register`（换壳后是 MyGo 的
+  `GlobalShortcut.Register`，同样在 `Run()` 之前排队）在 `app.Run()` 之前只是
   排队（`pending`），真正的 `RegisterHotKey` 启动后才 flush，失败只经由错误处理器上报，
   调用方拿到 nil。要真答案就自己先探一次（`hotkey_windows.go` 的 `RegisterHotKey`+`UnregisterHotKey`）。
   另外：抢不到的默认键**不该**把之后每次保存设置都拦下来（改个主题就弹"截图快捷键注册失败"）。
@@ -394,3 +397,5 @@
   优先级建议：剪贴板读写 + 监听 → 输入注入（粘贴）→ 热键 → 托盘；截图与 OCR 可以最后做。
   注意 `update.go` 的自动更新要换安装器（mac 是 `.app`/Sparkle、linux 是 AppImage/deb），
   以及 `settings.json` 里的密码现在是明文（DPAPI/Keychain 加密一并做）。
+
+
