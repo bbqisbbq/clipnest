@@ -8,7 +8,8 @@
 - [x] **Step 0：工具链升到 Go 1.27.3 / toolchain go1.27.4**（MyGo v0.10.0 要求）
       —— `go build` 65s 通过，`go test ./internal/...`、`go vet`、`check-platforms.ps1` 全绿，
       证明"升 Go 版本"和"换框架"可以分开做、各自可回退。
-- [ ] Step 1：宿主层（`main.go` / `wire.go` / `tray.go`）换 MyGo
+- [~] Step 1：宿主层换 MyGo —— **壳已跑起来**（能启动、四窗能建、热键能响、托盘在），
+      剩下的页面内容要等 Step 2（前端还在调 Wails 运行时，页面报 `e.map is not a function`）
 - [ ] Step 2：前端接线（事件 + 窗口控制 + bindings）
 - [ ] Step 3：验收清单逐条过
 - [ ] Step 4：发布链保持不动，只把 `go build` 当构建工具
@@ -73,3 +74,4 @@
 
 - 合并到 `main` 前保留 `v2.11-wails-final` tag；`mygo-shell` 分支本身就是完整的第二实现。
 - `docs/RELEASE.md` 的打包/签名/发版链**这一步不动**，出问题只换回 exe 即可。
+
