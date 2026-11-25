@@ -10,25 +10,39 @@ import (
 )
 
 // debugEval 是换壳期间的临时调试口：设了 CLIPNEST_EVAL_JS 就在主窗里跑一段 JS，
-// 把结果写进应用日志（页面里的报错、DOM 现状都能这样捞出来）。
+// 把结果写进应用日志（页面里的报错、DOM 现状、事件计数都能这样捞出来）。
+//
+// CLIPNEST_EVAL_JS2 在 9 秒后再跑一段：用来验"外部复制 → 页面收到 clip:new"这种
+// 需要两步的时序（先订阅，再从外面动剪贴板，最后读计数）。
 func debugEval(win *mygo.Window, dataDir string) {
-	code := os.Getenv("CLIPNEST_EVAL_JS")
-	if code == "" || win == nil {
+	if win == nil {
 		return
 	}
-	delay := 3 * time.Second
-	go func() {
-		time.Sleep(delay)
-		page := win.Page()
-		if page == nil {
-			clip.Logf(dataDir, "debug: 主窗没有 Page（原生 UI 窗口？）")
-			return
+	for _, step := range []struct {
+		env   string
+		delay time.Duration
+	}{
+		{"CLIPNEST_EVAL_JS", 3 * time.Second},
+		{"CLIPNEST_EVAL_JS2", 9 * time.Second},
+	} {
+		code := os.Getenv(step.env)
+		if code == "" {
+			continue
 		}
-		v, err := page.Eval(code)
-		if err != nil {
-			clip.Logf(dataDir, "debug eval 失败: %v", err)
-			return
-		}
-		clip.Logf(dataDir, "debug eval => %v", v)
-	}()
+		name, delay := step.env, step.delay
+		go func() {
+			time.Sleep(delay)
+			page := win.Page()
+			if page == nil {
+				clip.Logf(dataDir, "debug: 主窗没有 Page（原生 UI 窗口？）")
+				return
+			}
+			v, err := page.Eval(code)
+			if err != nil {
+				clip.Logf(dataDir, "debug %s 失败: %v", name, err)
+				return
+			}
+			clip.Logf(dataDir, "debug eval(%s) => %v", name, v)
+		}()
+	}
 }

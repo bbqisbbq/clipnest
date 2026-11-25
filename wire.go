@@ -55,6 +55,15 @@ func (w *wiring) showWindow() {
 	}
 	w.win.Show()
 	w.win.Focus()
+	// Focus() 只能"请求"焦点：前台是别的程序时 Windows 会把这次请求丢掉
+	// （单实例二次启动、从托盘唤回都是这个场景）。和 picker 一样，抢一次前台。
+	mygo.RunOnMain(func() {
+		if hwnd := w.win.NativeHandle(); hwnd != 0 && clip.ForegroundWindowHandle() != hwnd {
+			clip.ActivateWindow(hwnd)
+			w.win.Focus()
+			clip.Logf(w.dataDir, "main window activated: hwnd=%#x fg=%#x", hwnd, clip.ForegroundWindowHandle())
+		}
+	})
 }
 
 func (w *wiring) hideWindow() {
@@ -538,6 +547,7 @@ func (w *wiring) ensureShot() *mygo.Window {
 	w.shot = s
 	return s
 }
+
 
 
 

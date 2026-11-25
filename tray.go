@@ -1,6 +1,9 @@
 package main
 
 import (
+	"os"
+	"time"
+
 	"github.com/egoist/mygo"
 
 	"github.com/bbqisbbq/clipnest/internal/clip"
@@ -26,6 +29,15 @@ func (w *wiring) buildTray(preSettings clip.Settings) {
 	}
 	w.tray = tray
 	tray.OnClick(w.showWindow)
+	// 托盘图标到底有没有落进通知区域：CLIPNEST_LOG_TRAY=1 时把 Bounds 打出来
+	// （自动化测试没法可靠地"看见"托盘，只能靠这个坐标）。
+	if os.Getenv("CLIPNEST_LOG_TRAY") == "1" {
+		go func() {
+			time.Sleep(1200 * time.Millisecond)
+			b := tray.Bounds()
+			clip.Logf(w.dataDir, "tray icon bounds: x=%d y=%d w=%d h=%d", b.X, b.Y, b.Width, b.Height)
+		}()
+	}
 
 	menu := mygo.NewMenu([]*mygo.MenuItem{
 		{Label: "快速粘贴（光标处）", Click: func(*mygo.MenuItem, *mygo.Window) {
@@ -97,3 +109,4 @@ func setPauseLabel(item *mygo.MenuItem, capturing bool) {
 	}
 	item.SetLabel(pauseLabel(capturing))
 }
+
