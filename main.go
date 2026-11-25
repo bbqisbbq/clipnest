@@ -75,7 +75,7 @@ func main() {
 	}
 	forceShow, forceHidden := parseArgs(os.Args[1:])
 
-	w := &wiring{dataDir: dataDir, exePath: exePath}
+	w := &wiring{dataDir: dataDir, exePath: exePath, idle: newIdleWindows()}
 
 	svc, err := clip.NewClipService(dataDir, clip.Hooks{
 		Emit: func(name string, data any) {
@@ -234,3 +234,4 @@ func shotAwareAssets(base http.Handler, svc *clip.ClipService) http.Handler {
 		base.ServeHTTP(rw, r)
 	})
 }
+

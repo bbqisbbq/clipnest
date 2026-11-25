@@ -36,6 +36,10 @@ type wiring struct {
 	pauseItem     *application.MenuItem
 	autoStartItem *application.MenuItem
 
+	// idle 是 Gate 2.5 的实验开关：CLIPNEST_IDLE_DESTROY=1 时三个弹窗闲置即销毁、
+	// 下次唤起重建。默认关（行为与以前一致）。见 idle_windows.go。
+	idle *idleWindows
+
 	hotkey        string
 	captureHotkey string
 	shotHotkey    string
@@ -62,9 +66,11 @@ func (w *wiring) hideWindow() {
 // showPickerAt 在 (x,y) 处弹出快速粘贴窗：锚点由服务按光标/插入符算好，
 // 这里只负责夹到工作区内、抢前台、聚焦。
 func (w *wiring) showPickerAt(x, y int) bool {
-	if w.picker == nil {
+	p := w.ensurePicker()
+	if p == nil {
 		return false
 	}
+	w.idle.cancel("picker")
 	px, py := clip.ClampToWorkArea(x, y, clip.PickerWidth, clip.PickerHeight)
 	// Window calls and the foreground hand-off must happen on the main thread:
 	// that is the thread that owns the popup window.
@@ -87,16 +93,35 @@ func (w *wiring) showPickerAt(x, y int) bool {
 func (w *wiring) hidePicker() {
 	if w.picker != nil {
 		w.picker.Hide()
+		w.retire("picker", w.picker, func() { w.picker = nil })
 	}
+}
+
+// retire 在闲置一段时间后把弹窗销毁（CLIPNEST_IDLE_DESTROY=1 时才有动作）。
+// 到点若窗口又可见了（用户连按两次热键）就不销毁。
+func (w *wiring) retire(kind string, win *application.WebviewWindow, clear func()) {
+	if win == nil {
+		return
+	}
+	w.idle.schedule(kind,
+		func() bool { return win.IsVisible() },
+		func() {
+			w.idle.markClosing(kind)
+			win.Close() // 不带 Cancel 的 WindowClosing → Wails 把它从管理器摘掉并销毁
+			clear()
+			clip.Logf(w.dataDir, "idle: %s window destroyed", kind)
+		})
 }
 
 // showCaptureAt 在光标处弹出「记一笔」。尺寸用户可拖，所以夹边距时取窗口的
 // **当前**尺寸，不能用常量——否则拖大过的窗口会被按 620×220 夹，右下角跑到屏幕外。
 func (w *wiring) showCaptureAt(x, y int) bool {
-	if w.capture == nil {
+	c := w.ensureCapture()
+	if c == nil {
 		return false
 	}
-	cw, ch := w.capture.Size()
+	w.idle.cancel("capture")
+	cw, ch := c.Size()
 	if cw <= 0 || ch <= 0 {
 		cw, ch = clip.CaptureWidth, clip.CaptureHeight
 	}
@@ -120,6 +145,7 @@ func (w *wiring) showCaptureAt(x, y int) bool {
 func (w *wiring) hideCapture() {
 	if w.capture != nil {
 		w.capture.Hide()
+		w.retire("capture", w.capture, func() { w.capture = nil })
 	}
 }
 
@@ -129,9 +155,11 @@ func (w *wiring) hideCapture() {
 // 见 service_shot.go）；② 位置尺寸按物理像素给（monitor rect 就是物理像素），
 // 所以走 Win32 SetWindowPos，不用 Wails 的 DIP 接口。
 func (w *wiring) showShotWindow() bool {
-	if w.shot == nil {
+	s := w.ensureShot()
+	if s == nil {
 		return false
 	}
+	w.idle.cancel("shot")
 	left, top, sw, sh := w.svc.ShotBounds()
 	if sw <= 0 || sh <= 0 {
 		return false
@@ -175,6 +203,7 @@ func (w *wiring) hideShotWindow() {
 	application.InvokeSync(func() {
 		clip.HideOverlayWindow(uintptr(w.shot.NativeWindow()))
 	})
+	w.retire("shot", w.shot, func() { w.shot = nil })
 }
 
 // applyChrome 把 DWM 的系统边框/标题区刷成当前配色。
@@ -355,9 +384,22 @@ func (w *wiring) createWindows(preSettings clip.Settings, hidden bool) {
 		}
 	})
 
-	// Quick paste popup. Frameless, always on top, hidden until the hotkey
-	// asks for it; it hides itself as soon as it loses focus.
-	w.picker = w.app.Window.NewWithOptions(application.WebviewWindowOptions{
+
+	// 三个弹窗：默认仍是"启动即建、只隐藏"（保持原行为）；设了
+	// CLIPNEST_IDLE_DESTROY=1 时改为"用到才建（ensure*）、闲置就销毁（retire）"。
+	if !w.idle.on() {
+		w.ensurePicker()
+		w.ensureCapture()
+		w.ensureShot()
+	}
+}
+
+// ensurePicker 建（或复用）快速粘贴窗：无边框、置顶、热键唤起、失焦自隐。
+func (w *wiring) ensurePicker() *application.WebviewWindow {
+	if w.picker != nil {
+		return w.picker
+	}
+	p := w.app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:            "picker",
 		Title:           "ClipNest",
 		Width:           clip.PickerWidth,
@@ -377,19 +419,47 @@ func (w *wiring) createWindows(preSettings clip.Settings, hidden bool) {
 		BackgroundColour: application.NewRGB(18, 21, 28),
 		URL:              "/?mode=picker",
 	})
+	// 失焦自隐是 Wails 自己做的（HideOnFocusLost），会绕过 hidePicker：
+	// 补一条 WindowHide 钩子，闲置销毁才不会漏掉这条最常见的路径。
+	p.RegisterHook(events.Common.WindowHide, func(*application.WindowEvent) {
+		w.retire("picker", p, func() {
+			if w.picker == p {
+				w.picker = nil
+			}
+		})
+	})
+	// 关闭请求（Alt+F4 之类）一律降级成"隐藏"：以前没有这条钩子，外部关掉会把窗口
+	// 销毁而 w.picker 还留着指针；闲置销毁这条路又必须能真的关掉，所以用 allowClose 区分。
+	p.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
+		if w.idle.allowClose("picker") {
+			if w.picker == p {
+				w.picker = nil
+			}
+			return
+		}
+		e.Cancel()
+		w.hidePicker()
+	})
+	w.picker = p
+	return p
+}
 
-	// Quick capture popup: a memo in one keystroke, right where you are typing.
-	//
-	// 无边框，但**要能拖、要能拉**（2.6.x 的「记一笔」是个固定大小的死框，被吐槽过）：
-	//   · 拖动 —— 前端给抬头加 `--wails-draggable: drag`，Wails 运行时据此把
-	//     按下手势交给系统标题栏拖动，不用自己算鼠标位移。
-	//   · 拉伸 —— 这里**不能**设 DisableResize：Wails v3 的运行时靠
-	//     setResizable(true) 才把窗口四周 5px 激活成拉伸热区
-	//     （Windows 上无边框窗没有原生边框，WM_NCCALCSIZE 把边吃掉了，
-	//     所以「OS 自己会给」这个假设不成立）。
-	//   · 尺寸 —— 记住上次拖到多大（本机 meta，不同步），位置仍在光标处弹出。
+// ensureCapture 建（或复用）「记一笔」浮层。
+//
+// 无边框，但**要能拖、要能拉**（2.6.x 的「记一笔」是个固定大小的死框，被吐槽过）：
+//   - 拖动 —— 前端给抬头加 `--wails-draggable: drag`，Wails 运行时据此把
+//     按下手势交给系统标题栏拖动，不用自己算鼠标位移。
+//   - 拉伸 —— 这里**不能**设 DisableResize：Wails v3 的运行时靠
+//     setResizable(true) 才把窗口四周 5px 激活成拉伸热区
+//     （Windows 上无边框窗没有原生边框，WM_NCCALCSIZE 把边吃掉了，
+//     所以「OS 自己会给」这个假设不成立）。
+//   - 尺寸 —— 记住上次拖到多大（本机 meta，不同步），位置仍在光标处弹出。
+func (w *wiring) ensureCapture() *application.WebviewWindow {
+	if w.capture != nil {
+		return w.capture
+	}
 	captureW, captureH := w.svc.CaptureSize()
-	w.capture = w.app.Window.NewWithOptions(application.WebviewWindowOptions{
+	c := w.app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:            "capture",
 		Title:           "记一笔",
 		Width:           captureW,
@@ -412,7 +482,6 @@ func (w *wiring) createWindows(preSettings clip.Settings, hidden bool) {
 		// 用 Translucent 而不是 Transparent：两者 exStyle 相同（都是 WS_EX_NOREDIRECTIONBITMAP），
 		// 但实测 Transparent 那条路页面 alpha=0 的地方会露出 WebView2 的白底，
 		// 而 Translucent 能让 alpha=0 的地方透出桌面（圆角切边靠的就是这个）。
-		// backdrop 本身由我们运行时开关（internal/clip/backdrop_windows.go）。
 		BackgroundType:   application.BackgroundTypeTranslucent,
 		BackgroundColour: application.NewRGB(14, 16, 21),
 		URL:              "/?mode=capture",
@@ -420,22 +489,46 @@ func (w *wiring) createWindows(preSettings clip.Settings, hidden bool) {
 	// 拉伸结束时把尺寸记下来。用窗口事件而不是前端 resize 回调：窗口被系统拖动
 	// 拉伸时前端虽然也会发 resize，但只在用户松手后才值得写一次库。
 	// 隐藏中的窗口不算：那时读到的是个还没排好版的小矩形，记下来会顶掉默认尺寸。
-	w.capture.RegisterHook(events.Windows.WindowEndResize, func(_ *application.WindowEvent) {
-		if !w.capture.IsVisible() {
+	c.RegisterHook(events.Windows.WindowEndResize, func(_ *application.WindowEvent) {
+		if !c.IsVisible() {
 			return
 		}
-		if cw, ch := w.capture.Size(); cw > 0 && ch > 0 {
+		if cw, ch := c.Size(); cw > 0 && ch > 0 {
 			w.svc.SaveCaptureSize(cw, ch)
 		}
 	})
+	c.RegisterHook(events.Common.WindowHide, func(*application.WindowEvent) {
+		w.retire("capture", c, func() {
+			if w.capture == c {
+				w.capture = nil
+			}
+		})
+	})
+	c.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
+		if w.idle.allowClose("capture") {
+			if w.capture == c {
+				w.capture = nil
+			}
+			return
+		}
+		e.Cancel()
+		w.hideCapture()
+	})
+	w.capture = c
+	return c
+}
 
-	// 框选截图的遮罩窗。
-	//
-	// 建的时候给个小尺寸并隐藏：真正的铺满由 ShowShotWindow 用 SetWindowPos 按显示器
-	// 物理像素摆（见 internal/clip/shot_windows.go）。不要开 HideOnFocusLost ——
-	// 截图的整个过程里它就该一直是前台窗；也不要用透明背景：遮罩自己会画半透明黑，
-	// 窗口透明只会让 WebView2 后面露出桌面，边缘还会带一圈脏像素。
-	w.shot = w.app.Window.NewWithOptions(application.WebviewWindowOptions{
+// ensureShot 建（或复用）框选截图的遮罩窗。
+//
+// 建的时候给个小尺寸并隐藏：真正的铺满由 ShowShotWindow 用 SetWindowPos 按显示器
+// 物理像素摆（见 internal/clip/shot_windows.go）。不要开 HideOnFocusLost ——
+// 截图的整个过程里它就该一直是前台窗；也不要用透明背景：遮罩自己会画半透明黑，
+// 窗口透明只会让 WebView2 后面露出桌面，边缘还会带一圈脏像素。
+func (w *wiring) ensureShot() *application.WebviewWindow {
+	if w.shot != nil {
+		return w.shot
+	}
+	s := w.app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:          "shot",
 		Title:         "ClipNest 截图",
 		Width:         320,
@@ -451,8 +544,14 @@ func (w *wiring) createWindows(preSettings clip.Settings, hidden bool) {
 		URL:              "/?mode=shot",
 	})
 	// Esc / 点完立刻切走：遮罩窗不该被当成"用户手上的工作窗口"。
-	w.shot.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
+	s.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
+		if w.idle.allowClose("shot") {
+			return // 这是我们自己的闲置销毁，放行
+		}
 		e.Cancel()
 		w.hideShotWindow()
 	})
+	w.shot = s
+	return s
 }
+
