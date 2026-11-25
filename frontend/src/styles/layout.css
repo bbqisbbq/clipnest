@@ -63,7 +63,7 @@
 }
 
 .tb-pill {
-  --wails-draggable: none;
+  --app-region: none;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -110,7 +110,7 @@
 }
 
 .win-btn {
-  --wails-draggable: none;
+  --app-region: none;
   display: grid;
   place-items: center;
   width: 36px;
@@ -222,4 +222,5 @@
   flex-direction: column;
   gap: 2px;
 }
+
 

@@ -19,7 +19,12 @@
     "noUnusedLocals": true,
     "noUnusedParameters": false,
     "noImplicitAny": false,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+    "baseUrl": ".",
+    "paths": {
+      "@wailsio/runtime": ["./src/lib/wails-shim.ts"]
+    }
   },
   "include": ["src", "bindings"],
 }
+

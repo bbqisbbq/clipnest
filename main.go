@@ -133,6 +133,7 @@ func main() {
 		}
 
 		w.buildTray(preSettings)
+		debugCapturePage(w.win, dataDir)
 
 		// Start listening once the app is wired up.
 		if err := svc.Start(); err != nil {
@@ -200,5 +201,6 @@ func shotAwareAssets(base http.Handler, svc *clip.ClipService) http.Handler {
 
 // 让 log 的默认输出走文件（GUI 构建没有控制台）。
 var _ = slog.LevelWarn
+
 
 

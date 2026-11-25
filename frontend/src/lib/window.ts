@@ -24,5 +24,6 @@ export const isMaximised = async (): Promise<boolean> => {
 };
 
 // Style helper: mark an element as part of the drag region or explicitly not.
-export const drag = { "--wails-draggable": "drag" } as CSSProperties;
-export const noDrag = { "--wails-draggable": "none" } as CSSProperties;
+export const drag = { "--app-region": "drag" } as CSSProperties;
+export const noDrag = { "--app-region": "none" } as CSSProperties;
+

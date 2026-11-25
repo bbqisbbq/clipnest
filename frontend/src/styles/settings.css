@@ -263,7 +263,7 @@ select.input.is-select {
    轨道用 surface-3、拇指用强调色，跟 seg-control / switch 同一套 token；
    两个引擎的伪元素都要写，否则 WebView2（Chromium）之外的兜底渲染会是系统灰。 */
 .slider {
-  --wails-draggable: none;
+  --app-region: none;
   -webkit-appearance: none;
   appearance: none;
   width: 190px;
@@ -320,7 +320,7 @@ select.input.is-select {
 .slider-value.is-off { color: var(--text-3); }
 
 .switch {
-  --wails-draggable: none;
+  --app-region: none;
   width: 34px;
   height: 19px;
   padding: 2px;
@@ -471,3 +471,4 @@ select.input.is-select {
   color: var(--accent);
 }
 .toolbar-reset { margin-left: 4px; }
+
