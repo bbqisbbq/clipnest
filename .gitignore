@@ -51,3 +51,7 @@
 # 脚本调试时误落的 stderr 日志
 *.err.log
 
+# 原生弹窗探针：源码入库，exe 与截图不入库
+/scratch/mygo-native-popup/*.exe
+/scratch/mygo-native-popup/*.png
+/scratch/np.*.log
