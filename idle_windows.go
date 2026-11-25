@@ -15,8 +15,9 @@ import (
 // 3 个空闲弹窗就是约 280MB。但销毁也意味着下次唤起要重新加载页面（React 冷启动），
 // 热路径（picker）的延迟会变差。所以先做成开关，量完再决定要不要默认开。
 //
-//	CLIPNEST_IDLE_DESTROY=1     开启（默认关，行为与以前一致）
+//	CLIPNEST_IDLE_DESTROY=0     关闭（默认开）
 //	CLIPNEST_IDLE_MS=1500       闲置多久后销毁（默认 1500ms，够接住"连按两次"）
+//	CLIPNEST_IDLE_SKIP=capture  不参与销毁的窗口（默认 picker）
 type idleWindows struct {
 	enabled bool
 	grace   time.Duration
@@ -33,11 +34,17 @@ func newIdleWindows() *idleWindows {
 		closing: map[string]bool{},
 		timers:  map[string]*time.Timer{},
 	}
-	if v := os.Getenv("CLIPNEST_IDLE_DESTROY"); v == "1" || v == "true" {
-		p.enabled = true
+	// 默认开（Gate 2.5 实测：省 215MB，picker 常驻所以热路径不变）。
+	// 要退回"三窗常驻"就设 CLIPNEST_IDLE_DESTROY=0。
+	p.enabled = true
+	if v := strings.ToLower(strings.TrimSpace(os.Getenv("CLIPNEST_IDLE_DESTROY"))); v == "0" || v == "false" || v == "off" {
+		p.enabled = false
 	}
-	p.skip = map[string]bool{}
+	// picker 默认不参与销毁：它是唯一"按了就得立刻出现"的窗口，重建要重跑 React
+	// （实测 132ms 首开 / 77–93ms 之后），热路径上这笔钱不值得省。
+	p.skip = map[string]bool{"picker": true}
 	if v := os.Getenv("CLIPNEST_IDLE_SKIP"); v != "" {
+		p.skip = map[string]bool{}
 		for _, name := range strings.Split(v, ",") {
 			if name = strings.TrimSpace(name); name != "" {
 				p.skip[name] = true
@@ -100,4 +107,5 @@ func (p *idleWindows) allowClose(kind string) bool {
 	}
 	return false
 }
+
 

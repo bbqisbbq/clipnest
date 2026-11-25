@@ -36,9 +36,16 @@ type wiring struct {
 	pauseItem     *application.MenuItem
 	autoStartItem *application.MenuItem
 
-	// idle 是 Gate 2.5 的实验开关：CLIPNEST_IDLE_DESTROY=1 时三个弹窗闲置即销毁、
-	// 下次唤起重建。默认关（行为与以前一致）。见 idle_windows.go。
+	// idle 控制"弹窗闲置即销毁"（Gate 2.5，默认开、picker 除外）。见 idle_windows.go。
 	idle *idleWindows
+
+	// 上一次的窗口外观：capture 被闲置销毁后重建要重放一遍，否则 DWM 边框色/材质
+	// 会回到系统默认，直到下次保存设置（见 docs/design/MYGO-GATE2-5.md §4）。
+	chromeDark   bool
+	chromeBorder string
+	hasChrome    bool
+	backdrop     bool
+	hasBackdrop  bool
 
 	hotkey        string
 	captureHotkey string
@@ -211,19 +218,24 @@ func (w *wiring) hideShotWindow() {
 // picker 有意不设：它是透明窗口上的圆角卡片，DWM 的 1px 边框会沿着方形窗口
 // 轮廓画一圈，正好落在本来要透明的四个角上。
 func (w *wiring) applyChrome(dark bool, borderHex string) {
-	application.InvokeSync(func() {
-		if w.win != nil {
-			clip.SetWindowChrome(uintptr(w.win.NativeWindow()), dark, borderHex)
-		}
-		if w.capture != nil {
-			clip.SetWindowChrome(uintptr(w.capture.NativeWindow()), dark, borderHex)
-		}
-	})
+	w.chromeDark, w.chromeBorder, w.hasChrome = dark, borderHex, true
+	application.InvokeSync(w.applyChromeNow)
+}
+
+// applyChromeNow 用缓存的颜色刷一遍主窗与「记一笔」（capture 重建后要重放）。
+func (w *wiring) applyChromeNow() {
+	if w.win != nil {
+		clip.SetWindowChrome(uintptr(w.win.NativeWindow()), w.chromeDark, w.chromeBorder)
+	}
+	if w.capture != nil {
+		clip.SetWindowChrome(uintptr(w.capture.NativeWindow()), w.chromeDark, w.chromeBorder)
+	}
 }
 
 // applyCaptureBackdrop 打开/关闭「记一笔」窗口背后的 DWM Acrylic 层，返回是否真的开着。
 // 前端拿到 false 就把卡片画回不透明——半透明在没有 backdrop 的窗口里会被合到黑底上。
 func (w *wiring) applyCaptureBackdrop(acrylic bool) bool {
+	w.backdrop, w.hasBackdrop = acrylic, true
 	if w.capture == nil {
 		return false
 	}
@@ -391,6 +403,10 @@ func (w *wiring) createWindows(preSettings clip.Settings, hidden bool) {
 		w.ensurePicker()
 		w.ensureCapture()
 		w.ensureShot()
+	} else {
+		// picker 不参与闲置销毁，但也不必在启动瞬间就建：3 秒后再建，
+		// 启动速度不受影响，第一次按热键也不会撞上"冷建"（实测省下 ~120ms）。
+		time.AfterFunc(3*time.Second, func() { _ = w.ensurePicker() })
 	}
 }
 
@@ -515,6 +531,15 @@ func (w *wiring) ensureCapture() *application.WebviewWindow {
 		w.hideCapture()
 	})
 	w.capture = c
+	// 重建的窗口把上一次的配色/材质补回去（这两样原本只在设置变化时才刷）。
+	if w.hasChrome {
+		application.InvokeSync(w.applyChromeNow)
+	}
+	if w.hasBackdrop {
+		application.InvokeSync(func() {
+			clip.SetWindowBackdrop(uintptr(c.NativeWindow()), w.backdrop)
+		})
+	}
 	return c
 }
 
@@ -554,4 +579,5 @@ func (w *wiring) ensureShot() *application.WebviewWindow {
 	w.shot = s
 	return s
 }
+
 

@@ -1,0 +1,53 @@
+{
+  "baseline": {
+    "mem_idle": {
+      "procs": 11,
+      "ws": 793.3,
+      "priv": 610.1
+    },
+    "latency": [
+      16.8,
+      13.4,
+      9.8
+    ],
+    "mem": {
+      "procs": 11,
+      "ws": 757.4,
+      "priv": 580.1
+    }
+  },
+  "idle_destroy": {
+    "mem_idle": {
+      "procs": 8,
+      "ws": 455.6,
+      "priv": 399.4
+    },
+    "latency": [
+      137.7,
+      77.3,
+      92.8
+    ],
+    "mem": {
+      "procs": 8,
+      "ws": 448.3,
+      "priv": 401.3
+    }
+  },
+  "keep_picker": {
+    "mem_idle": {
+      "procs": 9,
+      "ws": 542.0,
+      "priv": 457.2
+    },
+    "latency": [
+      132.2,
+      13.6,
+      10.0
+    ],
+    "mem": {
+      "procs": 8,
+      "ws": 452.3,
+      "priv": 406.9
+    }
+  }
+}

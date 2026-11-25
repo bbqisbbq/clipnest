@@ -65,10 +65,32 @@ $env:CLIPNEST_IDLE_SKIP = "picker"    # 不参与销毁的窗口（推荐就是�
 4. 这不是免费的收益：**在 Wails 上最多也就到 542MB**，仍然比原生单窗（48MB）差一个数量级。
    它只是"不换框架能拿到的钱"。
 
-## 5. 建议
+## 5. 已落地（2026-11-25，默认开）
+
+按"默认开 + 只留 picker"落地，并补掉了上面 §4 的两条：
+
+- `CLIPNEST_IDLE_DESTROY` 默认 **开**（要退回三窗常驻：设 `=0`）；`CLIPNEST_IDLE_SKIP` 默认 **picker**。
+- 重建后**重放了 DWM 边框色与 Acrylic**：`wiring` 缓存 `chromeDark/chromeBorder/backdrop`，
+  `ensureCapture()` 建好窗口后立刻 `applyChromeNow()` + `SetWindowBackdrop(...)`。
+- **picker 延迟预建**：`time.AfterFunc(3s, ensurePicker)` —— 启动不拖慢，首次热键也不撞冷建。
+
+默认配置实测（无任何环境变量）：
+
+| 时刻 | 进程 | WS | 说明 |
+| --- | --- | --- | --- |
+| 启动 1.5s | 9 | 454MB | 只有主窗，picker 还没预建 |
+| 启动 4.5s | 9 | 533MB | picker 已预建 |
+| picker 热键→可见 | — | — | 24.5 / 16.9 / 10.5 ms（第一次是"从未显示过的窗口"首次 Show） |
+| 开一次「记一笔」 | 10 | 687MB | 临时 |
+| 用完闲置 2.5s | 9 | **575MB** | 日志：`idle: capture window destroyed` |
+
+稳态 533–575MB（基线 757MB，**−180~220MB**），热路径不变。
+
+## 6. 建议
 
 - **代码保留**（env 开关，默认关）。它便宜、可回退，还能当 Gate 2 换壳前后的对照基线。
 - 若要默认开，建议就按 C 配置：`CLIPNEST_IDLE_DESTROY=1` + `CLIPNEST_IDLE_SKIP=picker`，
   再补 §4 第 1 条的 chrome 重放与第 2 条的延迟预建。
 - 换壳（Gate 2）之后，这套开关自然作废——MyGo 里 picker 原生窗是 48MB 量级，
   没有"常驻 WebView2 文档"这个概念。
+
