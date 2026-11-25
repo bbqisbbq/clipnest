@@ -1,6 +1,8 @@
 module github.com/bbqisbbq/clipnest
 
-go 1.26.0
+go 1.27.3
+
+toolchain go1.27.4
 
 require (
 	github.com/wailsapp/wails/v3 v3.0.0
