@@ -233,13 +233,14 @@ func (w *wiring) applyChrome(dark bool, borderHex string) {
 	mygo.RunOnMain(w.applyChromeNow)
 }
 
-// applyChromeNow 用缓存的颜色刷一遍主窗与「记一笔」（capture 重建后要重放）。
+// applyChromeNow 只刷主窗。
+//
+// 弹窗（picker / capture）一律不刷 DWM 边框色：那条 1px 边框是沿**方形窗口轮廓**画的，
+// 而弹窗是圆角卡片 + 透明窗口，线正好压在本来要透出去的边上 —— 黑底上看起来就是一圈
+// 「黑边」（实测像素 rgb(47,47,47)）。主窗是方形带边框的，才需要它。
 func (w *wiring) applyChromeNow() {
 	if w.win != nil {
 		clip.SetWindowChrome(w.win.NativeHandle(), w.chromeDark, w.chromeBorder)
-	}
-	if w.capture != nil {
-		clip.SetWindowChrome(w.capture.NativeHandle(), w.chromeDark, w.chromeBorder)
 	}
 }
 
@@ -443,6 +444,7 @@ func (w *wiring) ensurePicker() *mygo.Window {
 		})
 	})
 	retitle(p, "ClipNest")
+	mygo.RunOnMain(func() { clip.SetWindowNoBorder(p.NativeHandle()) })
 	w.picker = p
 	return p
 }
@@ -505,6 +507,7 @@ func (w *wiring) ensureCapture() *mygo.Window {
 		})
 	})
 	retitle(c, "记一笔")
+	mygo.RunOnMain(func() { clip.SetWindowNoBorder(c.NativeHandle()) })
 	w.capture = c
 	// 重建的窗口把上一次的配色/材质补回去（这两样原本只在设置变化时才刷）。
 	if w.hasChrome {
@@ -547,9 +550,11 @@ func (w *wiring) ensureShot() *mygo.Window {
 		w.hideShotWindow()
 	})
 	retitle(s, "ClipNest 截图")
+	mygo.RunOnMain(func() { clip.SetWindowNoBorder(s.NativeHandle()) })
 	w.shot = s
 	return s
 }
+
 
 
 

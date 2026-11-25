@@ -407,3 +407,8 @@
 
 
 
+- **Windows 11 默认给每个窗口画 1px 边框**（2.12.3 修）：即使我们从没设过 `DWMWA_BORDER_COLOR`，
+  DWM 也会用系统默认色画一圈——暗色主题下是 rgb(47,47,47)，正好压在圆角卡片透出去的边上，
+  黑底上看就是「黑边」。**只"不设"不够，必须显式设 `DWMWA_COLOR_NONE`（0xFFFFFFFE）**才真的不画
+  （`internal/clip/popup_border_windows.go`）。另外透明 > 0 时亚克力自己还会在最外沿留一道
+  更亮的 1px 高光，那是这层材质的固有特征，去不掉。
