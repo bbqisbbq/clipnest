@@ -75,3 +75,4 @@ export default function InteractionSection({ draft, patch, appInfo }: Props) {
     </Section>
   );
 }
+

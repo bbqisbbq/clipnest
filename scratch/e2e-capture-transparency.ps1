@@ -193,10 +193,7 @@ try {
 
   # 背后那块窗口的预期颜色（就是 -Backdrop 给的那个）
   $bgExpected = [System.Drawing.ColorTranslator]::FromHtml($Backdrop)
-  $fmt = { param(
-  # 传别的构建产物时用（换壳验证：bin\clipnest.exe 可能指 MyGo 构建）
-  [string]$Exe = '',
-$c) "$($c.R),$($c.G),$($c.B)" }
+  $fmt = { param($c) "$($c.R),$($c.G),$($c.B)" }
   Write-Host "0%   : 圆角外侧=$(& $fmt $a.Corner)  卡片=$(& $fmt $a.Card)   ($($a.Size))"
   Write-Host "30%  : 圆角外侧=$(& $fmt $b.Corner)  卡片=$(& $fmt $b.Card)   ($($b.Size))"
 
@@ -257,12 +254,24 @@ $c) "$($c.R),$($c.G),$($c.B)" }
       $results.Add(("FAIL 100% 时卡片 {0} 还是实心的样子（实心 {1}，移动 {2}）" -f `
         (& $fmt $b.Card), (& $fmt $a.Card), [int]$moved))
     }
-  } elseif ($towardBackdrop -and $visiblyMoved -and $notSwallowed) {
-    $results.Add(("PASS 30% 时卡片 {0} 朝背后移动了 {1}（跨度 {2}）——半透明真的与背后混合" -f `
-      (& $fmt $b.Card), [int]$moved, [int]$gap))
+  } elseif ($env:CLIPNEST_CAPTURE_ACRYLIC -eq '1') {
+    # 旧行为（磨砂合成层开着）：卡片要朝背后移动一截、但没走到头。
+    if ($towardBackdrop -and $visiblyMoved -and $notSwallowed) {
+      $results.Add(("PASS 30% 时卡片 {0} 朝背后移动了 {1}（跨度 {2}）——磨砂合成层生效，与背后混合" -f `
+        (& $fmt $b.Card), [int]$moved, [int]$gap))
+    } else {
+      $results.Add(("FAIL 30% 时卡片 {0} 没有与背后混合（实心 {1}，背后 {2}，移动 {3}）" -f `
+        (& $fmt $b.Card), (& $fmt $a.Card), (& $fmt $a.Corner), [int]$moved))
+    }
   } else {
-    $results.Add(("FAIL 30% 时卡片 {0} 没有与背后混合（实心 {1}，背后 {2}，移动 {3}）" -f `
-      (& $fmt $b.Card), (& $fmt $a.Card), (& $fmt $a.Corner), [int]$moved))
+    # 默认（2.12.2 起）：没有合成层，卡片保持不透明才是对的——"不混合"就是通过。
+    if ([Math]::Abs($moved) -le 4) {
+      $results.Add(("PASS 30% 时卡片 {0} 与实心一致（移动 {1}）：无合成层，卡片不透明、无磨砂" -f `
+        (& $fmt $b.Card), [int]$moved))
+    } else {
+      $results.Add(("FAIL 30% 时卡片 {0} 自己动了 {1}：没有合成层却出现了混合" -f `
+        (& $fmt $b.Card), [int]$moved))
+    }
   }
 
   # 4) 半透明之后圆角外侧仍然透明
@@ -286,6 +295,8 @@ finally {
     Write-Host "已把安装版 ClipNest 拉起来：$installedExe --background"
   }
 }
+
+
 
 
 
