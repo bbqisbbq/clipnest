@@ -1,3 +1,4 @@
+param([string]$Exe = '')
 # 两件事一起验（沙箱 APPDATA + 真实鼠标键盘）：
 #   1. 复制内容后，列表**不切页面**就能看到新条目（App 监听 clip:new）；
 #   2. 快捷输入框草稿：敲完 → 记录 → 强杀进程 / 点× 收起 → 重启后草稿还在。
@@ -19,9 +20,12 @@ public class LiveDr {
 }
 '@
 
+# 闲置销毁会把这些脚本正拿着的窗口收掉（产品默认行为），测试期间关掉。
+$env:CLIPNEST_IDLE_DESTROY = '0'
 $root = 'E:\default\clipnest'
 $sandbox = Join-Path $root 'scratch\appdata-live-draft'
-$devExe = Join-Path $root 'bin\clipnest-dev.exe'
+$devExe = if ($Exe) { $Exe } else { Join-Path $root 'bin\clipnest-dev.exe' }
+$procName = [IO.Path]::GetFileNameWithoutExtension($devExe)
 $installedExe = 'C:\Program Files\bbqisbbq\ClipNest\clipnest.exe'
 $shots = Join-Path $root 'scratch\e2e-shots'
 $realAppData = $env:APPDATA
@@ -62,7 +66,7 @@ function Type-Text($text) {
 }
 
 function Stop-Sandbox {
-  Get-Process clipnest-dev -ErrorAction SilentlyContinue | Stop-Process -Force
+  Get-Process $procName -ErrorAction SilentlyContinue | Stop-Process -Force
   Start-Sleep -Milliseconds 900
 }
 
@@ -76,7 +80,7 @@ function Start-Sandbox {
   Start-Process -FilePath $devExe -ArgumentList '--show' | Out-Null
   $deadline = (Get-Date).AddSeconds(25)
   while ((Get-Date) -lt $deadline) {
-    $c = Get-Process clipnest-dev -ErrorAction SilentlyContinue | Select-Object -First 1
+    $c = Get-Process $procName -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($c) { $c.Refresh(); if ($c.MainWindowHandle -ne 0) { Start-Sleep -Milliseconds 5000; return $c } }
     Start-Sleep -Milliseconds 250
   }
@@ -134,3 +138,6 @@ finally {
   Start-Process -FilePath $installedExe -ArgumentList '--show' | Out-Null
   Start-Sleep -Milliseconds 1200
 }
+
+
+

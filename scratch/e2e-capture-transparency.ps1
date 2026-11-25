@@ -12,6 +12,9 @@
 #
 # 用法：pwsh -NoProfile -File scratch\e2e-capture-transparency.ps1
 param(
+  # 传别的构建产物时用（换壳验证：bin\clipnest.exe 可能指 MyGo 构建）
+  [string]$Exe = '',
+
   # 主题预设（lib/themes.ts 里的 id）：测浅色主题时传 default-light / pure-light
   [string]$Preset = 'default-dark',
   # 深浅方案：留空则按预设自己的明暗（settings.theme = system 时以预设为准）
@@ -35,8 +38,10 @@ public class CNT {
 }
 '@
 
+# 闲置销毁会把这些脚本正拿着的窗口收掉（产品默认行为），测试期间关掉。
+$env:CLIPNEST_IDLE_DESTROY = '0'
 $root = 'E:\default\clipnest'
-$devExe = Join-Path $root 'bin\clipnest-dev.exe'
+$devExe = if ($Exe) { $Exe } else { Join-Path $root 'bin\clipnest-dev.exe' }
 $installedExe = 'C:\Program Files\bbqisbbq\ClipNest\clipnest.exe'
 $sandboxAppData = Join-Path $root 'scratch\tmp-profile-transparency\APPDATA'
 $shots = Join-Path $root 'scratch\transparency-shots'
@@ -87,7 +92,8 @@ function Start-DevApp([int]$transparency) {
   Set-Content -Path (Join-Path $dataDir 'settings.json') -Value $settings -Encoding utf8
   $env:APPDATA = $sandboxAppData
   Start-Process -FilePath $devExe | Out-Null
-  if (-not (Wait-For { Get-Process clipnest-dev -ErrorAction SilentlyContinue } 20000)) {
+  $procName = [IO.Path]::GetFileNameWithoutExtension($devExe)   # 传 -Exe 时进程名可能不是 clipnest-dev
+if (-not (Wait-For { Get-Process $procName -ErrorAction SilentlyContinue } 20000)) {
     throw "dev 版没起来：$devExe"
   }
   Start-Sleep -Seconds 4
@@ -187,7 +193,10 @@ try {
 
   # 背后那块窗口的预期颜色（就是 -Backdrop 给的那个）
   $bgExpected = [System.Drawing.ColorTranslator]::FromHtml($Backdrop)
-  $fmt = { param($c) "$($c.R),$($c.G),$($c.B)" }
+  $fmt = { param(
+  # 传别的构建产物时用（换壳验证：bin\clipnest.exe 可能指 MyGo 构建）
+  [string]$Exe = '',
+$c) "$($c.R),$($c.G),$($c.B)" }
   Write-Host "0%   : 圆角外侧=$(& $fmt $a.Corner)  卡片=$(& $fmt $a.Card)   ($($a.Size))"
   Write-Host "30%  : 圆角外侧=$(& $fmt $b.Corner)  卡片=$(& $fmt $b.Card)   ($($b.Size))"
 
@@ -277,6 +286,9 @@ finally {
     Write-Host "已把安装版 ClipNest 拉起来：$installedExe --background"
   }
 }
+
+
+
 
 
 

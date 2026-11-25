@@ -1,3 +1,5 @@
+# 传别的构建产物时用（换壳验证）
+param([string]$Exe = '')
 # End-to-end check of the quick-capture popup ("记一笔") move / resize support:
 #   1. (re)start ClipNest and give the desktop a focused text box (so there is a caret)
 #   2. fire Ctrl+Shift+N; the popup's hwnd + geometry come from the app log
@@ -26,6 +28,8 @@ public class CN {
 }
 '@
 
+# 闲置销毁会把这些脚本正拿着的窗口收掉（产品默认行为），测试期间关掉。
+$env:CLIPNEST_IDLE_DESTROY = '0'
 $root = 'E:\default\clipnest'
 $log = Join-Path $env:APPDATA 'ClipNest\clipnest.log'
 $shotDir = Join-Path $root 'scratch'
@@ -82,7 +86,7 @@ function Start-App([switch]$ResetSize) {
     Push-Location $root
     try { & go run ./scratch/metadump -del capture.size 2>&1 | Out-Null } finally { Pop-Location }
   }
-  Start-Process -FilePath (Join-Path $root 'bin\clipnest.exe') | Out-Null
+  Start-Process -FilePath $(if ($Exe) { $Exe } else { Join-Path $root 'bin\clipnest.exe' }) | Out-Null
   Wait-For { Get-Process clipnest -ErrorAction SilentlyContinue } 15000 | Out-Null
   Start-Sleep -Seconds 4
 }
@@ -209,7 +213,10 @@ if (-not $cap2) {
   # 7. Shrink it hard: the minimum size must hold (a 60px editor is unusable).
   $r5 = Get-Rect $cap2.Hwnd
   Drag ($r5.X + $r5.W - 3) ($r5.Y + [int]($r5.H / 2)) ([int](-600 * $scale)) 0
-  Drag ($r5.X + [int]($r5.W / 2)) ($r5.Y + (Get-Rect $cap2.Hwnd).H - 3) 0 ([int](-400 * $scale))
+  # 宽度缩到最小之后窗口右边缘变了：第二次拖动必须用**新的**矩形算落点，
+  # 否则 x+W/2 正好压在右边缘上，量到的是宽度而不是高度。
+  $r5b = Get-Rect $cap2.Hwnd
+  Drag ($r5b.X + [int]($r5b.W / 2)) ($r5b.Y + $r5b.H - 3) 0 ([int](-400 * $scale))
   $r6 = Get-Rect $cap2.Hwnd
   Write-Host "after shrinking hard: w=$($r6.W) h=$($r6.H) (min is 420x160 dip)"
   if ([Math]::Abs($r6.W - [int](420 * $scale)) -le 6 -and [Math]::Abs($r6.H - [int](160 * $scale)) -le 6) {
@@ -256,3 +263,6 @@ if ($env:E2E_KEEP_TARGET -ne '1') {
 }
 # Leave the machine in the shipped state: keep the app running at the default size.
 Start-App -ResetSize
+
+
+

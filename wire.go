@@ -84,8 +84,25 @@ func (w *wiring) showPickerAt(x, y int) bool {
 		clip.Logf(w.dataDir, "picker window: pos=(%d,%d) hwnd=%#x fg=%#x",
 			px, py, p.NativeHandle(), clip.ForegroundWindowHandle())
 	})
+	retitle(p, "ClipNest")
 	_ = evPickerOpened.Broadcast("")
 	return true
+}
+
+// retitle 把窗口标题钉回去：MyGo 的网页窗口会把页面 <title> 当成窗口标题，
+// 而 ClipNest 的三个弹窗共用一个 SPA，页面标题都是"ClipNest · 剪贴板"。
+// 任务栏/alt-tab/e2e 脚本都要靠标题区分它们，所以加载完再设一次。
+func retitle(win *mygo.Window, title string) {
+	if win == nil {
+		return
+	}
+	for _, d := range []time.Duration{300 * time.Millisecond, 1200 * time.Millisecond} {
+		time.AfterFunc(d, func() {
+			if win != nil && !win.IsDestroyed() {
+				win.SetTitle(title)
+			}
+		})
+	}
 }
 
 func (w *wiring) hidePicker() {
@@ -134,6 +151,7 @@ func (w *wiring) showCaptureAt(x, y int) bool {
 		clip.Logf(w.dataDir, "capture window: pos=(%d,%d) size=(%dx%d) hwnd=%#x",
 			cx, cy, cw, ch, c.NativeHandle())
 	})
+	retitle(c, "记一笔")
 	_ = evCaptureOpened.Broadcast("")
 	return true
 }
@@ -389,11 +407,12 @@ func (w *wiring) ensurePicker() *mygo.Window {
 		Height:        clip.PickerHeight,
 		Frameless:     true,
 		AlwaysOnTop:   true,
-		Panel:         true,
-		Transparent:   true,
-		CornerRadius:  12,
-		Hidden:        true,
-		DisableResize: true,
+		Panel:           true,
+		Transparent:     true,
+		CornerRadius:    12,
+		Hidden:          true,
+		DisableResize:   true,
+		DisableMaximize: true,
 		URL:           "/?mode=picker",
 	})
 	p.OnBlur(p.Hide) // HideOnFocusLost 的等价物
@@ -432,10 +451,11 @@ func (w *wiring) ensureCapture() *mygo.Window {
 		MinHeight:   clip.CaptureMinHeight,
 		Frameless:   true,
 		AlwaysOnTop: true,
-		Panel:       true,
-		Transparent: true,
-		Hidden:      true,
-		URL:         "/?mode=capture",
+		Panel:           true,
+		Transparent:     true,
+		Hidden:          true,
+		DisableMaximize: true,
+		URL:             "/?mode=capture",
 	})
 	c.OnBlur(c.Hide)
 	c.OnClose(func(e *mygo.CloseEvent) {
@@ -452,6 +472,25 @@ func (w *wiring) ensureCapture() *mygo.Window {
 		w.retire("capture", c, func() {
 			if w.capture == c {
 				w.capture = nil
+			}
+		})
+	})
+	// 拉伸结束时把尺寸记下来（Wails 版用的是 WindowEndResize 钩子）。MyGo 只有
+	// 连续的 OnResize，所以这里做 350ms 去抖：用户松手后才写一次库。
+	var resizeTimer *time.Timer
+	c.OnResize(func() {
+		if !c.IsVisible() {
+			return
+		}
+		if resizeTimer != nil {
+			resizeTimer.Stop()
+		}
+		resizeTimer = time.AfterFunc(350*time.Millisecond, func() {
+			if !c.IsVisible() {
+				return
+			}
+			if cw, ch := c.Size(); cw > 0 && ch > 0 {
+				w.svc.SaveCaptureSize(cw, ch)
 			}
 		})
 	})
@@ -482,8 +521,9 @@ func (w *wiring) ensureShot() *mygo.Window {
 		Height:        240,
 		Frameless:     true,
 		AlwaysOnTop:   true,
-		Hidden:        true,
-		DisableResize: true,
+		Hidden:          true,
+		DisableResize:   true,
+		DisableMaximize: true,
 		BackgroundColor: "#08090c",
 		URL:           "/?mode=shot",
 	})
@@ -498,4 +538,7 @@ func (w *wiring) ensureShot() *mygo.Window {
 	w.shot = s
 	return s
 }
+
+
+
 

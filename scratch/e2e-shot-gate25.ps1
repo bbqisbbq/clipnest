@@ -30,6 +30,8 @@ public class ShotWin {
 }
 '@
 
+# 闲置销毁会把这些脚本正拿着的窗口收掉（产品默认行为），测试期间关掉。
+$env:CLIPNEST_IDLE_DESTROY = '0'
 $root = 'E:\default\clipnest'
 $devExe = if ($Exe) { $Exe } else { Join-Path $root 'bin\clipnest-dev.exe' }
 $installedExe = 'C:\Program Files\bbqisbbq\ClipNest\clipnest.exe'
@@ -177,4 +179,5 @@ Remove-Item Env:\CLIPNEST_KEEP_CONSOLE -ErrorAction SilentlyContinue
 if (Test-Path $installedExe) { Start-Process -FilePath $installedExe -ArgumentList '--background' }
 Write-Host "`n===== summary ====="
 $results | ForEach-Object { Write-Host $_ }
+
 
