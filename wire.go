@@ -233,14 +233,23 @@ func (w *wiring) applyChrome(dark bool, borderHex string) {
 	mygo.RunOnMain(w.applyChromeNow)
 }
 
-// applyChromeNow 只刷主窗。
+// applyChromeNow 刷新所有窗口的 DWM 外观。
 //
-// 弹窗（picker / capture）一律不刷 DWM 边框色：那条 1px 边框是沿**方形窗口轮廓**画的，
-// 而弹窗是圆角卡片 + 透明窗口，线正好压在本来要透出去的边上 —— 黑底上看起来就是一圈
-// 「黑边」（实测像素 rgb(47,47,47)）。主窗是方形带边框的，才需要它。
+// 主窗：immersive-dark + 边框色（它是方形带边框的，需要这两样）。
+// 弹窗：**只同步 immersive-dark**。DWM 那条 1px 边框是沿方形窗口轮廓画的，弹窗是圆角卡片 +
+// 透明窗口，线正好压在本来要透出去的边上 —— 黑底上看就是一圈「黑边」（实测 rgb(47,47,47)），
+// 所以边框色一律不设；但深色标志不设的话，亚克力会沿用浅色材质，深色主题下弹窗就糊着一层
+// 浅色玻璃（实测 100% 透明时浅/深主题量到同一个 (153,151,155)）。
 func (w *wiring) applyChromeNow() {
 	if w.win != nil {
 		clip.SetWindowChrome(w.win.NativeHandle(), w.chromeDark, w.chromeBorder)
+	}
+	// 弹窗不刷边框色（那会画出黑边），但 immersive-dark 必须跟着主题走：
+	// DWM 的亚克力按这枚标志选浅色/深色材质，不设的话深色主题下弹窗仍是一层浅色玻璃。
+	for _, win := range []*mygo.Window{w.capture, w.picker, w.shot} {
+		if win != nil {
+			clip.SetWindowDarkMode(win.NativeHandle(), w.chromeDark)
+		}
 	}
 }
 
@@ -445,6 +454,10 @@ func (w *wiring) ensurePicker() *mygo.Window {
 	})
 	retitle(p, "ClipNest")
 	mygo.RunOnMain(func() { clip.SetWindowNoBorder(p.NativeHandle()) })
+	// 重建的窗口把当前主题的 DWM 状态补回去（暗色标志决定亚克力用深色还是浅色材质）。
+	if w.hasChrome {
+		mygo.RunOnMain(w.applyChromeNow)
+	}
 	w.picker = p
 	return p
 }
@@ -551,9 +564,15 @@ func (w *wiring) ensureShot() *mygo.Window {
 	})
 	retitle(s, "ClipNest 截图")
 	mygo.RunOnMain(func() { clip.SetWindowNoBorder(s.NativeHandle()) })
+	if w.hasChrome {
+		mygo.RunOnMain(w.applyChromeNow)
+	}
 	w.shot = s
 	return s
 }
+
+
+
 
 
 
