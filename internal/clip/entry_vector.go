@@ -57,7 +57,15 @@ type VectorRow struct {
 }
 
 // SaveEntryVector 写入（或覆盖）一条向量。
+//
+// **vec 传 nil 时按空 BLOB 存**：`vec` 是 `BLOB NOT NULL`，而 Go 的 nil []byte 绑到
+// SQLite 上是 NULL，会被 NOT NULL 拒掉——pending/failed/skipped 这些"还没有向量"的
+// 状态就一条都写不进去。2.13.0 就这么翻的车：设置页永远显示「已索引 0 条」，
+// 而编码路径上那次被忽略的错误把真相吞掉了（见 embed_vector_nil_test.go）。
 func (s *Store) SaveEntryVector(id, hash, state string, vec []byte) error {
+	if vec == nil {
+		vec = []byte{}
+	}
 	_, err := s.db.Exec(
 		`INSERT INTO entry_vectors (id, hash, state, vec) VALUES (?,?,?,?)
 		 ON CONFLICT(id) DO UPDATE SET hash=excluded.hash, state=excluded.state, vec=excluded.vec`,
@@ -86,9 +94,15 @@ func (s *Store) DeleteEntryVector(id string) {
 	}
 }
 
-// DoneVectorHashes 返回所有 state=done 的 id → hash，用于启动时对账。
-func (s *Store) DoneVectorHashes() map[string]string {
-	rows, err := s.db.Query(`SELECT id, hash FROM entry_vectors WHERE state = ?`, VectorStateDone)
+// SettledVectorHashes 返回所有"已经有结论"的 id → hash（done + skipped）。
+//
+// 为什么把 skipped 也算进来：没有可编码正文的条目（纯图片且 OCR 没认出字）会被记成
+// skipped，它的 hash 同样有效。只算 done 的话，这类条目每一轮对账都会重新入队一次
+// —— 白白刷一遍日志与 CPU。更要紧的是：**已经带着旧向量的 done 行必须能被重算**，
+// 所以调用方不能"看到正文为空就跳过"，那是两回事（见 reconcileEmbed）。
+func (s *Store) SettledVectorHashes() map[string]string {
+	rows, err := s.db.Query(
+		`SELECT id, hash FROM entry_vectors WHERE state IN (?, ?)`, VectorStateDone, VectorStateSkipped)
 	if err != nil {
 		Logf(s.dir, "list vector hashes failed: %v", err)
 		return nil
@@ -159,11 +173,13 @@ func (s *Store) VectorStats() (done, pending, failed int) {
 	return done, pending, failed
 }
 
-// entryVectorHashFields 是"什么变了要重编"的等价物：正文 + OCR 文字 + 标签。
+// entryVectorHashFields 是"什么变了要重编"的等价物。
 //
-// 与采集去重用的那套哈希同一个思路（sha256 十六进制），不另发明一套。
+// **哈希算的是"将被编码的那段正文"（entryVectorText），不是原始 content**：
+// 这样连"提取规则本身改了"（比如这次把图片令牌剥掉）也会让 hash 对不上，
+// 老库里的垃圾向量会被自动重算 —— 否则规则一改，历史数据永远停在旧口径上。
 func entryVectorHashFields(e Entry) string {
-	sum := sha256.Sum256([]byte("vec\x00" + e.Content + "\x00" + e.OcrText + "\x00" + strings.Join(e.Tags, ",")))
+	sum := sha256.Sum256([]byte("vec\x00" + entryVectorText(e)))
 	return hex.EncodeToString(sum[:])
 }
 

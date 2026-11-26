@@ -180,6 +180,29 @@ CREATE TABLE entry_vectors (
 pre-release `embed-assets-v1`，与应用版本解耦，不影响 `/releases/latest` 与自动更新。
 URL 与 SHA256 写死在 `internal/clip/embed_assets.go` 里。
 
+## 五之二、2.13.0 上线后当天的两个修正（2.13.1）
+
+装出来第一天就翻了两处，都记在这儿，别再犯：
+
+**1. `vec` 是 `BLOB NOT NULL`，而 nil `[]byte` 绑进去是 NULL。**
+pending / failed / skipped / unsupported 这些"还没有向量"的状态传的都是 nil，
+全部被 NOT NULL 拒掉 —— 整张表一行都没有，设置页永远「已索引 0 条」。
+
+为什么单测没抓：`runEmbedForEntry` 里那次 pending 写失败是 `_ =` 忽略的，
+而**资源齐全**时紧接着真编码成功、done 带着真 blob 写进去，用例照样全绿。
+只有"资源缺失 / 编码失败"这条路才露馅 —— 也就是用户刚装完、还没下完的那段时间。
+教训：**派生状态的写入失败不能吞**；另外测试要直接盯存储层，不要只走 happy path。
+
+**2. 纯图片条目（正文只有 `![](memoimg:xxx)`）编出来是噪声。**
+它们彼此的向量高度相似、和任何查询都半像不像，于是霸占结果头部 —— 实测用户库里
+「草稿丢了怎么办」的前五条里四条是这种空图。现在 `entryVectorText` 先把图片令牌
+剥掉，剥完没内容就记 skipped。
+
+连带一个坑：只在 `runEmbedForEntry` 里判断"文本为空"是不够的 —— `reconcileEmbed`
+必须先看 hash 而不是"文本是否为空"，否则**已经带着旧向量的 done 行永远不会重算**，
+垃圾向量就留在库里继续霸占结果。所以 hash 改成对 `entryVectorText(e)` 计算：
+提取规则一变，老数据自动失效重算。
+
 ## 六、量法
 
 ```powershell

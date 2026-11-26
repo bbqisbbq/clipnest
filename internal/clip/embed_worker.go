@@ -15,7 +15,9 @@ package clip
 //     对不上就重新入队。漏挂钩子的后果只是"晚一会儿才更新"，不是"永远搜不到"。
 
 import (
+	"fmt"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -168,8 +170,15 @@ func (s *ClipService) backfillEmbed() {
 //
 // limit<=0 表示不设上限。它只读 entries 与 entry_vectors，不做任何计算密集的事
 // —— 哈希是 sha256，1 万条在十毫秒级。
+//
+// **资源不齐时直接返回**：没有模型的时候把几百条排进队列，只会得到几百行
+// `failed` 和几百条日志（2.13.0 实测：一次补扫刷了 15 行"资源不全"）。
+// 资源齐了自然会被下一轮对账（启动 / 同步后 / 刚下载完）捡起来。
 func (s *ClipService) reconcileEmbed(limit int) []string {
-	have := s.store.DoneVectorHashes()
+	if embed.Ready(s.EmbedAssetsDir()) != nil {
+		return nil
+	}
+	have := s.store.SettledVectorHashes()
 	out := make([]string, 0, 64)
 	// 遍历活着的条目（归档的不进检索，不必编码）
 	rows, err := s.store.db.Query(`SELECT ` + entryColumns + ` FROM entries WHERE archived = 0`)
@@ -186,9 +195,10 @@ func (s *ClipService) reconcileEmbed(limit int) []string {
 		if limit > 0 && len(out) >= limit {
 			break
 		}
-		if text := entryVectorText(e); text == "" {
-			continue
-		}
+		// 只看 hash，**不看正文是否为空**：正文为空但有旧向量的条目（比如图片令牌
+		// 还没被剥掉时编出来的那些）正是最需要重算的 —— 它们必须被改成 skipped、
+		// 把垃圾向量清掉。以前这里有一句"text == \"\" 就 continue"，于是这类条目
+		// 永远停在 done + 垃圾向量的状态，继续霸占语义结果（2.13.1 的实测）。
 		if have[e.ID] == entryVectorHashFields(e) {
 			continue
 		}
@@ -216,7 +226,16 @@ func (s *ClipService) runEmbedForEntry(id string) error {
 	if !s.embedEnabled() {
 		return s.store.SaveEntryVector(id, hash, VectorStateUnsupported, nil)
 	}
-	_ = s.store.SaveEntryVector(id, hash, VectorStatePending, nil)
+	// 资源不齐不算"这条条目失败"：那是全局状态，界面上有一行提示就够了。
+	// 所以标 unsupported 而不是 failed，也不往外抛错（不刷日志）。
+	if err := embed.Ready(s.EmbedAssetsDir()); err != nil {
+		return s.store.SaveEntryVector(id, hash, VectorStateUnsupported, nil)
+	}
+	if err := s.store.SaveEntryVector(id, hash, VectorStatePending, nil); err != nil {
+		// 这个错误以前被 `_ =` 吞掉，结果 2.13.0 的 NOT NULL bug 藏了整整一版。
+		// 写不进状态就是存储出了问题，必须冒出来。
+		return fmt.Errorf("标记 pending 失败: %w", err)
+	}
 	v, err := s.encodeVector(text)
 	if err != nil {
 		_ = s.store.SaveEntryVector(id, hash, VectorStateFailed, nil)
@@ -225,12 +244,21 @@ func (s *ClipService) runEmbedForEntry(id string) error {
 	return s.store.SaveEntryVector(id, hash, VectorStateDone, v.Blob())
 }
 
+// memoImgRE 匹配正文里的图片令牌（`![](memoimg:abc)` 与 `<img src="memoimg:abc">`）。
+//
+// 为什么要把它们抠掉：图片条目的正文**只有**这个令牌，剥掉之后就什么都不剩了
+// （真正的内容在 OCR 文字里）。不抠的话每条图片都被编码成"一串哈希字符"的向量，
+// 它们彼此高度相似、和任何查询都半像不像，于是霸占语义结果的头部 —— 实测用户库里
+// 一次「草稿丢了怎么办」返回的前五条里四条是这种空图。
+var memoImgRE = regexp.MustCompile(`!\[[^\]]*\]\(\s*memoimg:[^)]*\)|<img[^>]*src\s*=\s*["']memoimg:[^"']*["'][^>]*>`)
+
 // entryVectorText 是"会被编码的那段正文"：正文 + OCR 文字 + 标签。
 //
-// 图片条目本身只有一个 memoimg: 令牌，光凭它谁也搜不到；OCR 出来的文字才是它的内容。
+// 图片令牌剥掉；剥完什么都不剩的条目返回空串 —— 调用方据此记 skipped，
+// 别拿噪声去污染向量空间（OCR 认出字之后它自然会变成可编码的）。
 func entryVectorText(e Entry) string {
 	parts := make([]string, 0, 3)
-	if t := strings.TrimSpace(e.Content); t != "" {
+	if t := strings.TrimSpace(memoImgRE.ReplaceAllString(e.Content, " ")); t != "" {
 		parts = append(parts, t)
 	}
 	if t := strings.TrimSpace(e.OcrText); t != "" {

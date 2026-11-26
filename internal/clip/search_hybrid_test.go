@@ -1,6 +1,7 @@
 package clip
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/bbqisbbq/clipnest/internal/embed"
@@ -124,12 +125,35 @@ func TestVectorHashInvalidation(t *testing.T) {
 }
 
 // 纯图片（没有正文也没有 OCR）不该入队：编出来也是噪声。
+//
+// 这条不只是"省点算力"：用户库里 90% 是截图，正文只有 `![](memoimg:xxx)`。
+// 不剥掉令牌的话，每条图片都会被编成"一串哈希字符"的向量，彼此高度相似、
+// 和任何查询都半像不像，直接霸占语义结果头部（实测前五条里四条是空图）。
 func TestEntryVectorTextSkipsEmpty(t *testing.T) {
 	if got := entryVectorText(Entry{Content: "  \n "}); got != "" {
 		t.Errorf("空白正文应返回空串，得到 %q", got)
 	}
-	if got := entryVectorText(Entry{Content: "![](memoimg:abc)", OcrText: "发票 1200 元"}); got == "" {
-		t.Error("有 OCR 文字的图片条目应该可编码")
+	// 只有图片令牌 == 没有内容（OCR 还没跑或者图里没字）
+	for _, only := range []string{
+		"![](memoimg:3aa4da16298fdeeb2edc7e1e)",
+		`<img src="memoimg:3aa4da16298fdeeb2edc7e1e">`,
+		"  ![](memoimg:abc)  \n",
+	} {
+		if got := entryVectorText(Entry{Content: only}); got != "" {
+			t.Errorf("只有图片令牌应返回空串，得到 %q（输入 %q）", got, only)
+		}
+	}
+	// 有 OCR 文字的图片条目仍然可编码（文字优先）
+	if got := entryVectorText(Entry{Content: "![](memoimg:abc)", OcrText: "发票 1200 元"}); got != "发票 1200 元" {
+		t.Errorf("有 OCR 文字时应只编码文字，得到 %q", got)
+	}
+	// 图文混排：文字留下、令牌消失
+	got := entryVectorText(Entry{Content: "第一段\n\n![](memoimg:abc)\n\n第二段"})
+	if strings.Contains(got, "memoimg") {
+		t.Errorf("令牌没被剥掉：%q", got)
+	}
+	if !strings.Contains(got, "第一段") || !strings.Contains(got, "第二段") {
+		t.Errorf("正文文字被误删：%q", got)
 	}
 }
 
@@ -231,3 +255,4 @@ func TestApplyHybridDegradesWithoutAssets(t *testing.T) {
 		t.Errorf("降级后字面搜索失效：%v", got)
 	}
 }
+

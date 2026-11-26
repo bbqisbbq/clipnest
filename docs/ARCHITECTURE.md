@@ -338,6 +338,7 @@ pwsh -STA -File scratch\e2e-draft-robust.ps1    # 敲完立刻收起窗口（点
 pwsh -STA -File scratch\e2e-global-composer.ps1 # 常驻「记一条」：草稿跨视图/跨重启 + 设置自动保存（真鼠标）
 pwsh -STA -File scratch\e2e-capture-draft.ps1  # 「记一笔」草稿：打字 → Esc → 闲置销毁 → 重开，内容仍在（真键盘）
 pwsh -STA -File scratch\e2e-embed-search.ps1   # 语义搜索：Ctrl+F 搜一句零共同词的话 → 截图；再看设置里的「搜索」分区
+go run ./scratch/embstate <数据目录> "查询"      # 语义索引状态 + 字面/语义两路结果（排障「已索引 0 条」先跑它）
 pwsh -STA -File scratch\e2e-theme-shots.ps1     # 4 个主题预设各截一张整窗
 pwsh -STA -File scratch\smoke-2.8.3.ps1        # 冒烟：沙箱 APPDATA 起一次、截图、扫日志里的 error/warn
 node scratch\theme-audit.mjs                    # 主题对比度体检（5 预设 × 4 底色 × 7 文字）
