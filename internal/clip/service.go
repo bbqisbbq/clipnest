@@ -16,7 +16,7 @@ import (
 // 设置与开机自启（service_settings.go）。
 
 // Version is shown in the UI and written to the log on start.
-const Version = "2.12.3"
+const Version = "2.12.4"
 
 // AppInfo is static information the frontend needs for the about/settings view.
 type AppInfo struct {
@@ -145,6 +145,8 @@ func NewClipService(dataDir string, hooks Hooks) (*ClipService, error) {
 	}
 	s.bgCtx, s.bgCancel = context.WithCancel(context.Background())
 	s.engine = expand.New(s)
+	// 把「上次同步」从库里读回内存：否则一重启设置页就回到「从未同步」+ 1970 时间戳。
+	s.loadSyncStatus()
 	return s, nil
 }
 
@@ -330,6 +332,7 @@ func (s *ClipService) SetCaptureBackdrop(enabled bool) bool {
 	}
 	return s.hooks.ApplyBackdrop(enabled)
 }
+
 
 
 

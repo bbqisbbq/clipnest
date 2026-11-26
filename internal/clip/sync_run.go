@@ -460,6 +460,8 @@ func (r *syncRun) report(info syncPushInfo, settingsPulled, settingsPushed bool)
 	s.syncStatus.Devices = len(r.peers) + 1
 	s.syncStatus.LastBytes = info.bytes
 	s.syncMu.Unlock()
+	// 落库："上次同步"以前只活在内存里，重启后设置页就变回「从未同步」/1970 —— 明明刚同步过。
+	s.saveSyncStatus()
 
 	if info.pushed {
 		for i := range r.deviceInfo {
@@ -487,3 +489,4 @@ func (r *syncRun) report(info syncPushInfo, settingsPulled, settingsPushed bool)
 	Logf(s.store.Dir(), "sync ok: %s", result)
 	s.emit("clip:stats", s.store.Stats())
 }
+
