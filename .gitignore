@@ -37,6 +37,9 @@
 /scratch/davroot/
 # PP-OCR 引擎资产（onnxruntime.dll + 约 21MB 模型，本地下载）
 /scratch/ppocr-assets/
+# 语义搜索的模型（bge-small/base，23~98MB，脚本从 hf-mirror 拉，见 docs/design/SEMANTIC-SEARCH.md）
+/scratch/embed-model*/
+/scratch/embed-spike/*.exe
 
 # ── 本机看效果用的截图与快照（脚本入库，产物不入库）──────
 /scratch/*.png
