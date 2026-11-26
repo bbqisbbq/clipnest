@@ -88,3 +88,35 @@ powershell -File scripts\sign.ps1 -Path "bin\clipnest-<版本>-amd64-setup.exe,b
 
    每个 Release 保留自己那一版的安装包与 `.sig`（自动更新只看 `/releases/latest`，
    所以不会被误装，也方便回滚到指定版本）；旧 release 的**资产**清掉、release 本身留着当变更记录。
+
+## 五、这台机器上发版的两个坑
+
+**1. git 每次操作都弹「授权登录 GitHub」。**
+
+Git for Windows 装的时候在**系统级**配置（`C:/Git/etc/gitconfig`）里写了
+`credential.helper=manager`（Git Credential Manager），而 `~/.gitconfig` 里的 `store`
+排在它后面。git 按顺序问 helper —— **先问 GCM**，GCM 没有这个仓库的可用凭据就弹浏览器
+OAuth；`store` 里那条 PAT 根本没被问到。
+
+修法（用户级，不需要管理员）：让 github.com 只走 store。空值那条是"把 helper 链清空"的写法。
+
+```powershell
+git config --global --add credential.https://github.com.helper ""
+git config --global --add credential.https://github.com.helper store
+```
+
+验证：`git ls-remote --heads origin` 应该 1~2 秒返回、且没有 `git-credential-manager` 进程。
+想恢复 GCM 就删掉这两条。
+
+**2. 别在脚本里用 `git credential fill` 取令牌。**
+
+它会把整条 helper 链跑一遍 —— 也就是又把 GCM 拉起来（非交互环境下可能静默卡住十几分钟，
+交互环境里就是上面那个授权窗）。直接读存储文件更省事：
+
+```powershell
+$line = Get-Content (Join-Path $env:USERPROFILE '.git-credentials') |
+        Where-Object { $_ -match 'github\.com' } | Select-Object -First 1
+# $line 形如 https://<user>:<token>@github.com —— 用正则取 token，**永远不要 echo 它**
+```
+
+上传资产用 `curl.exe --config <临时文件>` 传 header，传完删掉文件；`gh` CLI 这台机器上没装。
