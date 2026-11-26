@@ -225,6 +225,47 @@ export interface EntryStats {
 }
 
 /**
+ * EmbedStatus 是语义搜索的状态（设置页据此决定显示什么）。
+ *
+ * 三个布尔值回答三个不同的问题，别混：
+ *   compiled —— 这个构建带不带引擎（没 cgo 的构建恒 false）
+ *   enabled  —— 用户开没开这一项
+ *   ready    —— 模型资源齐不齐（齐全 == 现在就能语义检索）
+ */
+export interface EmbedStatus {
+    "enabled": boolean;
+
+    "ready": boolean;
+
+    "compiled": boolean;
+
+    "done": number;
+
+    "pending": number;
+
+    "failed": number;
+
+    /** 不能用的原因（给界面直接显示） */
+    "reason": string;
+}
+
+/**
+ * EmbedProgress 是 `embed:progress` 事件的数据（设置页拿它画进度）。
+ */
+export interface EmbedProgress {
+    /** Stage: download | extract | done */
+    "stage": string;
+
+    /** Received / Total 是字节数（extract 阶段是 已解压文件数/总数） */
+    "received": number;
+
+    "total": number;
+
+    /** Text 给界面直接显示的一句话 */
+    "text": string;
+}
+
+/**
  * FileRef is one entry of a captured file list. ClipNest deliberately stores a
  * reference (path + metadata) instead of a copy: see docs/FILE-STRATEGY.md.
  */
@@ -463,6 +504,13 @@ export interface Settings {
      * 机器本地字段：算力是本机的，模型也是本机装的。
      */
     "ocrEngine": string;
+
+    /**
+     * EmbedSearch 打开后，搜索框除了字面匹配还会按意思找（bge-small-zh 向量）。
+     * 默认开：模型没下载时它什么都不做（检索照旧走 FTS），所以开着不会坏事。
+     * 机器本地字段：模型装在本机、向量算在本机、也不进同步包。
+     */
+    "embedSearch": boolean;
 
     /**
      * ThemeCustomCSS is user-authored CSS applied on top of the preset.

@@ -15,8 +15,10 @@ DeleteAll	number
 DeleteEntry	void
 DeleteFilter	void
 DemoteFromSnippet	$models.Entry
+DownloadEmbedAssets	string
 DownloadOCRAssets	string
 DownloadUpdate	string
+EmbedStatus	$models.EmbedStatus
 EnsureCaptureHotkey	void
 EnsureShotDefaults	void
 FallbackPaste	void
@@ -54,6 +56,7 @@ OcrEngineStatus	[string, boolean, string]
 OcrEntry	string
 OpenDataDir	void
 OpenEntry	void
+OpenEmbedAssetsDir	void
 OpenOcrAssetsDir	void
 OpenReleasePage	void
 PasteImage	void
@@ -92,3 +95,4 @@ Start	void
 StartShot	void
 SyncNow	$models.SyncStatus
 TestSync	string
+

@@ -44,6 +44,10 @@ internal/clip/           业务层：条目、捕获、片段、同步、绑定 
 | `service_paste.go` | 条目 → 系统：复制回剪贴板、打开、picker 弹窗三件套 |
 | `service_settings.go` | 设置保存与副作用（自启、展开器、两个后台循环） |
 | `draft.go` | 未保存草稿，**两个槽各一把键**：`composer.draft`（主窗口「记一条」）与 `capture.draft`（「记一笔」浮层），都跟着 clipnest.db 走。**写库防抖在 Go 侧**（前端每键送一次，内存立即更新 + 400ms 合并写），`Flush*Draft`（前端在收起窗口/退出前调）与 `Shutdown`（两个槽都写）兜底 |
+| `entry_vector.go` | 语义向量的**旁表** `entry_vectors`（id / hash / state / 512 字节 int8），以及字面那一路的 `FTSIDs`、语义那一路的 `NearestIDs`。不碰 `entries`，不进同步包 |
+| `search_hybrid.go` | 混合检索：两路各取 top 100 → RRF(k=60) 融合 → 上限 200。语义没准备好时返回 ok=false，查询原样走字面（降级=不做事） |
+| `embed_worker.go` | 语义编码队列 + 引擎生命周期（懒加载、闲置 5 分钟释放会话）+ 对账 `reconcileEmbed`。失效靠对账不靠钩子，见该文件顶部说明 |
+| `embed_assets.go` | 语义模型资源的一键下载（23.9MB zip，SHA256 校验，白名单解压到数据目录的 `embed/`） |
 | `entry_api.go` | 绑定给前端的条目 API（读写、置顶/归档、片段升降级、待办勾选） |
 | `filter_api.go` | 筛选器 API：保存/删除/恢复、内置筛选器的覆盖、`filters.hidden` 隐藏位、`GetFilterFields` |
 | `service_shot.go` | 截图的业务面：拍帧 → 交给遮罩窗 → 收回裁好的 PNG → 落库 →（可选）进剪贴板。裁切在前端做，这里不做几何计算 |
@@ -204,6 +208,7 @@ entries        条目：标题（可选）+ 内容 + 标签 + actions（clipboar
                + 片段的执行类型（snippet_kind：text/password/image/file/url/app/command/html）
 entry_blobs    附件：内容寻址，≤512KB 进库、更大落盘 entry_files/（删条目后回收孤儿）
 entries_fts    全文索引（trigram，中文子串可搜；标题也进索引）
+entry_vectors  语义向量（id / hash / state / 512 字节 int8）——**本机派生物，不进同步包**
 entry_filters  用户保存的筛选器（含规则树 JSON）
 tombstones     删除墓碑（同步用）
 meta           键值对（设备 id、一次性标记、filters.hidden、composer.draft、capture.draft、capture.size）
@@ -332,6 +337,7 @@ pwsh -STA -File scratch\e2e-live-and-draft.ps1  # 复制后不切页面就能看
 pwsh -STA -File scratch\e2e-draft-robust.ps1    # 敲完立刻收起窗口（点 ×）再强杀，草稿不丢
 pwsh -STA -File scratch\e2e-global-composer.ps1 # 常驻「记一条」：草稿跨视图/跨重启 + 设置自动保存（真鼠标）
 pwsh -STA -File scratch\e2e-capture-draft.ps1  # 「记一笔」草稿：打字 → Esc → 闲置销毁 → 重开，内容仍在（真键盘）
+pwsh -STA -File scratch\e2e-embed-search.ps1   # 语义搜索：Ctrl+F 搜一句零共同词的话 → 截图；再看设置里的「搜索」分区
 pwsh -STA -File scratch\e2e-theme-shots.ps1     # 4 个主题预设各截一张整窗
 pwsh -STA -File scratch\smoke-2.8.3.ps1        # 冒烟：沙箱 APPDATA 起一次、截图、扫日志里的 error/warn
 node scratch\theme-audit.mjs                    # 主题对比度体检（5 预设 × 4 底色 × 7 文字）

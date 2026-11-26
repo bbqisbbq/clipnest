@@ -37,6 +37,9 @@ var localSettingsFields = []localField{
 	{func(s *Settings) { s.PrivacyInput = false }, func(d, src *Settings) { d.PrivacyInput = src.PrivacyInput }},
 	// OCR 引擎是"这台机器上装了什么"的问题（42MB 资源、本机算力），跟对端的偏好无关。
 	{func(s *Settings) { s.OcrEngine = "" }, func(d, src *Settings) { d.OcrEngine = src.OcrEngine }},
+	// 语义搜索同理：模型装在本机、向量算在本机（也不进同步包），
+	// 对端开不开是它自己的事，同步过来只会莫名其妙地改掉我的搜索行为。
+	{func(s *Settings) { s.EmbedSearch = false }, func(d, src *Settings) { d.EmbedSearch = src.EmbedSearch }},
 	// 默认打开哪个筛选器指向的是本机的筛选器 id（筛选器不跨端同步），
 	// 所以它只在本机有意义，对端带来的值必须丢掉。
 	{func(s *Settings) { s.DefaultFilterID = "" }, func(d, src *Settings) { d.DefaultFilterID = src.DefaultFilterID }},

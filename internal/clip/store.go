@@ -96,6 +96,11 @@ func Open(dir string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("初始化条目表失败: %w", err)
 	}
+	// 语义向量是旁表（见 entry_vector.go）：老库第一次启动时补建，entries 一个字节都不动。
+	if _, err := db.Exec(vectorSchema); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("初始化向量表失败: %w", err)
+	}
 	// CREATE TABLE IF NOT EXISTS 不会给已有库加列：老库的新列在这里补齐。
 	if err := ensureColumn(db, "entries", "title", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		Logf(dir, "schema upgrade (entries.title) failed: %v", err)

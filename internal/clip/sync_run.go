@@ -488,5 +488,21 @@ func (r *syncRun) report(info syncPushInfo, settingsPulled, settingsPushed bool)
 
 	Logf(s.store.Dir(), "sync ok: %s", result)
 	s.emit("clip:stats", s.store.Stats())
+	// 同步拉下来的条目也要有语义向量。这里不逐个挂钩子（合并路径太多，挂漏一处
+	// 就是"搜不到"），而是直接对账一遍：hash 对不上的入队，没变的一个都不动。
+	go s.enqueueStaleVectors()
+}
+
+// enqueueStaleVectors 对账一遍并把它发现的过期条目塞进编码队列。
+//
+// 放在 goroutine 里跑：同步的收尾不该等一次全表扫描（1 万条约十毫秒，
+// 但库正忙的时候没必要抢）。
+func (s *ClipService) enqueueStaleVectors() {
+	if !s.embedEnabled() {
+		return
+	}
+	for _, id := range s.reconcileEmbed(0) {
+		s.enqueueEmbed(id)
+	}
 }
 

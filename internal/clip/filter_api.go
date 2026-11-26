@@ -153,7 +153,11 @@ func (s *ClipService) RestoreFilters() ([]EntryFilter, error) {
 }
 
 // CountEntriesWith reports how many entries match q — 筛选器弹窗的实时预览。
-func (s *ClipService) CountEntriesWith(q EntryQuery) int { return s.store.CountEntriesMatching(q) }
+func (s *ClipService) CountEntriesWith(q EntryQuery) int {
+	// 与 GetEntries 走同一条路：同一个查询，预览数必须等于点进去看到的条数。
+	s.applyHybrid(&q)
+	return s.store.CountEntriesMatching(q)
+}
 
 // GetFilterFields tells the frontend which fields/operators the rule engine
 // accepts. 只此一份白名单，UI 不自己硬编码。

@@ -40,6 +40,8 @@
 # 语义搜索的模型（bge-small/base，23~98MB，脚本从 hf-mirror 拉，见 docs/design/SEMANTIC-SEARCH.md）
 /scratch/embed-model*/
 /scratch/embed-spike/*.exe
+# 打包语义模型资源用的暂存目录（含 21MB 的 onnxruntime.dll，绝不入库）
+/scratch/embed-assets/
 
 # ── 本机看效果用的截图与快照（脚本入库，产物不入库）──────
 /scratch/*.png

@@ -6,6 +6,7 @@ export const ClipDeleted = "clip:deleted";
 export const ClipNew = "clip:new";
 export const ClipStats = "clip:stats";
 export const ClipUpdated = "clip:updated";
+export const EmbedProgress = "embed:progress";
 export const OcrProgress = "ocr:progress";
 export const PickerOpened = "picker:opened";
 export const PickerPasteFailed = "picker:paste-failed";

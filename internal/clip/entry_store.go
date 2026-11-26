@@ -338,6 +338,11 @@ func (s *Store) DeleteEntry(id string) bool {
 		Logf(s.dir, "delete entry fts %s: %v", id, err)
 		return false
 	}
+	// 向量也一起删：留着只是占地方，而且 id 被复用时会让新条目"继承"旧向量。
+	if _, err := tx.Exec(`DELETE FROM entry_vectors WHERE id = ?`, id); err != nil {
+		Logf(s.dir, "delete entry vector %s: %v", id, err)
+		return false
+	}
 	if e.Hash != "" {
 		// 墓碑写不进去就整条回滚：删掉却没有墓碑，等于告诉所有对端"这条还在"，
 		// 下一轮同步就会把它从对方包里"复活"回来（见 migrateTombstoneSchema）。

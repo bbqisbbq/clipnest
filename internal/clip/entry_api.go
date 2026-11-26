@@ -45,7 +45,29 @@ func BuiltinFilters() []EntryFilter {
 
 // GetEntries is the single list call for the whole app.
 func (s *ClipService) GetEntries(q EntryQuery) []Entry {
+	s.applyHybrid(&q)
 	return s.store.ListEntries(q)
+}
+
+// applyHybrid 把 q.Text 换成"字面 + 语义"融合后的候选与名次。
+//
+// 语义那一路没准备好（没下模型 / 用户关了 / 这个构建没 cgo）时**什么都不做**，
+// 于是查询原封不动地走原来的字面路径 —— 降级不是特例分支，是"没动过"。
+func (s *ClipService) applyHybrid(q *EntryQuery) {
+	text := strings.TrimSpace(q.Text)
+	if len([]rune(text)) < 2 {
+		// 单字不值得：字面那边本来就走 LIKE（trigram 至少要 3 个字），
+		// 而单字的向量检索结果基本是噪声。
+		return
+	}
+	ids, ok := s.searchHybrid(text)
+	if !ok {
+		return
+	}
+	q.RankIDs = ids
+	// 相关性排序与"按时间游标翻页"不相容（见 Store.ListEntries 的说明）。
+	q.Before = ""
+	q.Tail = false
 }
 
 // GetEntry returns one entry by id. The 待办收集页 needs it to jump from a task
@@ -81,6 +103,8 @@ func (s *ClipService) SaveEntry(e Entry) (Entry, error) {
 	// 缩写在这次保存里被设置/改掉/清掉，都要重建内存里的触发器索引，
 	// 否则「设为片段」要重启才生效（见 refreshTriggers 的说明）。
 	s.refreshTriggers()
+	// 正文/标签变了，语义向量要跟着重算（worker 会先比 hash，没变就直接跳过）。
+	s.enqueueEmbed(saved.ID)
 	// **改完要让界面知道**：侧栏那几个数字（我写的 / 片段 / 置顶 / 已归档）全部靠
 	// 收到事件才重取（App.tsx 订阅 clip:new/bumped/updated/deleted/cleared/stats）。
 	// 以前这里的写路径一个事件都不发，于是"手写几条 / 置顶 / 归档"之后角标一直不动，

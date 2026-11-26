@@ -149,6 +149,9 @@ func (s *ClipService) runOCRForEntry(id string, force bool) (string, error) {
 	if err := s.store.SetEntryOCR(id, text, OcrStateDone); err != nil {
 		return "", err
 	}
+	// OCR 文字是图片条目的"内容"，它变了语义向量就得重算
+	// （entryVectorText 把 ocr_text 拼进被编码的正文里）。
+	s.enqueueEmbed(id)
 	// 结果进了搜索索引，界面要能看见新徽章
 	s.emit("clip:updated", e)
 	s.emit("clip:stats", s.store.Stats())

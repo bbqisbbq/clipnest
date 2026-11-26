@@ -28,6 +28,7 @@ var (
 	evNavigate      = mygo.NewEvent[string]("ui:navigate")
 	evUpdate        = mygo.NewEvent[clip.UpdateInfo]("update:available")
 	evOCRProgress   = mygo.NewEvent[clip.OCRProgress]("ocr:progress")
+	evEmbedProgress = mygo.NewEvent[clip.EmbedProgress]("embed:progress")
 	evAppHidden     = mygo.NewEvent[string]("app:hidden")
 )
 
@@ -69,6 +70,8 @@ func emit(name string, data any) {
 		_ = evUpdate.Broadcast(as[clip.UpdateInfo](data))
 	case "ocr:progress":
 		_ = evOCRProgress.Broadcast(as[clip.OCRProgress](data))
+	case "embed:progress":
+		_ = evEmbedProgress.Broadcast(as[clip.EmbedProgress](data))
 	case "app:hidden":
 		_ = evAppHidden.Broadcast(as[string](data))
 	default:

@@ -79,6 +79,13 @@ type Settings struct {
 	// （PP-OCRv5 + onnxruntime，要下载 42MB 资源，中文和小字的准确率明显更高）。
 	// 机器本地字段：算力是本机的，模型也是本机装的。
 	OcrEngine string `json:"ocrEngine"`
+	// EmbedSearch 打开后，搜索框除了字面匹配（FTS trigram）还会按意思找
+	// （bge-small-zh 向量，见 docs/design/SEMANTIC-SEARCH.md）。
+	//
+	// 默认开：模型没下载时它什么都不做（检索照旧走 FTS），所以"开着"不会坏事；
+	// 关掉给"我就是要精确匹配"的人一个干净的字面搜索。
+	// 机器本地字段：模型是本机装的，向量是本机算的、不进同步包。
+	EmbedSearch bool `json:"embedSearch"`
 	// ThemeCustomCSS is user-authored CSS applied on top of the preset.
 	ThemeCustomCSS string `json:"themeCustomCss"`
 	// EditorToolbar / ComposerToolbar 决定工具栏显示哪些按钮（Vditor 的 item 名）。
@@ -154,6 +161,9 @@ func DefaultSettings() Settings {
 		ThemeCustomCSS:   "",
 		UpdateCheck:      true,
 		OcrEngine:        OcrEngineSystem,
+		// 语义搜索默认开：模型没下载时它什么都不做（检索照旧走 FTS），
+		// 所以"开着"不会坏事，下载完立刻就有效果。
+		EmbedSearch: true,
 	}
 }
 

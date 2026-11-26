@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AppInfo, Settings, SyncStatus, UpdateInfo } from "../lib/api";
 import CaptureSection from "./settings/CaptureSection";
 import OcrSection from "./settings/OcrSection";
+import SearchSection from "./settings/SearchSection";
 import InteractionSection from "./settings/InteractionSection";
 import SyncSection from "./settings/SyncSection";
 import SnippetsSection from "./settings/SnippetsSection";
@@ -164,6 +165,7 @@ export default function SettingsView(props: Props) {
         <div className="settings-inner">
           <CaptureSection draft={draft} patch={patch} />
           <OcrSection draft={draft} patch={patch} />
+          <SearchSection draft={draft} patch={patch} />
 
           <InteractionSection draft={draft} patch={patch} appInfo={appInfo} />
 

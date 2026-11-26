@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/bbqisbbq/clipnest/internal/embed"
 	"github.com/bbqisbbq/clipnest/internal/expand"
 )
 
@@ -91,6 +92,8 @@ type ClipService struct {
 	ocrPPOCR ocrEngineState
 	// 资源下载的互斥标记：同一次只允许一个下载在跑（见 ocr_assets.go）。
 	ocrDownloading atomic.Bool
+	// 语义模型的下载互斥（见 embed_assets.go），和 OCR 那两个下载可以并行。
+	embedDownloading atomic.Bool
 
 	// bg 收集所有后台循环，bgCtx 让正在跑的 HTTP 请求随退出一起取消。
 	// Shutdown 先等它们收尾再关库，否则同步会对着已关闭的 *sql.DB 写。
@@ -131,6 +134,16 @@ type ClipService struct {
 	// React state 一起没了 —— 那份草稿不落库就等于关一次窗丢一次稿。
 	composerDraft *draftSlot
 	captureDraft  *draftSlot
+
+	// 语义向量（见 embed_worker.go）：队列 + 懒加载的引擎 + 闲置释放定时器。
+	//
+	// 引擎**不常驻**：会话驻留 +43MB，而内存预算只有 120~180MB。用到才加载，
+	// 闲置 embedIdleRelease 之后把会话销毁（下次用再付 0.25 秒冷加载）。
+	embedOnce sync.Once
+	embedEng  *embed.Engine
+	embedQueue chan string
+	embedMu    sync.Mutex
+	embedIdle  *time.Timer
 }
 
 // NewService opens the store inside dataDir.
@@ -173,6 +186,7 @@ func (s *ClipService) Start() error {
 	s.spawn(s.refreshFilesLoop)
 	s.spawn(s.syncLoop)
 	s.startOCRWorker()
+	s.startEmbedWorker()
 	s.restartUpdateCheck()
 	s.refreshTriggers()
 	s.applyExpander(s.store.Settings())
@@ -231,6 +245,11 @@ func (s *ClipService) Shutdown() {
 	// 库里的那一份是唯一副本。
 	stopDraftTimer(s.composerDraft)
 	stopDraftTimer(s.captureDraft)
+	// 语义模型的会话也在这时候放掉：43MB，别带到进程退出前
+	s.stopEmbedIdleTimer()
+	if s.embedEng != nil {
+		s.embedEng.Close()
+	}
 	if err := s.flushDraft(s.composerDraft); err != nil {
 		Logf(s.store.Dir(), "draft flush on shutdown failed (composer): %v", err)
 	}
@@ -337,6 +356,9 @@ func (s *ClipService) SetCaptureBackdrop(enabled bool) bool {
 	}
 	return s.hooks.ApplyBackdrop(enabled)
 }
+
+
+
 
 
 

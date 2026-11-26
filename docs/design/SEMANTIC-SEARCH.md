@@ -116,46 +116,69 @@ base 打不过 small 这件事值得记一笔：**这个任务的瓶颈不在模
 
 ### 数据
 
+**向量放旁表，不进 `entries` 行**（落地时改了初稿的方案）：
+
 ```sql
--- 2.13.0
-ALTER TABLE entries ADD COLUMN embedding  BLOB NOT NULL DEFAULT '';  -- 512×int8 + 4B scale
-ALTER TABLE entries ADD COLUMN embed_hash TEXT NOT NULL DEFAULT '';  -- 编码时正文的哈希（内容变了就重编）
-ALTER TABLE entries ADD COLUMN embed_state TEXT NOT NULL DEFAULT ''; -- ''|pending|done|failed|skipped
+CREATE TABLE entry_vectors (
+  id    TEXT PRIMARY KEY,
+  hash  TEXT NOT NULL DEFAULT '',   -- 编码时正文的哈希（变了就重编）
+  state TEXT NOT NULL DEFAULT '',   -- ''|pending|done|failed|unsupported|skipped
+  vec   BLOB NOT NULL DEFAULT ''    -- 4 字节 scale + 512 字节 int8
+);
 ```
 
+初稿写的是给 `entries` 加三列。真动手时否掉了：`entries` 是同步与哈希的单一真源
+（`entryColumns` / `scanEntry` / INSERT / 合并 / 指纹全围着它转），加三列要同时改
+五六处，漏一处就是"存住了但读不出来"，而收益只是省一次 JOIN。旁表还白拿一个好处：
+**"向量不同步"这件事天然成立**，不用在同步包里维护排除名单。
+
 - 只索引**很可能被搜**的字段：`content` + `ocr_text` + `tags`
-- 向量按内容哈希缓存：`embed_hash` 与当前正文哈希一致就跳过，否则重编
-- 不写进同步包（向量是本机派生物，换机重算只要 6ms/条）
+- 失效靠 `hash`：正文/OCR/标签任一变化就对不上，下一次对账会重编
+- 不写进同步包（换机重算只要 6ms/条）
 
 ### 检索
 
 ```
 用户输入 q
-  ├─ FTS5(trigram) 取 top 50         ← 字面，保留原有行为
-  └─ 向量扫描取 top 50                ← 语义
-        ↓  RRF(k=60) 融合
-     按融合分排序，走原来的 EntryQuery 过滤（标签/来源/时间/归档…）
+  ├─ FTS5(trigram) 取 top 100        ← 字面，行为与以前完全一致
+  └─ 向量全量扫描取 top 100           ← 语义
+        ↓  RRF(k=60) 融合，上限 200
+     按融合分排序 → 走原来的 filters（标签/来源/时间/归档…）
 ```
 
-RRF：`score(d) = Σ 1/(60 + rank_i(d))`。不用分数加权的原因是上面那条负面结论。
+三个实现上的取舍：
 
-降级：模型没下载 / 没开 / 加载失败 → **只有 FTS**，界面一切照旧（和 OCR 的降级路径同构）。
+1. **排序倒着放**（名次最好的在数组末尾）。时间线是聊天式容器、列表自动贴底，
+   正着放会让名次第 1 那条落在最上面被滚出可视区 —— 第一次 e2e 截图就是这个现象：
+   "搜到了一屏结果，最相关的那个看不见"。倒过来正好贴在输入框上方。
+2. **只给一页**：带 `before` 游标的相关性查询直接返回空（= 没有更多了）。
+   相关性排序没有稳定的时间游标，硬凑下一页只会返回重复条目。
+3. **降级靠"不做事"**：模型没下载/用户关了/这个构建没 cgo → `applyHybrid` 直接返回，
+   查询原封不动走原路径。不是特例分支，是"没动过"。
 
-### 编码队列
+### 编码队列与失效
 
-抄 `ocr_worker.go`：一条后台 worker，队列满了丢；启动后补扫历史条目（`embed_state <> 'done'`）。
-建 1 万条要 1 分钟，所以必须后台、可中断、有进度。
+抄 `ocr_worker.go`：一个后台 worker + 128 长的队列（满就丢）。失效**不靠钩子靠对账**：
+启动后 20 秒、每次同步成功后各跑一次 `reconcileEmbed` —— 读全表的 (id, hash) 与
+`entry_vectors` 比对，对不上就入队。这样即使某处写路径忘了挂钩子，后果只是"晚一会儿
+更新"，不是"永远搜不到"。（保存条目与 OCR 完成这两处仍然显式入队，图的是即时。）
 
 ### 内存
 
-- 会话懒加载：第一次真需要（建索引或语义查询）时才建；
-- `embedIdleRelease`：闲置 5 分钟后 `Destroy` 会话，把 43MB 还回去；
-- 编码与查询共用同一个会话（加锁串行，编码 2ms 不值得并发）。
+- 会话懒加载：第一次真需要（建索引或语义查询）时才建，冷加载 0.25 秒；
+- 闲置 5 分钟 `Close()` 会话，把 43MB 还回去；
+- 编码与查询共用同一个会话（加锁串行，2ms 不值得并发）。
 
 ### 界面
 
-**主界面零改动** —— 搜索框还是那个搜索框，只是搜得更到。可选加一个
-「语义搜索」开关（默认开），关掉就是纯字面（有人就是要精确匹配）。
+主界面**零改动** —— 搜索框还是那个搜索框，只是搜得更到。设置里多一节「搜索」：
+开关、索引进度（已索引 N 条 / 还有 M 条在编）、资源一键下载、以及"向量不外传"的说明。
+
+### 资产
+
+`embed-assets.zip`（23.9MB，解压 45MB：onnxruntime.dll + 模型 + 词表）放在本仓库的
+pre-release `embed-assets-v1`，与应用版本解耦，不影响 `/releases/latest` 与自动更新。
+URL 与 SHA256 写死在 `internal/clip/embed_assets.go` 里。
 
 ## 六、量法
 
@@ -169,6 +192,15 @@ go run ./scratch/embed-spike -cmd bench
 go run ./scratch/embed-spike -cmd tokens -text "部署 nginx 反向代理"
 # 真实库上的对比检索（FTS vs 向量）
 go run ./scratch/embed-spike -cmd search -text "云端传不上去"
+```
+
+产品侧的验证（这两条才是"真能用"的证据）：
+
+```powershell
+# 端到端：真模型 + 真检索。断言"FTS 命中 0 条，混合检索把目标排到第 1"
+$env:CLIPNEST_EMBED_LIVE='1'; go test ./internal/clip -run TestEmbedLiveSearch -v
+# 界面级：起应用 → Ctrl+F 搜一句和条目零共同词的话 → 截图；再点开设置看「搜索」那一节
+pwsh -STA -NoProfile -File scratch\e2e-embed-search.ps1
 ```
 
 模型与词表放 `scratch/embed-model/`（不入库，脚本从 hf-mirror 拉）。

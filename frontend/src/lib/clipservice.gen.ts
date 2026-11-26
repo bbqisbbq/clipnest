@@ -21,8 +21,10 @@ export const DeleteAll = (...args: any[]): Promise<number> => call<number>("Clip
 export const DeleteEntry = (...args: any[]): Promise<void> => call<void>("ClipService.DeleteEntry", ...args);
 export const DeleteFilter = (...args: any[]): Promise<void> => call<void>("ClipService.DeleteFilter", ...args);
 export const DemoteFromSnippet = (...args: any[]): Promise<Models.Entry> => call<Models.Entry>("ClipService.DemoteFromSnippet", ...args);
+export const DownloadEmbedAssets = (...args: any[]): Promise<string> => call<string>("ClipService.DownloadEmbedAssets", ...args);
 export const DownloadOCRAssets = (...args: any[]): Promise<string> => call<string>("ClipService.DownloadOCRAssets", ...args);
 export const DownloadUpdate = (...args: any[]): Promise<string> => call<string>("ClipService.DownloadUpdate", ...args);
+export const EmbedStatus = (...args: any[]): Promise<Models.EmbedStatus> => call<Models.EmbedStatus>("ClipService.EmbedStatus", ...args);
 export const EnsureCaptureHotkey = (...args: any[]): Promise<void> => call<void>("ClipService.EnsureCaptureHotkey", ...args);
 export const EnsureShotDefaults = (...args: any[]): Promise<void> => call<void>("ClipService.EnsureShotDefaults", ...args);
 export const FallbackPaste = (...args: any[]): Promise<void> => call<void>("ClipService.FallbackPaste", ...args);
@@ -68,6 +70,7 @@ export const OcrEngineStatus = async (..._args: any[]): Promise<[string, boolean
 export const OcrEntry = (...args: any[]): Promise<string> => call<string>("ClipService.OcrEntry", ...args);
 export const OpenDataDir = (...args: any[]): Promise<void> => call<void>("ClipService.OpenDataDir", ...args);
 export const OpenEntry = (...args: any[]): Promise<void> => call<void>("ClipService.OpenEntry", ...args);
+export const OpenEmbedAssetsDir = (...args: any[]): Promise<void> => call<void>("ClipService.OpenEmbedAssetsDir", ...args);
 export const OpenOcrAssetsDir = (...args: any[]): Promise<void> => call<void>("ClipService.OpenOcrAssetsDir", ...args);
 export const OpenReleasePage = (...args: any[]): Promise<void> => call<void>("ClipService.OpenReleasePage", ...args);
 export const PasteImage = (...args: any[]): Promise<void> => call<void>("ClipService.PasteImage", ...args);
@@ -130,8 +133,10 @@ export const ClipService = {
   DeleteEntry,
   DeleteFilter,
   DemoteFromSnippet,
+  DownloadEmbedAssets,
   DownloadOCRAssets,
   DownloadUpdate,
+  EmbedStatus,
   EnsureCaptureHotkey,
   EnsureShotDefaults,
   FallbackPaste,
@@ -169,6 +174,7 @@ export const ClipService = {
   OcrEntry,
   OpenDataDir,
   OpenEntry,
+  OpenEmbedAssetsDir,
   OpenOcrAssetsDir,
   OpenReleasePage,
   PasteImage,

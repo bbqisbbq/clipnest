@@ -313,7 +313,7 @@ export default function EntriesView({
           <input
             ref={searchRef}
             className="input"
-            placeholder="搜索内容（支持中文子串）…  Ctrl+F"
+            placeholder="搜索内容（支持中文子串与语义）…  Ctrl+F"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => {

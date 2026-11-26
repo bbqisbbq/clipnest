@@ -33,6 +33,12 @@ type EntryQuery struct {
 	// Rule 是自定义筛选器的规则树（and/or/not）。与上面的扁平字段是 AND 关系，
 	// 所以内置筛选器保持简单、老数据（没有 rule）行为完全不变。
 	Rule *FilterGroup `json:"rule,omitempty"`
+	// RankIDs 是"混合检索已经算好的候选与名次"（见 search_hybrid.go）。
+	//
+	// 它由后端填、前端永远不传（json:"-"）；一旦有值，Text 就不再参与过滤 ——
+	// 语义命中的条目里可能一个查询词都没有，让 FTS 再筛一遍会把它们全丢掉。
+	// 排序也改用它在列表里的位置（相关性），而不是时间。
+	RankIDs []string `json:"-"`
 }
 
 // ListEntries applies the query. Ordered chronologically (chat style).
@@ -40,6 +46,16 @@ func (s *Store) ListEntries(q EntryQuery) []Entry {
 	limit := q.Limit
 	if limit <= 0 || limit > 500 {
 		limit = 100
+	}
+	ranked := len(q.RankIDs) > 0
+	if ranked && q.Before != "" {
+		// 相关性排序没有稳定的时间游标：翻第二页时前端传的还是"最早那条的时间"，
+		// 拿它去过滤只会把结果截得七零八落。这里直接返回空 = "没有更多了"，
+		// 界面据此停掉上滑加载（比返回重复条目好，也比假装有下一页好）。
+		//
+		// 代价：语义检索最多只展示一页（默认 50）。够用 —— 候选本来就只取 200，
+		// 没人会往下翻两百条语义结果。
+		return nil
 	}
 	where, args := q.where()
 	order := "ASC"
@@ -63,6 +79,30 @@ func (s *Store) ListEntries(q EntryQuery) []Entry {
 			return out
 		}
 		out = append(out, e)
+	}
+	if ranked {
+		// 按混合检索给的名次重排。**倒着放**：名次最好的排在数组末尾。
+		//
+		// 为什么倒着：时间线是聊天式容器（最新在最下面、列表自动贴底）。正着放的话
+		// 名次第 1 的那条会落在最上面、被滚出可视区 —— 实测截图里就是"搜到了一屏
+		// 结果，最相关的那个看不见"。倒过来之后，最相关的那条正好贴在输入框上方，
+		// 和"最新内容在底部"的视觉习惯一致。
+		pos := make(map[string]int, len(q.RankIDs))
+		for i, id := range q.RankIDs {
+			pos[id] = i
+		}
+		sort.SliceStable(out, func(i, j int) bool {
+			pi, iok := pos[out[i].ID]
+			pj, jok := pos[out[j].ID]
+			if !iok {
+				return false
+			}
+			if !jok {
+				return true
+			}
+			return pi > pj
+		})
+		return out
 	}
 	if q.Tail {
 		for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
@@ -167,7 +207,15 @@ func (q EntryQuery) where() ([]string, []any) {
 	}
 
 	text := strings.TrimSpace(q.Text)
-	if text != "" {
+	if len(q.RankIDs) > 0 {
+		// 混合检索已经给了确定集合：按 id 过滤，Text 不再参与（见 RankIDs 的注释）。
+		placeholders := make([]string, len(q.RankIDs))
+		for i, id := range q.RankIDs {
+			placeholders[i] = "?"
+			args = append(args, id)
+		}
+		where = append(where, "id IN ("+strings.Join(placeholders, ",")+")")
+	} else if text != "" {
 		if len([]rune(text)) >= 3 {
 			where = append(where, `id IN (SELECT id FROM entries_fts WHERE entries_fts MATCH ?)`)
 			args = append(args, `"`+strings.ReplaceAll(text, `"`, `""`)+`"`)
