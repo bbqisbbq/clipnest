@@ -65,8 +65,10 @@ func (s *ClipService) applyHybrid(q *EntryQuery) {
 		return
 	}
 	q.RankIDs = ids
-	// 相关性排序与"按时间游标翻页"不相容（见 Store.ListEntries 的说明）。
-	q.Before = ""
+	// **不要清 Before**：`Store.ListEntries` 靠"ranked 且带游标 → 返回空"来告诉前端
+	// "没有更多了"。这里把它清掉的话，上游每次"上滑加载更早"都会重新拿到同一页，
+	// 前端又不去重 → 列表无限增长（2.13.1 实测：82 条库撑出 560 条）。
+	// 相关性排序本来就没有稳定的时间游标，所以正确做法是让它看到游标并明确返回空。
 	q.Tail = false
 }
 

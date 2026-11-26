@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // 端到端：真模型 + 真检索。要 23MB 资源才跑，所以默认跳过。
@@ -138,6 +139,18 @@ func TestEmbedLiveSearch(t *testing.T) {
 	if got := svc.GetEntries(EntryQuery{Text: "云端传不上去", Limit: 50}); len(got) != 0 {
 		t.Errorf("关掉语义搜索后仍返回 %d 条（应回到字面，即 0 条）", len(got))
 	}
+
+	// **上滑分页必须能停下来**：带游标的相关性查询要返回空，否则前端"加载更早"
+	// 每次拿到同一页、又不去重，列表会无限增长（2.13.1 实测：82 条的库撑出 560 条）。
+	// 这条必须在"有模型"的路径上验 —— 没有模型时 applyHybrid 直接把查询原样放行，
+	// 游标照常生效，恰好掩盖了这个 bug。
+	st.EmbedSearch = true
+	if err := svc.store.SaveSettings(st); err != nil {
+		t.Fatal(err)
+	}
+	if got := svc.GetEntries(EntryQuery{Text: "云端传不上去", Before: encodeTime(time.Now()), Limit: 50}); len(got) != 0 {
+		t.Errorf("带游标的相关性查询应返回空（否则前端会无限累加），得到 %d 条", len(got))
+	}
 }
 
 // ---- 资源路径（本机下载过才有）------------------------------------------
@@ -176,3 +189,4 @@ func embedAvailableForLive() bool {
 	}
 	return true
 }
+

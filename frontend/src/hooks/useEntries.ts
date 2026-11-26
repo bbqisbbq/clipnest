@@ -103,7 +103,9 @@ export function useEntries(baseQuery: EntryQuery, onError?: (msg: string) => voi
       if (older.length === 0) {
         setHasMore(false);
       } else {
-        setEntries((prev) => [...older, ...prev]);
+        // mergePages 按 id 去重再按时间排：后端万一把同一页重复给了（2.13.1 就发生过，
+        // 列表一路涨到 560 条），这里也不会越滚越长。去重是兜底，不是主修。
+        setEntries((prev) => mergePages(prev, older));
         setHasMore(older.length >= PAGE_SIZE);
         requestAnimationFrame(() => {
           if (host) host.scrollTop = host.scrollHeight - prevHeight;
