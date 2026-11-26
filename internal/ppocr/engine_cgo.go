@@ -21,6 +21,8 @@ import (
 	"time"
 
 	ort "github.com/yalue/onnxruntime_go"
+
+	"github.com/bbqisbbq/clipnest/internal/ortruntime"
 )
 
 func compiledIn() bool { return true }
@@ -63,21 +65,13 @@ func (e *Engine) Close() {
 	}
 }
 
-// onnxruntime 的"环境"是**进程级全局**的：InitializeEnvironment 只能成功一次，
-// 再调就报 "The onnxruntime has already been initialized"（踩过：设置页做一次状态
-// 检查先把环境初始化了，真正识别时再初始化就直接失败、悄悄退回系统引擎）。
-// 所以这里用 sync.Once 兜住，动态库路径也只在第一次生效（资源目录本来就只有一个）。
-var (
-	envOnce sync.Once
-	envErr  error
-)
-
+// onnxruntime 的"环境"是**进程级全局**的，一个进程只能初始化一次。这里不再自己
+// 维护 sync.Once —— 语义搜索（internal/embed）也要起这个环境，两边各写一份就会
+// 互相把对方判成"初始化失败"（2.13.2 实测：embed 先起，OCR 设置页就显示
+// 「引擎加载失败：The onnxruntime has already been initialized」）。
+// 统一走 internal/ortruntime，谁先起都行。
 func initEnvironment(libraryPath string) error {
-	envOnce.Do(func() {
-		ort.SetSharedLibraryPath(libraryPath)
-		envErr = ort.InitializeEnvironment()
-	})
-	return envErr
+	return ortruntime.Ensure(libraryPath)
 }
 
 // Init 加载 onnxruntime、两个模型和字典（重复调用是空操作）。
@@ -259,3 +253,4 @@ func joinLines(lines []string) string {
 	}
 	return out
 }
+

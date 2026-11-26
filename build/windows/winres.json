@@ -7,7 +7,7 @@
   "RT_MANIFEST": {
     "#1": {
       "0409": {
-        "identity": { "name": "com.bbqisbbq.clipnest", "version": "2.13.2.0" },
+        "identity": { "name": "com.bbqisbbq.clipnest", "version": "2.13.3.0" },
         "description": "ClipNest",
         "minimum-os": "win10",
         "execution-level": "as invoker",
@@ -45,6 +45,7 @@
     }
   }
 }
+
 
 
 

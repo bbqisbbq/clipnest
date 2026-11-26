@@ -11,10 +11,11 @@ import (
 	"fmt"
 	"math"
 	"path/filepath"
-	"strings"
 	"sync"
 
 	ort "github.com/yalue/onnxruntime_go"
+
+	"github.com/bbqisbbq/clipnest/internal/ortruntime"
 )
 
 func compiledIn() bool { return true }
@@ -36,31 +37,12 @@ type Engine struct {
 // New 准备一个引擎实例（不立刻加载模型，第一次 Encode 时懒加载）。
 func New(dir string) *Engine { return &Engine{dir: dir} }
 
-// onnxruntime 的"环境"是**进程级全局**的：InitializeEnvironment 只能成功一次。
-// PP-OCR 和这里共用同一个运行时，谁先初始化都行 —— 所以第二次的
-// "already initialized" 要当成功处理，不能当成错误（踩过：ppocr 那条路径
-// 就是这样把设置页的状态检查变成"引擎加载失败"的）。
-var (
-	envOnce sync.Once
-	envErr  error
-)
-
+// onnxruntime 的环境是进程级全局的，只能初始化一次。**不要**在这里自己写 sync.Once：
+// PP-OCR（internal/ppocr）也要起这个环境，两个包各写一份就会互相把对方判成失败
+// （2.13.2 实测：这边先起，OCR 设置页显示「引擎加载失败：already been initialized」）。
+// 统一走 internal/ortruntime。
 func initEnvironment(lib string) error {
-	envOnce.Do(func() {
-		ort.SetSharedLibraryPath(lib)
-		if err := ort.InitializeEnvironment(); err != nil {
-			// 已经被 ppocr 初始化过：运行时是好的，继续用
-			if !isAlreadyInitialized(err) {
-				envErr = err
-			}
-		}
-	})
-	return envErr
-}
-
-func isAlreadyInitialized(err error) bool {
-	msg := err.Error()
-	return strings.Contains(msg, "already initialized") || strings.Contains(msg, "already been initialized")
+	return ortruntime.Ensure(lib)
 }
 
 // Close 释放会话（把 43MB 还回去）。之后再 Encode 会重新加载。
@@ -219,3 +201,5 @@ func normalize(v []float32) []float32 {
 	}
 	return v
 }
+
+

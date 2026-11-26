@@ -1,3 +1,14 @@
+## 2.13.3（2026-11-26）
+
+- 修：**OCR 设置页报「引擎加载失败：onnxruntime 初始化失败: The onnxruntime has already
+  been initialized」**。onnxruntime 的环境是**进程级全局**的、一个进程只能初始化一次，
+  而语义搜索（`internal/embed`）和 PP-OCR（`internal/ppocr`）各写了一份 `sync.Once`：
+  谁先起谁赢，后到的那条把"已经初始化过"当成了硬错误。语义搜索在后台补扫时先起，
+  于是 OCR 那边就"坏了"——其实一点没坏。
+  现在这件事收进 `internal/ortruntime` 一个入口，两个引擎都走它；"已经初始化过"只可能
+  是自己干的，按成功处理。
+- 顺带：`ortruntime.InitializedBy()` 会记下第一次是谁起的（哪个 dll），排障时能看出来。
+
 ## 2.13.2（2026-11-26）
 
 - 修：**搜索结果越滚越多**（搜索框里一句查询，右上角显示「560+ 条」，可库里只有 82 条）。
