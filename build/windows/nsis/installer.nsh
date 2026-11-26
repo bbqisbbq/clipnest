@@ -14,7 +14,7 @@
     !define INFO_PRODUCTNAME "ClipNest"
 !endif
 !ifndef INFO_PRODUCTVERSION
-    !define INFO_PRODUCTVERSION "2.12.5"
+    !define INFO_PRODUCTVERSION "2.12.6"
 !endif
 !ifndef INFO_COPYRIGHT
     !define INFO_COPYRIGHT "(c) 2026 bbqisbbq"
@@ -259,6 +259,7 @@ RequestExecutionLevel "${REQUEST_EXECUTION_LEVEL}"
     ; Delete app custom protocol associations
     
 !macroend
+
 
 
 

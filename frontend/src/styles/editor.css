@@ -106,4 +106,6 @@ body.is-capture { background: transparent; }
   flex: none;
 }
 .capture-foot-right { margin-left: auto; display: flex; align-items: center; gap: 8px; flex: none; }
+/* 「记一笔」重开后从库里读回草稿时的提示：不抢「保存」的注意力，只解释这段字哪来的 */
+.capture-restored { color: var(--text-3); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 

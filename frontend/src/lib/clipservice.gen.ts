@@ -26,9 +26,11 @@ export const DownloadUpdate = (...args: any[]): Promise<string> => call<string>(
 export const EnsureCaptureHotkey = (...args: any[]): Promise<void> => call<void>("ClipService.EnsureCaptureHotkey", ...args);
 export const EnsureShotDefaults = (...args: any[]): Promise<void> => call<void>("ClipService.EnsureShotDefaults", ...args);
 export const FallbackPaste = (...args: any[]): Promise<void> => call<void>("ClipService.FallbackPaste", ...args);
+export const FlushCaptureDraft = (...args: any[]): Promise<void> => call<void>("ClipService.FlushCaptureDraft", ...args);
 export const FlushComposerDraft = (...args: any[]): Promise<void> => call<void>("ClipService.FlushComposerDraft", ...args);
 export const ForegroundProcess = (...args: any[]): Promise<string> => call<string>("ClipService.ForegroundProcess", ...args);
 export const GetAppInfo = (...args: any[]): Promise<Models.AppInfo> => call<Models.AppInfo>("ClipService.GetAppInfo", ...args);
+export const GetCaptureDraft = (...args: any[]): Promise<string> => call<string>("ClipService.GetCaptureDraft", ...args);
 export const GetComposerDraft = (...args: any[]): Promise<string> => call<string>("ClipService.GetComposerDraft", ...args);
 export const GetEntries = (...args: any[]): Promise<Models.Entry[] | null> => call<Models.Entry[] | null>("ClipService.GetEntries", ...args);
 export const GetEntry = (...args: any[]): Promise<Models.Entry> => call<Models.Entry>("ClipService.GetEntry", ...args);
@@ -91,6 +93,7 @@ export const SaveSnippet = (...args: any[]): Promise<Models.Snippet> => call<Mod
 export const SetAutoStart = (...args: any[]): Promise<Models.Settings> => call<Models.Settings>("ClipService.SetAutoStart", ...args);
 export const SetCapture = (...args: any[]): Promise<Models.Settings> => call<Models.Settings>("ClipService.SetCapture", ...args);
 export const SetCaptureBackdrop = (...args: any[]): Promise<boolean> => call<boolean>("ClipService.SetCaptureBackdrop", ...args);
+export const SetCaptureDraft = (...args: any[]): Promise<void> => call<void>("ClipService.SetCaptureDraft", ...args);
 export const SetComposerDraft = (...args: any[]): Promise<void> => call<void>("ClipService.SetComposerDraft", ...args);
 export const SetEntryArchived = (...args: any[]): Promise<Models.Entry> => call<Models.Entry>("ClipService.SetEntryArchived", ...args);
 export const SetEntryPinned = (...args: any[]): Promise<Models.Entry> => call<Models.Entry>("ClipService.SetEntryPinned", ...args);
@@ -132,9 +135,11 @@ export const ClipService = {
   EnsureCaptureHotkey,
   EnsureShotDefaults,
   FallbackPaste,
+  FlushCaptureDraft,
   FlushComposerDraft,
   ForegroundProcess,
   GetAppInfo,
+  GetCaptureDraft,
   GetComposerDraft,
   GetEntries,
   GetEntry,
@@ -185,6 +190,7 @@ export const ClipService = {
   SetAutoStart,
   SetCapture,
   SetCaptureBackdrop,
+  SetCaptureDraft,
   SetComposerDraft,
   SetEntryArchived,
   SetEntryPinned,

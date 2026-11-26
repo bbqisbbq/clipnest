@@ -5,6 +5,7 @@ import PrivacyToggle from "./PrivacyToggle";
 import { ClipService, EventNames } from "../lib/api";
 import { drag, noDrag } from "../lib/window";
 import { useSettingsTheme } from "../hooks/useTheme";
+import { useCaptureDraft } from "../hooks/useComposerDraft";
 
 // 快速输入窗（Ctrl+Shift+N）：光标处弹出来，写完 Enter 保存、Esc 关闭。
 //
@@ -26,11 +27,15 @@ import { useSettingsTheme } from "../hooks/useTheme";
 const MAX_TRANSPARENCY = 100;
 
 export default function Capture() {
-  const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [transparency, setTransparency] = useState(0);
   const editorRef = useRef<MarkdownSurfaceHandle | null>(null);
+  // 草稿必须落库（见 hooks/useComposerDraft）：这个窗口闲置就会被销毁（idle.go，
+  // 默认 1.5 秒），页面连同 React state 一起没了。以前正文只活在这里的 useState 里，
+  // 于是"打了一段字没保存 → 关窗 → 再打开就是空的"。
+  const draft = useCaptureDraft(setError);
+  const text = draft.text;
   const textRef = useRef(text);
   textRef.current = text;
 
@@ -94,6 +99,7 @@ export default function Capture() {
     // 以编辑器里的真实内容为准（state 可能落后一个 keystroke）
     const content = (editorRef.current?.getValue() ?? textRef.current).trim();
     if (!content) {
+      draft.reset();
       close();
       return;
     }
@@ -101,14 +107,16 @@ export default function Capture() {
     setError("");
     try {
       await ClipService.SaveEntry({ content, source: "manual", kind: "text" } as never);
-      setText("");
+      // reset 会先把空值写进库再 flush：否则静默期那一份可能把已经存成条目的
+      // 内容又塞回输入框（和主窗口 ComposerDock 的处理一致）
+      draft.reset();
       close();
     } catch (err) {
       setError(String(err));
     } finally {
       setBusy(false);
     }
-  }, [close]);
+  }, [close, draft]);
 
   // 窗口显示时编辑器可能还没拿到焦点：补一次，并在窗口重新获得焦点时也补。
   useEffect(() => {
@@ -162,7 +170,7 @@ export default function Capture() {
           ref={editorRef}
           preset="capture"
           value={text}
-          onChange={setText}
+          onChange={draft.setText}
           onSave={() => void save()}
           onEscape={close}
           autoFocus
@@ -171,6 +179,11 @@ export default function Capture() {
       </div>
 
       <div className="capture-foot">
+        {/* 从库里读回来的草稿要说一句：不然用户会以为"我上次写的怎么还在"，
+            或者反过来，以为自己先前那次保存成功了 */}
+        {draft.restored && text.trim() ? (
+          <span className="capture-restored">已恢复上次未保存的草稿</span>
+        ) : null}
         <div className="capture-foot-right">
           {error ? <span className="snip-error">{error}</span> : null}
           <button className="btn btn-primary btn-sm" onClick={() => void save()} disabled={busy}>

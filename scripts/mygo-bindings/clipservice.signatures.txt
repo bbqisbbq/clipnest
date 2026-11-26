@@ -20,9 +20,11 @@ DownloadUpdate	string
 EnsureCaptureHotkey	void
 EnsureShotDefaults	void
 FallbackPaste	void
+FlushCaptureDraft	void
 FlushComposerDraft	void
 ForegroundProcess	string
 GetAppInfo	$models.AppInfo
+GetCaptureDraft	string
 GetComposerDraft	string
 GetEntries	$models.Entry[] | null
 GetEntry	$models.Entry
@@ -73,6 +75,7 @@ SaveSnippet	$models.Snippet
 SetAutoStart	$models.Settings
 SetCapture	$models.Settings
 SetCaptureBackdrop	boolean
+SetCaptureDraft	void
 SetComposerDraft	void
 SetEntryArchived	$models.Entry
 SetEntryPinned	$models.Entry

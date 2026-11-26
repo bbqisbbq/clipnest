@@ -16,7 +16,7 @@ import (
 // 设置与开机自启（service_settings.go）。
 
 // Version is shown in the UI and written to the log on start.
-const Version = "2.12.5"
+const Version = "2.12.6"
 
 // AppInfo is static information the frontend needs for the about/settings view.
 type AppInfo struct {
@@ -124,12 +124,13 @@ type ClipService struct {
 	updateRestart sync.Mutex
 	updateCancel  context.CancelFunc
 
-	// 快捷输入草稿：前端每敲一个字送到 draftPending，draftTimer 防抖合并成一次
-	// SQLite 写（见 draft.go）。Shutdown 时显式 flush，退出不丢最后几个字。
-	draftMu      sync.Mutex
-	draftPending string
-	draftDirty   bool
-	draftTimer   *time.Timer
+	// 未保存草稿：**两个编辑器各一个槽**（见 draft.go）。前端每敲一个字送到
+	// slot.pending，slot.timer 防抖合并成一次 SQLite 写。
+	//
+	// 分成两个是因为「记一笔」那个窗口闲置会被销毁（idle.go），页面连同它的
+	// React state 一起没了 —— 那份草稿不落库就等于关一次窗丢一次稿。
+	composerDraft *draftSlot
+	captureDraft  *draftSlot
 }
 
 // NewService opens the store inside dataDir.
@@ -139,9 +140,11 @@ func NewClipService(dataDir string, hooks Hooks) (*ClipService, error) {
 		return nil, err
 	}
 	s := &ClipService{
-		store:  st,
-		hooks:  hooks,
-		stopCh: make(chan struct{}),
+		store:         st,
+		hooks:         hooks,
+		stopCh:        make(chan struct{}),
+		composerDraft: newDraftSlot(metaComposerDraft, metaComposerDraftAt),
+		captureDraft:  newDraftSlot(metaCaptureDraft, metaCaptureDraftAt),
 	}
 	s.bgCtx, s.bgCancel = context.WithCancel(context.Background())
 	s.engine = expand.New(s)
@@ -221,16 +224,18 @@ func (s *ClipService) Shutdown() {
 		s.updateCancel = nil
 	}
 	s.updateRestart.Unlock()
-	// 退出前把防抖窗口里的草稿写掉：先停掉定时器（免得它在 store.Close 之后再触发），
-	// 再同步写一次。这一步必须早于 store.Close。
-	s.draftMu.Lock()
-	if s.draftTimer != nil {
-		s.draftTimer.Stop()
-		s.draftTimer = nil
+	// 退出前把防抖窗口里的草稿写掉：先停掉两个定时器（免得它们在 store.Close 之后
+	// 再触发），再同步写一次。这一步必须早于 store.Close。
+	//
+	// 两个槽都要写：「记一笔」的草稿和主窗口的一样重要——它连窗口都会被销毁，
+	// 库里的那一份是唯一副本。
+	stopDraftTimer(s.composerDraft)
+	stopDraftTimer(s.captureDraft)
+	if err := s.flushDraft(s.composerDraft); err != nil {
+		Logf(s.store.Dir(), "draft flush on shutdown failed (composer): %v", err)
 	}
-	s.draftMu.Unlock()
-	if err := s.flushComposerDraft(); err != nil {
-		Logf(s.store.Dir(), "draft flush on shutdown failed: %v", err)
+	if err := s.flushDraft(s.captureDraft); err != nil {
+		Logf(s.store.Dir(), "draft flush on shutdown failed (capture): %v", err)
 	}
 
 	// 取消在途请求，再等后台循环收尾：同步正写到一半就关库，会刷出
@@ -332,6 +337,7 @@ func (s *ClipService) SetCaptureBackdrop(enabled bool) bool {
 	}
 	return s.hooks.ApplyBackdrop(enabled)
 }
+
 
 
 

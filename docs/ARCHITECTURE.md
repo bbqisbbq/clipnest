@@ -43,7 +43,7 @@ internal/clip/           业务层：条目、捕获、片段、同步、绑定 
 | `service_capture.go` | 采集管线（合并 45ms、去重、回写抑制）+ 快速输入窗（含尺寸记忆：`capture.size` → meta） |
 | `service_paste.go` | 条目 → 系统：复制回剪贴板、打开、picker 弹窗三件套 |
 | `service_settings.go` | 设置保存与副作用（自启、展开器、两个后台循环） |
-| `draft.go` | 快捷输入框的未保存草稿（meta 键 `composer.draft`，跟着 clipnest.db 走）。**写库防抖在 Go 侧**（前端每键送一次，内存立即更新 + 400ms 合并写），`FlushComposerDraft`（前端在收起窗口/退出前调）与 `Shutdown` 兜底 |
+| `draft.go` | 未保存草稿，**两个槽各一把键**：`composer.draft`（主窗口「记一条」）与 `capture.draft`（「记一笔」浮层），都跟着 clipnest.db 走。**写库防抖在 Go 侧**（前端每键送一次，内存立即更新 + 400ms 合并写），`Flush*Draft`（前端在收起窗口/退出前调）与 `Shutdown`（两个槽都写）兜底 |
 | `entry_api.go` | 绑定给前端的条目 API（读写、置顶/归档、片段升降级、待办勾选） |
 | `filter_api.go` | 筛选器 API：保存/删除/恢复、内置筛选器的覆盖、`filters.hidden` 隐藏位、`GetFilterFields` |
 | `service_shot.go` | 截图的业务面：拍帧 → 交给遮罩窗 → 收回裁好的 PNG → 落库 →（可选）进剪贴板。裁切在前端做，这里不做几何计算 |
@@ -119,7 +119,8 @@ src/hooks/
   useAppData.ts          设置 / 应用信息 / 同步状态 / 筛选器 / 计数
   useEntries.ts          条目列表数据层：分页、上滑加载更早、按天分组、贴底滚动
   useEntryImages.ts      正文 memoimg: 引用的按需加载缓存
-  useComposerDraft.ts    快捷输入框草稿：内存 → 防抖落库（400ms）→ 重启读回
+  useComposerDraft.ts    草稿：内存 → 防抖落库（400ms）→ 重开读回。`useDraft(kind)` 一份逻辑，
+                         两个使用者（主窗口 composer / 「记一笔」capture），两把 meta 键
   useFilters.ts          筛选器增删改（⋯ 菜单 + 新建/编辑弹窗的状态机）
 src/lib/
   api.ts                 绑定封装 + 类型别名
@@ -205,16 +206,22 @@ entry_blobs    附件：内容寻址，≤512KB 进库、更大落盘 entry_file
 entries_fts    全文索引（trigram，中文子串可搜；标题也进索引）
 entry_filters  用户保存的筛选器（含规则树 JSON）
 tombstones     删除墓碑（同步用）
-meta           键值对（设备 id、一次性标记、filters.hidden、composer.draft、capture.size）
+meta           键值对（设备 id、一次性标记、filters.hidden、composer.draft、capture.draft、capture.size）
 ```
 
 **写入有事务边界**：`SaveEntry` / `mergeEntry` 把「条目行 + FTS 行」放在同一个事务里（索引写不进去就整条回滚，
 不会留下"存住了但搜不到"的条目）；`DeleteEntry` 在一个事务里做「删行 → 删索引 → 写墓碑」，顺序反了会留下
 "本机还在、对端已删"的分叉；清空历史是单事务 + 一次附件回收。
 
-**草稿不是条目**：输入框里敲了一半的东西存在 `meta.composer.draft`（只有一条键值、只在本机），
+**草稿不是条目**：输入框里敲了一半的东西存在 `meta.composer.draft`（主窗口「记一条」）与
+`meta.capture.draft`（「记一笔」浮层）——都只有一条键值、只在本机，
 不进 `entries`、不进同步包、也不算内容哈希的一部分——半成品不该被当成历史，也不该同步到别的机器。
-`SetComposerDraft("")` 即清空，所以"存成条目"之后不会在重启时又被塞回输入框。
+`Set*Draft("")` 即清空，所以"存成条目"之后不会在重启时又被塞回输入框。
+
+**为什么「记一笔」的草稿非落库不可**：那个窗口闲置会被销毁（`idle_windows.go`，默认 1.5 秒），
+销毁 == 页面连同里面的 React state 一起消失。状态只要留在前端，就等于"关一次窗丢一次稿"
+（2.12.5 及以前就是这样，用户报了上来）。凡是可能被闲置销毁的窗口，凡是用户敲了一半的东西，
+都必须活在后端。
 
 **待办是派生的，不是第二张表**：正文里的 `- [ ]` 就是真源，
 `todo_state`（`''`/`open`/`done`）与 `todo_done_at` 是 `SaveEntry` / `mergeEntry` 里现算的派生列
@@ -324,6 +331,7 @@ pwsh -STA -File scratch\shot-tray-menu.ps1      # 托盘菜单截图 + 点「打
 pwsh -STA -File scratch\e2e-live-and-draft.ps1  # 复制后不切页面就能看到新条目 + 草稿跨重启
 pwsh -STA -File scratch\e2e-draft-robust.ps1    # 敲完立刻收起窗口（点 ×）再强杀，草稿不丢
 pwsh -STA -File scratch\e2e-global-composer.ps1 # 常驻「记一条」：草稿跨视图/跨重启 + 设置自动保存（真鼠标）
+pwsh -STA -File scratch\e2e-capture-draft.ps1  # 「记一笔」草稿：打字 → Esc → 闲置销毁 → 重开，内容仍在（真键盘）
 pwsh -STA -File scratch\e2e-theme-shots.ps1     # 4 个主题预设各截一张整窗
 pwsh -STA -File scratch\smoke-2.8.3.ps1        # 冒烟：沙箱 APPDATA 起一次、截图、扫日志里的 error/warn
 node scratch\theme-audit.mjs                    # 主题对比度体检（5 预设 × 4 底色 × 7 文字）
